@@ -45,6 +45,10 @@ Icon
 # Instruments
 timeline.xctimeline
 
+# Claude Code (local only)
+CLAUDE.md
+.claude/settings.local.json
+
 # App secrets / environment
 *.env
 Secrets.swift
