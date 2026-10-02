@@ -22,12 +22,14 @@ PreviewReplacement.*
 .build/
 .swiftpm/
 Packages/
-Package.resolved
+# Commit Package.resolved when generated to keep app dependencies reproducible.
 
 # CocoaPods
 Pods/
 *.xcworkspace
 !/*.xcworkspace
+# Include shared package resolutions inside Xcode projects; xcuserdata stays ignored.
+!*.xcodeproj/project.xcworkspace/
 
 # Carthage
 Carthage/Build/
