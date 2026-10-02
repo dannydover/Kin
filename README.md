@@ -95,3 +95,12 @@ you own or have permission to use.
 Keep app data, signing materials, build products, and local execution evidence out
 of commits. Include relevant tests with behavior changes. Do not assume the local
 development features are available until their implementation is published.
+
+## License and branding
+
+The software is licensed under the [MIT License](LICENSE), which permits reuse,
+modification, distribution, and commercial use under its terms.
+
+The MIT License does not grant permission to use the Kin name or logo to imply
+official origin or endorsement by Intriguing Ideas, LLC. This branding clarification
+does not change the MIT terms or exclude asset copyrights from the license.
