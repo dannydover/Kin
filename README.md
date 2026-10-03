@@ -7,21 +7,11 @@ names, children, ages, relationships, and the little details worth keeping.
 
 Kin is in active development and is not yet a stable public release.
 
-**This public checkout currently contains the original SwiftUI starter project.**
-The fuller app implementation has been developed and tested locally but has not
-been published to this repository. Cloning `main` does not yet provide the family
-notebook features or its 63-test development suite. The starter unit and UI test
-targets are present, but they are not that suite.
+This checkout contains the family notebook implementation, its shared Xcode
+scheme, and unit/integration tests. It targets **iPhone only, iOS 26 or later**,
+using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
 
-The local implementation targets **iPhone only, iOS 26 or later**, using
-**Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**. The public starter
-project still has iOS 26.5 as its deployment target, Swift 5 language mode, and
-iPhone/iPad device families. Publishing the app implementation will reconcile
-those settings; this README does not change them.
-
-## App features in local development
-
-These features are implemented locally and are not yet available in a public clone:
+## App features
 
 - Friends, current and former partners, and children grouped into families.
 - Exact birthdays or estimated ages with reference dates, plus estimated school grades.
@@ -32,41 +22,74 @@ These features are implemented locally and are not yet available in a public clo
 Future features and proposals are tracked in [GitHub issues](https://github.com/dannydover/Kin/issues).
 An issue is a proposal or work item, not a release commitment.
 
-## Open, build, and test this checkout
+## Open, build, and test
 
-Use a Mac with Xcode 27 and an installed iOS simulator runtime compatible with
-the checkout's deployment target. Xcode 27 requires macOS Tahoe 26.6 or later.
-The current starter needs iOS 26.5 or later; an iOS 27 iPhone simulator is suitable.
+Use a Mac with Xcode 27 and an installed iOS 26 or newer iPhone simulator runtime.
+Xcode 27 requires macOS Tahoe 26.6 or later. Select Xcode's developer directory
+explicitly if Command Line Tools or another Xcode is your system default:
 
 ```sh
 git clone https://github.com/dannydover/Kin.git
 cd Kin
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 open Kin.xcodeproj
 ```
 
-In Xcode, select the **Kin** scheme and an available **iPhone simulator**.
-Use **Product > Build** to build, **Product > Run** to launch, and
-**Product > Test** to run the test targets included in your checkout. Xcode can
-create the scheme automatically; no shared scheme is currently committed on
-`main`. If needed, create a Kin scheme in **Product > Scheme > Manage Schemes**
-and add the KinTests and KinUITests targets to its Test action.
+In Xcode, select the shared **Kin** scheme and an available **iPhone simulator**.
+Use **Product > Build**, **Product > Run**, or **Product > Test**. The shared
+scheme includes the complete KinTests unit/integration suite (63 tests in 16
+suites); the retained starter UI-test templates are not part of that suite.
 
-Simulator development avoids physical-device provisioning. To run on your own
-iPhone, configure your own development team locally. Never commit certificates,
-private keys, provisioning profiles, or machine-specific signing settings.
+```sh
+# Core-only package suite (50 tests); no external packages.
+scripts/test-core.sh
 
-The public starter has no external Swift package dependencies or
-`Package.resolved`. It also has no `Package.swift` or helper scripts, so
-`swift test` and local-development script commands do not apply to this checkout.
-When package dependencies are introduced, commit the generated app lockfile so
-contributors use the same resolved versions.
+# Full suite, including UIKit Contacts/photo integration tests.
+xcodebuild -project Kin.xcodeproj -scheme Kin \
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0' \
+  -derivedDataPath DerivedData test CODE_SIGNING_ALLOWED=NO
 
-These instructions describe the checked-in project structure. A fresh-clone
-build and test run was not performed for this documentation change.
+# Compile a Release build for iPhone without provisioning or signing.
+scripts/build-unsigned-device.sh
+```
+
+Use a matching installed simulator name and OS in the test destination. iOS 26
+compatibility testing is separate from the iOS 27 CI runtime; the deployment
+target remains iOS 26.0. An unsigned device build is a compilation check and
+cannot be installed as a signed app. For personal device development, configure
+your own team locally and keep signing settings and materials out of commits.
+
+Debug-only in-memory previews can be launched with `--kin-preview list` or
+`--kin-preview empty`. They use fictional fixtures and do not open the saved
+notebook. Release builds omit this preview entry point.
+
+## Continuous integration
+
+[Build and test](.github/workflows/ci.yml) runs on ordinary pull requests and
+pushes to `main` with read-only repository permissions and no persisted checkout
+credentials. It checks the indexed repository for prohibited data, runs both test
+suites after a clean app build, and compiles unsigned iPhone and simulator Release builds. It does not
+provision, distribute, or upload build products or logs as artifacts.
+
+Release checks verify the iOS 26 minimum, iPhone-only device family, privacy
+manifest, absence of debug previews and personal build paths, and absence of
+developer signing or provisioning. The simulator linker may embed its own
+ad-hoc signature; this uses no developer identity or signing credentials.
+
+The workflow uses the arm64 `xcode-27` preview runner image, explicitly selecting
+`/Applications/Xcode_27.app/Contents/Developer`. It prints and verifies Xcode 27.0
+build 27A266a and Swift 6.4, prints SDK/runtime information, and tests on iPhone 17
+with iOS 27.0. Toolchain/image changes fail visibly rather than silently changing
+the required compiler. Runner availability and installed versions are documented
+in the [official runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md);
+see Apple's [Xcode system requirements](https://developer.apple.com/xcode/system-requirements).
+
+The package has no external dependencies or `Package.resolved`. When dependencies
+are introduced, commit the generated app lockfile for reproducible resolution.
 
 ## Data and privacy
 
-The local app implementation keeps its notebook on the device. It has no account
+The app keeps its notebook on the device. It has no account
 system, app backend, analytics, or third-party package dependencies. Optional
 Contacts and photo imports are one-time snapshots; ordinary operating-system
 backup behavior still applies. Kin has no in-app sync or export feature.
@@ -93,8 +116,13 @@ Use fictional names, dates, notes, and images, and test only with devices and da
 you own or have permission to use.
 
 Keep app data, signing materials, build products, and local execution evidence out
-of commits. Include relevant tests with behavior changes. Do not assume the local
-development features are available until their implementation is published.
+of commits. Include relevant tests with behavior changes. After staging changes, run
+`python3 scripts/check-repository.py` to inspect the exact index contents. The
+same guard runs against CI's checkout. It blocks unexpected files, signing and
+credential patterns, personal paths/identifiers, and unreviewed raster artwork.
+It complements human review; it cannot establish that arbitrary prose is
+fictional or detect every secret. Review changed fixtures and assets before
+publication. Public fixtures must remain synthetic.
 
 ## License and branding
 

@@ -2,7 +2,6 @@
 //  KinUITests.swift
 //  KinUITests
 //
-//  Created by Danny Dover on 5/25/26.
 //
 
 import XCTest
