@@ -1,7 +1,7 @@
 # Kin
 
-Kin is an iPhone notebook for remembering the people in your friends' families:
-names, children, ages, relationships, and the little details worth keeping.
+Kin is a personal reference tool for remembering the people in your friends' families:
+names, children, ages, grades, relationships, and the little details worth keeping.
 
 ## Development status
 
