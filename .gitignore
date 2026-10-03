@@ -55,3 +55,23 @@ CLAUDE.md
 *.env
 Secrets.swift
 Config.xcconfig
+
+# Private execution evidence, signing material, and app data
+evidence/
+*.log
+*.xcresult/
+*.xcarchive/
+*.ipa
+*.dSYM/
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.p8
+*.key
+*.pem
+*.cer
+*.sqlite*
+*.db
+*.vcf
+__pycache__/
+*.pyc

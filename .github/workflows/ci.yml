@@ -1,0 +1,55 @@
+name: Build and test
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: kin-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify toolchain and simulator runtime
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
+      - name: Repository privacy guard
+        run: |
+          python3 -m unittest discover -s scripts/tests -v
+          python3 scripts/check-repository.py
+      - name: Core tests
+        run: scripts/test-core.sh
+      - name: Complete unit and integration suite (iOS 27)
+        run: >-
+          xcodebuild -project Kin.xcodeproj -scheme Kin
+          -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0'
+          -derivedDataPath DerivedData clean test CODE_SIGNING_ALLOWED=NO
+      - name: Unsigned iPhone Release build
+        run: |
+          scripts/build-unsigned-device.sh
+          python3 scripts/check-release.py DerivedData/Build/Products/Release-iphoneos/Kin.app
+      - name: Unsigned simulator Release build
+        run: >-
+          xcodebuild -project Kin.xcodeproj -scheme Kin
+          -destination 'generic/platform=iOS Simulator'
+          -configuration Release -derivedDataPath DerivedData
+          build CODE_SIGNING_ALLOWED=NO DEPLOYMENT_POSTPROCESSING=YES
+          STRIP_INSTALLED_PRODUCT=YES STRIP_STYLE=debugging
+      - name: Validate simulator Release app
+        run: python3 scripts/check-release.py DerivedData/Build/Products/Release-iphonesimulator/Kin.app
