@@ -101,6 +101,7 @@ struct PartnerEditor: View {
                     }
                 }
                 .kinError($error)
+            .notebookAvailability(store)
                 .task {
                     #if DEBUG
                     let arguments = ProcessInfo.processInfo.arguments

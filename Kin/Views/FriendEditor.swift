@@ -83,6 +83,7 @@ struct FriendEditor: View {
             }
             .onDisappear { photoGeneration = UUID(); photoLoading = false }
             .kinError($error)
+            .notebookAvailability(store)
     }
     private func save() {
         do { try store.saveFriend(draft); UIImpactFeedbackGenerator(style: .light).impactOccurred(); dismiss() }

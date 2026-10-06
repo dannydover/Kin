@@ -83,6 +83,7 @@ struct ContentView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { today = Date() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in today = Date() }
         }
+        .notebookAvailability(store)
     }
     private var emptyState: some View {
         ScrollView {

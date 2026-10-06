@@ -5,6 +5,11 @@ import Observation
 /// Owns one Core Data context. Value snapshots keep managed objects out of views.
 @MainActor @Observable final class KinStore {
     private(set) var friends: [Friend] = []
+    private(set) var isReady = false
+    private(set) var recoveryError: String?
+    @ObservationIgnored private let inMemory: Bool
+    @ObservationIgnored private let storeURL: URL?
+    @ObservationIgnored private let protectedDataAvailable: @MainActor () -> Bool
     @ObservationIgnored private let context: NSManagedObjectContext
     @ObservationIgnored private let saveContext: @MainActor (NSManagedObjectContext) throws -> Void
     @ObservationIgnored private let encoder = JSONEncoder()
@@ -48,40 +53,93 @@ import Observation
         return model
     }()
 
-    init(inMemory: Bool = false, storeURL: URL? = nil, saveContext: @escaping @MainActor (NSManagedObjectContext) throws -> Void = { try $0.save() }) throws {
+    /// A supplied SQLite URL must live in a directory dedicated to this notebook.
+    init(inMemory: Bool = false, storeURL: URL? = nil,
+         protectedDataAvailable: @escaping @MainActor () -> Bool = { true },
+         saveContext: @escaping @MainActor (NSManagedObjectContext) throws -> Void = { try $0.save() }) throws {
+        self.inMemory = inMemory
         self.saveContext = saveContext
-        let coordinator = NSPersistentStoreCoordinator(managedObjectModel: Self.model)
-        var url = storeURL
-        if !inMemory && url == nil {
-            let directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                        appropriateFor: nil, create: true).appendingPathComponent("Kin", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            url = directory.appendingPathComponent("Kin.sqlite")
-        }
-        var options: [AnyHashable: Any] = [NSMigratePersistentStoresAutomaticallyOption: true,
-                                         NSInferMappingModelAutomaticallyOption: true]
-        #if os(iOS)
-        options[NSPersistentStoreFileProtectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
-        #endif
-        try coordinator.addPersistentStore(ofType: inMemory ? NSInMemoryStoreType : NSSQLiteStoreType,
-                                           configurationName: nil, at: inMemory ? nil : url, options: options)
+        self.protectedDataAvailable = protectedDataAvailable
+        // Resolving the location does not create or read protected files.
+        self.storeURL = inMemory ? nil : try storeURL ?? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+            .appendingPathComponent("Kin", isDirectory: true).appendingPathComponent("Kin.sqlite")
         context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
-        context.persistentStoreCoordinator = coordinator
+        context.persistentStoreCoordinator = NSPersistentStoreCoordinator(managedObjectModel: Self.model)
         context.undoManager = nil
-        try reload()
+        if protectedDataAvailable() { try resume() }
+    }
+
+    /// Keep value snapshots (and SwiftUI editor identity), but release database handles.
+    /// There are no unsaved context changes: editors own drafts until explicit Save.
+    func suspend() {
+        isReady = false
+        do { try detach() }
+        catch { recoveryError = "Your notebook couldn’t close. Unlock your iPhone and try again." }
+    }
+
+    func resume() throws {
+        guard protectedDataAvailable() else { throw NotebookAccessError.locked }
+        guard !isReady else { return }
+        do {
+            // Retry any incomplete detach before opening the same files again.
+            try detach()
+            if let storeURL { try NotebookProtection.prepare(directory: storeURL.deletingLastPathComponent()) }
+            var options: [AnyHashable: Any] = [NSMigratePersistentStoresAutomaticallyOption: true,
+                                             NSInferMappingModelAutomaticallyOption: true]
+            #if os(iOS)
+            options[NSPersistentStoreFileProtectionKey] = FileProtectionType.complete
+            #endif
+            try context.persistentStoreCoordinator!.addPersistentStore(
+                ofType: inMemory ? NSInMemoryStoreType : NSSQLiteStoreType,
+                configurationName: nil, at: storeURL, options: options)
+            try protectFiles()
+            isReady = true
+            try reload()
+            recoveryError = nil
+        } catch {
+            suspend()
+            recoveryError = protectedDataAvailable() ? "Your notebook couldn’t reopen. Your data has not been reset. Try again." : nil
+            throw protectedDataAvailable() ? error : NotebookAccessError.locked
+        }
+    }
+
+    private func detach() throws {
+        context.reset()
+        if let coordinator = context.persistentStoreCoordinator {
+            for store in coordinator.persistentStores { try coordinator.remove(store) }
+        }
+    }
+
+    private func requireAccess() throws {
+        guard protectedDataAvailable() else { suspend(); throw NotebookAccessError.locked }
+        guard isReady else { throw NotebookAccessError.reopenRequired }
+    }
+
+    private func protectFiles() throws {
+        if let storeURL { try NotebookProtection.prepare(directory: storeURL.deletingLastPathComponent()) }
+    }
+
+    private func recoverAfterFailure(_ error: Error) -> Error {
+        context.rollback()
+        if inMemory && protectedDataAvailable() { return error }
+        // A save can commit before a later read fails. Never replay it automatically.
+        // Reopen and reload the committed state before the user chooses to retry.
+        suspend()
+        recoveryError = protectedDataAvailable() ? "The operation couldn’t finish. Reopen your notebook to check what was saved, then try again." : nil
+        return protectedDataAvailable() ? error : NotebookAccessError.locked
     }
 
     var isClosed: Bool { context.persistentStoreCoordinator?.persistentStores.isEmpty ?? true }
     /// Explicit teardown for temporary SQLite stores; callers remove files only afterward.
     func close() throws {
-        context.reset()
-        if let coordinator = context.persistentStoreCoordinator {
-            for store in coordinator.persistentStores { try coordinator.remove(store) }
-        }
+        isReady = false
+        try detach()
         friends = []
     }
 
     func reload() throws {
+        try requireAccess()
         let records = try context.fetch(NSFetchRequest<NSManagedObject>(entityName: "FriendRecord"))
         let decoded = try records.map { record -> Friend in
             var friend: Friend = try decode(record)
@@ -97,10 +155,12 @@ import Observation
         friends = decoded.sorted { $0.fullName.localizedStandardCompare($1.fullName) == .orderedAscending }
     }
     func friend(_ id: UUID) throws -> Friend {
+        try requireAccess()
         guard let friend = friends.first(where: { $0.id == id }) else { throw KinError.missingFriend }
         return friend
     }
     func saveFriend(_ draft: Friend) throws {
+        try requireAccess()
         var value = friends.first(where: { $0.id == draft.id }) ?? draft
         value.firstName = draft.firstName; value.lastName = draft.lastName
         value.photo = draft.photo; value.notes = draft.notes
@@ -137,8 +197,8 @@ import Observation
     }
     func deleteFriend(_ id: UUID) throws {
         guard let object = try record(id) else { throw KinError.missingFriend }
-        do { context.delete(object); try saveContext(context); try reload() }
-        catch { context.rollback(); throw error }
+        do { context.delete(object); try requireAccess(); try saveContext(context); try protectFiles(); try reload() }
+        catch { throw recoverAfterFailure(error) }
     }
     func deletePartner(_ id: UUID, friendID: UUID) throws {
         var friend = try friend(friendID)
@@ -151,9 +211,10 @@ import Observation
         friend.children.removeAll { $0.id == id }
         try persist(friend)
     }
-    func entityCount(_ entity: String) throws -> Int { try context.count(for: NSFetchRequest<NSFetchRequestResult>(entityName: entity)) }
+    func entityCount(_ entity: String) throws -> Int { try requireAccess(); return try context.count(for: NSFetchRequest<NSFetchRequestResult>(entityName: entity)) }
 
     private func persist(_ draft: Friend) throws {
+        try requireAccess()
         var friend = draft
         func clean(_ value: String) throws -> String {
             let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -191,14 +252,17 @@ import Observation
                 record.setValue(object, forKey: "friend")
                 if let id = child.partnerID { record.setValue(partners[id], forKey: "partner") }
             }
+            try requireAccess()
             try saveContext(context)
+            try protectFiles()
             try reload()
-        } catch { context.rollback(); throw error }
+        } catch { throw recoverAfterFailure(error) }
     }
     private func related(_ object: NSManagedObject, _ key: String) -> [NSManagedObject] {
         Array(object.value(forKey: key) as? Set<NSManagedObject> ?? [])
     }
     private func record(_ id: UUID) throws -> NSManagedObject? {
+        try requireAccess()
         let request = NSFetchRequest<NSManagedObject>(entityName: "FriendRecord")
         request.predicate = NSPredicate(format: "id == %@", id as NSUUID)
         request.fetchLimit = 1

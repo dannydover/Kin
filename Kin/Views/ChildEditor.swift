@@ -97,6 +97,7 @@ struct ChildEditor: View {
                     }
                 } message: { Text("This removes their entry and notes from Kin.") }
                 .kinError($error)
+            .notebookAvailability(store)
                 .task {
                     #if DEBUG
                     let arguments = ProcessInfo.processInfo.arguments
