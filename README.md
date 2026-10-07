@@ -87,6 +87,14 @@ see Apple's [Xcode system requirements](https://developer.apple.com/xcode/system
 The package has no external dependencies or `Package.resolved`. When dependencies
 are introduced, commit the generated app lockfile for reproducible resolution.
 
+### App Store release drafts
+
+[Draft App Store release](.github/workflows/draft-release.yml) is manually dispatched
+from `main` for the exact shipped commit and version/build after its CI succeeds.
+It prepares one source-only draft per public App Store version with generated notes.
+Review the notes and confirm App Store availability before deliberately publishing.
+See [release instructions](scripts/RELEASING.md) for inputs, safety checks, and retries.
+
 ## Data and privacy
 
 The app keeps its notebook on the device. It has no account
