@@ -1,0 +1,49 @@
+name: Draft App Store release
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-character SHA used for the shipped App Store build
+        required: true
+        type: string
+      version:
+        description: App Store version (exact MARKETING_VERSION)
+        required: true
+        type: string
+      build:
+        description: App Store build (exact CURRENT_PROJECT_VERSION)
+        required: true
+        type: string
+      previous_tag:
+        description: Previous published version tag (empty for first release)
+        required: false
+        default: ''
+        type: string
+permissions: {}
+concurrency:
+  group: kin-draft-release
+  cancel-in-progress: false
+jobs:
+  draft:
+    if: github.repository == 'dannydover/Kin' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test release guard
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Validate source and create draft
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          APP_VERSION: ${{ inputs.version }}
+          APP_BUILD: ${{ inputs.build }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
+        run: python3 scripts/draft-release.py
