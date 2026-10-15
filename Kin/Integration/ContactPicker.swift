@@ -9,6 +9,7 @@ struct ContactSnapshot {
 
 /// UIKit owns the system picker's dismissal. SwiftUI owns only the inert container.
 struct ContactPicker: UIViewControllerRepresentable {
+    var includePhoto = false
     var onSelect: (ContactSnapshot) -> Void
     var onCancel: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -60,7 +61,7 @@ struct ContactPicker: UIViewControllerRepresentable {
         func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
             guard outcome == nil, !finished else { return }
             outcome = .selected(ContactSnapshot(firstName: contact.givenName, lastName: contact.familyName,
-                                                 photo: contact.imageDataAvailable ? contact.thumbnailImageData : nil))
+                                                 photo: parent.includePhoto && contact.imageDataAvailable ? contact.thumbnailImageData : nil))
         }
         func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
             guard outcome == nil, !finished else { return }

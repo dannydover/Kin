@@ -10,14 +10,14 @@ enum KinTheme {
     static let accent = Color("KinAccent")
     static let sage = Color("KinSage")
     static let border = Color("KinBorder")
-    // All record editors match Add Friend's sheet rows, independent of route or presentation.
+    // All person editors share the same sheet rows, independent of route or presentation.
     // Preserve the system's light/dark and increased-contrast color variants.
     static let editableFormRow = Color(uiColor: UIColor { traits in
         UIColor.secondarySystemGroupedBackground.resolvedColor(with:
             traits.modifyingTraits { $0.userInterfaceLevel = .elevated })
     })
-    static func ink(_ gender: Gender) -> Color { Color("Avatar_\(gender.rawValue)") }
-    static func wash(_ gender: Gender) -> Color { Color("AvatarWash_\(gender.rawValue)") }
+    static func ink(_ gender: Gender) -> Color { Color("Avatar_\((gender == .other ? "unknown" : gender.rawValue))") }
+    static func wash(_ gender: Gender) -> Color { Color("AvatarWash_\((gender == .other ? "unknown" : gender.rawValue))") }
 }
 struct SectionLabel: View {
     let text: String

@@ -35,7 +35,7 @@ jobs:
           python3 scripts/check-repository.py
       - name: Core tests
         run: scripts/test-core.sh
-      - name: Complete unit and integration suite (iOS 27)
+      - name: Unit, integration, and UI regression suite (iOS 27)
         run: >-
           xcodebuild -project Kin.xcodeproj -scheme Kin
           -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0'

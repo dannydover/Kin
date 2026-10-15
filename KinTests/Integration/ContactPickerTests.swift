@@ -47,19 +47,19 @@ import Testing
     func importRequiresExplicitSave() throws {
         let store = try KinStore(inMemory: true)
         defer { try? store.close() }
-        var draft = Friend(firstName: "", lastName: "")
+        var draft = Person(firstName: "", lastName: "")
         let view = ContactPicker(onSelect: { snapshot in
             draft.firstName = snapshot.firstName; draft.lastName = snapshot.lastName
         }, onCancel: {})
         let coordinator = view.makeCoordinator()
         let contact = CNMutableContact(); contact.givenName = "Synthetic"; contact.familyName = "Friend"
         coordinator.contactPicker(CNContactPickerViewController(), didSelect: contact)
-        #expect(draft.firstName.isEmpty)
+        #expect(draft.firstName?.isEmpty ?? true)
         coordinator.pickerDidDismiss()
         #expect(draft.firstName == "Synthetic")
-        #expect(store.friends.isEmpty)
-        try store.saveFriend(draft)
-        #expect(store.friends.count == 1)
+        #expect(store.people.isEmpty)
+        try store.savePerson(draft)
+        #expect(store.people.count == 1)
     }
 
     @Test("Leaving a picker invalidates pending callbacks; a new import works")

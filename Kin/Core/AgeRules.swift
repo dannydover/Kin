@@ -3,77 +3,72 @@ import Foundation
 enum LifeStage: String, CaseIterable, Codable, Sendable {
     case baby, toddler, youngKid, olderKid, teen, adult
     static func forAge(_ age: Int) -> Self {
-        switch age {
-        case ..<2: .baby
-        case 2..<5: .toddler
-        case 5..<10: .youngKid
-        case 10..<13: .olderKid
-        case 13..<18: .teen
-        default: .adult
-        }
-    }
-}
-enum KinError: LocalizedError, Equatable {
-    case dateReviewRequired, invalidName, invalidBirthday, missingFriend, invalidPartner, invalidChildSelection, replacementRequired(String), invalidData
-    var errorDescription: String? {
-        switch self {
-        case .dateReviewRequired: "Review and confirm this date before saving. The earlier entry did not record its timezone."
-        case .invalidName: "Enter a first and last name."
-        case .invalidBirthday: "Use a birthday or reference date on or before today, and an age from 0 to 120."
-        case .missingFriend: "This friend is no longer available."
-        case .invalidPartner: "Choose a partner from this friend’s family."
-        case .replacementRequired(let name): "Replace \(name) as current partner?"
-        case .invalidData: "Kin couldn’t read the saved family data. Your data has not been reset."
-        case .invalidChildSelection: "This family has changed. Cancel and reopen the partner to review the children before saving."
-        }
+        switch age { case ..<2: .baby; case 2..<5: .toddler; case 5..<10: .youngKid; case 10..<13: .olderKid; case 13..<18: .teen; default: .adult }
     }
 }
 struct AgeRules: Sendable {
     let calendar: Calendar
-    init(calendar: Calendar) {
-        // The device timezone defines today; its preferred calendar never redefines July or September.
-        self.calendar = CivilDate.gregorian(in: calendar.timeZone)
+    init(calendar: Calendar) { self.calendar = CivilDate.gregorian(in: calendar.timeZone) }
+    private func years(from start: CivilDate, to end: CivilDate) -> Int {
+        end.year - start.year - ((end.month, end.day) < (start.month, start.day) ? 1 : 0)
     }
-    func birthDate(for birthday: Birthday) -> CivilDate? {
+    // This is an interval of possible birthdays, never a fabricated birthday.
+    private func birthBounds(_ birthday: Birthday) -> (CivilDate, CivilDate)? {
         switch birthday {
-        case .exact(let date): return date.isValid ? date : nil
+        case .unknown: return nil
+        case .exact(let day): return day.isValid ? (day, day) : nil
         case .estimated(let age, let reference):
-            guard reference.isValid, (0...120).contains(age) else { return nil }
-            let year = reference.year - age - (reference.month < 7 ? 1 : 0)
-            let date = CivilDate(year: year, month: 7, day: 1)
-            return date.isValid ? date : nil
-        case .legacyExact, .legacyEstimated: return nil
+            guard reference.isValid, (0...120).contains(age), reference.year > age + 1 else { return nil }
+            let cal = CivilDate.pickerCalendar
+            guard let oldest = cal.date(byAdding: .year, value: -age - 1, to: reference.pickerDate),
+                  let earliest = cal.date(byAdding: .day, value: 1, to: oldest),
+                  let latest = cal.date(byAdding: .year, value: -age, to: reference.pickerDate) else { return nil }
+            return (CivilDate(earliest, timeZone: cal.timeZone), CivilDate(latest, timeZone: cal.timeZone))
         }
     }
-    private func years(from birth: CivilDate, to today: CivilDate) -> Int {
-        max(0, today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day) ? 1 : 0))
+    func ageRange(for birthday: Birthday, on date: Date) -> ClosedRange<Int>? {
+        guard let (earliest, latest) = birthBounds(birthday) else { return nil }
+        let today = CivilDate(date, timeZone: calendar.timeZone)
+        guard today.isValid, latest <= today else { return nil }
+        return max(0, years(from: latest, to: today))...max(0, years(from: earliest, to: today))
     }
     func age(for birthday: Birthday, on date: Date) -> Int? {
-        guard let birth = birthDate(for: birthday) else { return nil }
-        return years(from: birth, to: CivilDate(date, timeZone: calendar.timeZone))
+        guard birthday.isStructurallyValid else { return nil }
+        switch birthday {
+        case .unknown: return nil
+        case .exact: return ageRange(for: birthday, on: date)?.lowerBound
+        case .estimated(let age, let reference):
+            let today = CivilDate(date, timeZone: calendar.timeZone)
+            guard today.isValid, reference <= today else { return nil }
+            let result = age.addingReportingOverflow(max(0, years(from: reference, to: today)))
+            return result.overflow ? nil : result.partialValue
+        }
     }
     func displayAge(for birthday: Birthday, on date: Date) -> String {
-        guard let age = age(for: birthday, on: date) else { return "Review date" }
-        return "\(birthday.isEstimated ? "~" : "")\(age)"
+        guard let age = age(for: birthday, on: date) else { return "Age unknown" }
+        return "\(birthday.isEstimated ? "~" : "")\(age) years"
+    }
+    func allowsPhoto(_ birthday: Birthday, on date: Date) -> Bool {
+        guard birthday.isStructurallyValid, let range = ageRange(for: birthday, on: date) else { return false }
+        return range.lowerBound >= 18 && (age(for: birthday, on: date) ?? 0) >= 18
     }
     func grade(for birthday: Birthday, on date: Date) -> String? {
-        guard let currentAge = age(for: birthday, on: date), (5..<18).contains(currentAge),
-              let birth = birthDate(for: birthday) else { return nil }
+        guard let age = age(for: birthday, on: date), (5..<18).contains(age), let (_, latest) = birthBounds(birthday) else { return nil }
         let today = CivilDate(date, timeZone: calendar.timeZone)
         let cutoff = CivilDate(year: today.year - (today.month < 9 ? 1 : 0), month: 9, day: 1)
-        let schoolAge = years(from: birth, to: cutoff)
+        let schoolAge = years(from: latest, to: cutoff)
         let grades = ["Kindergarten", "1st Grade", "2nd Grade", "3rd Grade", "4th Grade", "5th Grade", "6th Grade", "7th Grade", "8th Grade", "9th Grade", "10th Grade", "11th Grade", "12th Grade"]
         guard (5...17).contains(schoolAge) else { return nil }
-        return grades[schoolAge - 5]
+        return (birthday.isEstimated ? "~" : "") + grades[schoolAge - 5]
     }
     func validate(_ birthday: Birthday, on date: Date) throws {
         let today = CivilDate(date, timeZone: calendar.timeZone)
         switch birthday {
+        case .unknown: return
         case .exact(let birth):
-            guard birth.isValid, birth <= today, years(from: birth, to: today) <= 120 else { throw KinError.invalidBirthday }
+            guard birth.isValid, birth <= today else { throw KinError.invalidBirthday }
         case .estimated(let age, let reference):
-            guard reference.isValid, (0...120).contains(age), reference <= today, birthDate(for: birthday) != nil else { throw KinError.invalidBirthday }
-        case .legacyExact, .legacyEstimated: throw KinError.dateReviewRequired
+            guard reference.isValid, reference <= today, (0...120).contains(age), birthBounds(birthday) != nil else { throw KinError.invalidBirthday }
         }
     }
 }

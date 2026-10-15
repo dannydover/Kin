@@ -12,12 +12,7 @@ struct KinApp: App {
         WindowGroup {
             Group {
                 if let store {
-                    #if DEBUG
-                    if let previewScreen { DevelopmentPreview(store: store, screen: previewScreen, today: previewDate) }
-                    else { ContentView(store: store) }
-                    #else
                     ContentView(store: store)
-                    #endif
                 }
                 else if !lifecycle.isAvailable {
                     ContentUnavailableView("Notebook locked", systemImage: "lock", description: Text("Unlock your iPhone to open Kin."))
@@ -44,30 +39,23 @@ struct KinApp: App {
             }
         }
     }
-    #if DEBUG
-    private var previewScreen: String? {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let index = arguments.firstIndex(of: "--kin-preview"), arguments.indices.contains(index + 1) else { return nil }
-        return arguments[index + 1]
-    }
-    private var previewDate: Date { Date(timeIntervalSince1970: 1790899200) }
-    #endif
     private func load() {
         #if DEBUG
-        if let previewScreen {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--kin-preview") {
+            do { store = try KinStore(inMemory: true); loadError = nil } catch { loadError = error.localizedDescription }
+            return
+        }
+        if let index = arguments.firstIndex(of: "--kin-test-notebook") {
+            guard arguments.indices.contains(index + 1), let token = UUID(uuidString: arguments[index + 1]) else {
+                loadError = "The isolated test notebook identifier is invalid. The saved notebook has not been opened."
+                return
+            }
             do {
-                let preview = try KinStore(inMemory: true)
-                if previewScreen != "empty" {
-                    for var friend in DemoFamilies.make(on: previewDate, calendar: .current) {
-                        if previewScreen == "long-names" {
-                            friend.firstName = "Alexandria-Clementine"
-                            friend.lastName = "Willowbrook-Montgomery"
-                            for index in friend.children.indices { friend.children[index].firstName = "Christopher-Alexander" }
-                        }
-                        try preview.saveFriend(friend)
-                    }
-                }
-                store = preview; loadError = nil
+                let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+                let url = root.appendingPathComponent("KinTestNotebooks").appendingPathComponent(token.uuidString).appendingPathComponent("Kin.sqlite")
+                let notebook = try KinStore(storeURL: url, protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+                store = notebook; lifecycle.store = notebook; loadError = nil
             } catch { loadError = error.localizedDescription }
             return
         }

@@ -24,12 +24,12 @@ import Testing
         defer { try? store.close() }
         #expect(store.isClosed && !store.isReady)
         #expect(!FileManager.default.fileExists(atPath: url.path))
-        #expect(throws: NotebookAccessError.self) { try store.saveFriend(Friend(firstName: "Rowan", lastName: "Vale")) }
+        #expect(throws: NotebookAccessError.self) { try store.savePerson(Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))) }
         #expect(throws: NotebookAccessError.self) { try store.resume() }
         availability.available = true
         try store.resume()
         #expect(store.isReady)
-        #expect(store.friends.isEmpty)
+        #expect(store.people.isEmpty)
     }
 
     @Test("Repeated lock/unlock preserves saved families and an independent editor draft")
@@ -39,29 +39,29 @@ import Testing
         let availability = Availability()
         let store = try KinStore(storeURL: url, protectedDataAvailable: { availability.available })
         defer { try? store.close() }
-        let friend = Friend(firstName: "Rowan", lastName: "Vale")
-        try store.saveFriend(friend)
-        let partner = Partner(firstName: "Mira", lastName: "Vale")
-        try store.savePartner(partner, friendID: friend.id)
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         var draft = friend; draft.notes = "Unsaved fictional note"
         for _ in 0..<3 {
             // The warning arrives before UIApplication necessarily reports false.
             store.suspend()
-            #expect(throws: NotebookAccessError.self) { try store.saveFriend(draft) }
+            #expect(throws: NotebookAccessError.self) { try store.savePerson(draft) }
             availability.available = false
             #expect(store.isClosed && !store.isReady)
-            #expect(store.friends.first?.notes == "")
+            #expect(store.people.first?.notes == "")
             #expect(throws: NotebookAccessError.self) { try store.reload() }
-            #expect(throws: NotebookAccessError.self) { try store.deleteFriend(friend.id) }
-            #expect(throws: NotebookAccessError.self) { try store.entityCount("FriendRecord") }
+            #expect(throws: NotebookAccessError.self) { try store.deletePerson(friend.id) }
+            #expect(throws: NotebookAccessError.self) { try store.entityCount("PersonRecord") }
             availability.available = true
             try store.resume()
             try store.resume() // duplicate availability/foreground events are harmless
-            #expect(store.friends.first?.partners == [partner])
+            #expect(store.people.first?.id == friend.id)
         }
-        try store.saveFriend(draft)
-        #expect(store.friends.first?.notes == draft.notes)
-        #expect(store.friends.first?.partners == [partner])
+        try store.savePerson(draft)
+        draft = try store.person(draft.id)
+        #expect(store.people.first?.notes == draft.notes)
+        #expect(store.people.first?.id == friend.id)
     }
 
     @Test("Lock during save can be retried without loss or duplicate records", arguments: [false, true])
@@ -78,18 +78,20 @@ import Testing
             try context.save()
         })
         defer { try? store.close() }
-        var draft = Friend(firstName: "Rowan", lastName: "Vale")
-        try store.saveFriend(draft)
+        var draft = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))
+        try store.savePerson(draft)
+        draft = try store.person(draft.id)
         draft.notes = "Fictional revised note"
         availability.interruptSave = true
-        #expect(throws: NotebookAccessError.self) { try store.saveFriend(draft) }
+        #expect(throws: NotebookAccessError.self) { try store.savePerson(draft) }
         #expect(!store.isReady && store.isClosed)
         availability.available = true; availability.interruptSave = false
         try store.resume()
-        #expect(store.friends.first?.notes == (committed ? draft.notes : ""))
-        try store.saveFriend(draft)
-        #expect(try store.entityCount("FriendRecord") == 1)
-        #expect(store.friends.first == draft)
+        #expect(store.people.first?.notes == (committed ? draft.notes : ""))
+        try store.savePerson(draft)
+        draft = try store.person(draft.id)
+        #expect(try store.entityCount("PersonRecord") == 1)
+        #expect(store.people.first == draft)
     }
 
     @Test("A failed reopen leaves the database intact and remains retryable")
@@ -98,8 +100,9 @@ import Testing
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let store = try KinStore(storeURL: url)
         defer { try? store.close() }
-        let friend = Friend(firstName: "Rowan", lastName: "Vale")
-        try store.saveFriend(friend)
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         store.suspend()
         let holding = url.deletingLastPathComponent().appendingPathComponent("holding")
         try FileManager.default.moveItem(at: url, to: holding)
@@ -107,12 +110,12 @@ import Testing
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
         #expect(throws: (any Error).self) { try store.resume() }
         #expect(!store.isReady && store.recoveryError != nil)
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
         try FileManager.default.removeItem(at: url)
         try FileManager.default.moveItem(at: holding, to: url)
         try store.resume()
         #expect(store.isReady && store.recoveryError == nil)
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
     }
 
     @Test("Large external payloads survive repeated saves and suspend/reopen")
@@ -122,16 +125,18 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try KinStore(storeURL: url)
         defer { try? store.close() }
-        var friend = Friend(firstName: "Rowan", lastName: "Vale", photo: Data(repeating: 17, count: 2_000_000))
-        try store.saveFriend(friend)
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)), photo: Data(repeating: 17, count: 2_000_000))
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)!.allObjects.compactMap { $0 as? URL }
         #expect(files.contains { $0.path.contains("_EXTERNAL_DATA/") })
         store.suspend(); try store.resume()
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
         friend.photo = Data(repeating: 42, count: 2_000_001)
-        try store.saveFriend(friend)
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         store.suspend(); try store.resume()
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
     }
 
     #if os(iOS) && !targetEnvironment(simulator)
@@ -169,16 +174,17 @@ import Testing
                 #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.protectionKey] as? FileProtectionType == .complete)
             }
         }
-        var friend = Friend(firstName: "Rowan", lastName: "Vale", photo: Data(repeating: 17, count: 2_000_000))
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)), photo: Data(repeating: 17, count: 2_000_000))
         let old = try KinStore(storeURL: url)
-        try old.saveFriend(friend)
+        try old.savePerson(friend)
+        friend = try old.person(friend.id)
         try old.close()
         for file in try allFiles() {
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
         }
         let upgraded = try KinStore(storeURL: url)
         defer { try? upgraded.close() }
-        #expect(upgraded.friends == [friend])
+        #expect(upgraded.people == [friend])
         try expectComplete()
         #expect(FileManager.default.fileExists(atPath: url.path + "-wal"))
         #expect(FileManager.default.fileExists(atPath: url.path + "-shm"))
@@ -189,12 +195,13 @@ import Testing
         try Data("synthetic".utf8).write(to: probe)
         try expectComplete()
         friend.photo = Data(repeating: 42, count: 2_000_001)
-        try upgraded.saveFriend(friend)
+        try upgraded.savePerson(friend)
+        friend = try upgraded.person(friend.id)
         let laterPayloads = try allFiles().filter { $0.path.contains("_EXTERNAL_DATA/") }
         #expect(!Set(laterPayloads).subtracting(payloads).isEmpty)
         try expectComplete()
         upgraded.suspend(); try upgraded.resume()
-        #expect(upgraded.friends == [friend])
+        #expect(upgraded.people == [friend])
         try expectComplete()
     }
     #endif

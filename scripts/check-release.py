@@ -25,7 +25,7 @@ def main():
     executable = (app / info['CFBundleExecutable']).read_bytes()
     patterns = {
         'personal build path': rb'/(?:Users|home)/[^/\s]+|/(?:Volumes)/|/var/(?:folders)/',
-        'debug preview code': rb'--kin-preview|DemoFamilies|DevelopmentPreview',
+        'debug preview code': rb'--kin-preview|--kin-test-notebook|KinTestNotebooks|DemoFamilies|DevelopmentPreview',
     }
     for label, pattern in patterns.items():
         if re.search(pattern, executable):
