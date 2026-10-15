@@ -12,7 +12,9 @@ struct PersonEditor: View {
     @State private var birthKind: String
     @State private var exactDate: Date
     @State private var referenceDate: Date
-    @State private var estimatedAge: Int
+    @State private var estimatedAgeText: String
+    @FocusState private var ageFocused: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var pickingContact = false
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var photoGeneration = UUID()
@@ -25,45 +27,52 @@ struct PersonEditor: View {
         let value = person ?? Person()
         _draft = State(initialValue: value)
         let today = CivilDate(Date(), timeZone: .current).pickerDate
-        var kind = "unknown", exact = today, reference = today, age = 0
+        var kind = "unknown", exact = today, reference = today, age = ""
         switch value.birthday {
         case .unknown: break
         case .exact(let date): kind = "exact"; exact = date.pickerDate
-        case .estimated(let years, let date): kind = "estimated"; reference = date.pickerDate; age = years
+        case .estimated(let years, let date): kind = "estimated"; reference = date.pickerDate; age = String(years)
         }
         _birthKind = State(initialValue: kind); _exactDate = State(initialValue: exact)
-        _referenceDate = State(initialValue: reference); _estimatedAge = State(initialValue: age)
+        _referenceDate = State(initialValue: reference); _estimatedAgeText = State(initialValue: age)
     }
+    private var estimatedAge: Int? { AgeRules.estimatedAge(from: estimatedAgeText) }
+    private var ageInputValid: Bool { birthKind != "estimated" || estimatedAge != nil }
     private var birthday: Birthday {
         switch birthKind {
         case "exact": .exact(CivilDate(exactDate, timeZone: CivilDate.pickerCalendar.timeZone))
-        case "estimated": .estimated(age: estimatedAge, referenceDate: CivilDate(referenceDate, timeZone: CivilDate.pickerCalendar.timeZone))
+        case "estimated": estimatedAge.map { .estimated(age: $0, referenceDate: CivilDate(referenceDate, timeZone: CivilDate.pickerCalendar.timeZone)) } ?? .unknown
         default: .unknown
         }
     }
     private var photoAllowed: Bool { AgeRules(calendar: .current).allowsPhoto(birthday, on: Date()) }
-    private var needsRemoval: Bool { original?.photo != nil && original?.birthday != birthday && !photoAllowed }
+    private var needsRemoval: Bool { ageInputValid && original?.photo != nil && original?.birthday != birthday && !photoAllowed }
     private var connectionChosen: Bool { relationship != nil || !isNew || !draft.connections.isEmpty }
     var body: some View {
         Form {
-            Section {
-                Button("Import from Contacts") { pickingContact = true }
-            } footer: { Text("One-time name import. A photo is imported only when the entered age is safely 18 or older. Contacts never supplies an assumed age.") }
-            nameSection
-            connectionSection
-            ageSection
-            photoSection
-            Section("Notes") { TextField("The little things to remember", text: $draft.notes, axis: .vertical).lineLimit(4...10) }
+            Group {
+                Section {
+                    Button("Import from Contacts") { pickingContact = true }
+                } footer: { Text("One-time name import. A photo is imported only when the entered age is safely 18 or older. Contacts never supplies an assumed age.") }
+                nameSection
+                connectionSection
+                ageSection
+                photoSection
+                Section("Notes") { TextField("The little things to remember", text: $draft.notes, axis: .vertical).lineLimit(4...10) }
+            }.listRowBackground(KinTheme.editableFormRow)
         }
         .environment(\.calendar, CivilDate.pickerCalendar).environment(\.timeZone, CivilDate.pickerCalendar.timeZone)
         .kinForm().navigationTitle(isNew ? "Add person" : "Edit person").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(photoLoading || !connectionChosen) }
+            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(photoLoading || !connectionChosen || !ageInputValid) }
+            ToolbarItemGroup(placement: .keyboard) {
+                if ageFocused { Spacer(); Button("Done") { ageFocused = false } }
+            }
         }
-        .confirmationDialog("Remove the existing photo?", isPresented: $removalWarning, titleVisibility: .visible) {
-            Button("Remove photo and save", role: .destructive) { save(confirmed: true) }
-            Button("Keep editing", role: .cancel) { }
+        .alert("Remove the existing photo?", isPresented: $removalWarning) {
+            Button("Remove photo and save", role: .destructive) { save(confirmed: true) }.kinDestructiveText()
+            Button("Cancel", role: .cancel) { }
         } message: { Text("This age correction makes the person ineligible for photos. Saving will remove their photo. Canceling the editor preserves the saved photo and age.") }
         .sheet(isPresented: $pickingContact) {
             ContactPicker(includePhoto: photoAllowed) { snapshot in
@@ -83,11 +92,9 @@ struct PersonEditor: View {
     }
     private var nameSection: some View {
         Section("Name") {
-            if draft.nameUnknown { Label("Name unknown", systemImage: "person.crop.circle.badge.questionmark") }
             TextField("First name (optional)", text: Binding(get: { draft.firstName ?? "" }, set: { draft.firstName = $0.isEmpty ? nil : $0 })).textContentType(.givenName)
             TextField("Last name (optional)", text: Binding(get: { draft.lastName ?? "" }, set: { draft.lastName = $0.isEmpty ? nil : $0 })).textContentType(.familyName)
             Picker("Gender", selection: $draft.gender) { ForEach(Gender.allCases) { Text($0.rawValue.capitalized).tag($0) } }
-            if draft.nameUnknown { Text("A stable entry label identifies this person until you learn their name. Its number is a reference, not birth order.").font(.footnote).foregroundStyle(KinTheme.secondary) }
         }
     }
     private var connectionSection: some View {
@@ -110,7 +117,18 @@ struct PersonEditor: View {
                 DatePicker("Birthday", selection: $exactDate, in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
             }
             if birthKind == "estimated" {
-                Stepper("Age: \(estimatedAge) years", value: $estimatedAge, in: 0...120)
+                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 16))) {
+                    Text("Age in years")
+                    TextField("0–120", text: $estimatedAgeText)
+                        .keyboardType(.numberPad).focused($ageFocused)
+                        .multilineTextAlignment(typeSize.isAccessibilitySize ? .leading : .trailing)
+                        .accessibilityLabel("Estimated age in years")
+                        .accessibilityHint("Enter a whole number from 0 to 120")
+                }
+                if estimatedAge == nil {
+                    Text("Enter a whole number from 0 to 120.").font(.footnote)
+                        .foregroundStyle(estimatedAgeText.isEmpty ? KinTheme.secondary : Color(uiColor: .systemRed))
+                }
                 DatePicker("As of", selection: $referenceDate, in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
                 Text("~ means estimated. Kin keeps this age and as-of date, and advances the estimate on each as-of anniversary. It never invents a birthday. School grade is approximate; actual school placement can differ.").font(.footnote)
             }
@@ -123,7 +141,7 @@ struct PersonEditor: View {
                 InitialAvatar(first: draft.firstName ?? "?", last: draft.lastName ?? "", photo: draft.photo, gender: draft.gender, size: 64)
                 PhotosPicker(selection: $pickedPhoto, matching: .images) { Label(title, systemImage: "photo") }
                 if photoLoading { ProgressView("Loading photo") }
-                if draft.photo != nil { Button("Remove photo", role: .destructive) { photoGeneration = UUID(); pickedPhoto = nil; photoLoading = false; draft.photo = nil } }
+                if draft.photo != nil { Button("Remove photo", role: .destructive) { photoGeneration = UUID(); pickedPhoto = nil; photoLoading = false; draft.photo = nil }.kinDestructiveText() }
             } else {
                 Text(needsRemoval ? "Saving this age correction requires confirmation to remove the existing photo." : "Photos are available only for known ages of at least 18. Estimates must exclude every possible age under 18.")
             }
@@ -145,6 +163,7 @@ struct PersonEditor: View {
         }
     }
     private func save(confirmed: Bool = false) {
+        guard ageInputValid else { return }
         guard !needsRemoval || confirmed else { removalWarning = true; return }
         var value = draft; value.birthday = birthday
         if confirmed && !photoAllowed { value.photo = nil }

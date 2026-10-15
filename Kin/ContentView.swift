@@ -2,29 +2,45 @@ import SwiftUI
 
 struct ContentView: View {
     let store: KinStore
+    private enum PeopleScope { case yours, all }
+    @State private var scope = PeopleScope.yours
     @State private var query = ""
     @State private var adding = false
     @State private var showingAbout = false
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
+    private var hits: [Person] { PeopleIndex.results(store.people, query: query, includeUnlisted: scope == .all) }
+    private var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    NavigationLink("All people (including unlisted)") { AllPeopleView(store: store, today: today) }
-                } footer: { Text("People with a connection appear below. All people also includes entries saved through linked profiles.") }
-                Section("Your people") {
-                    let hits = PeopleIndex.results(store.people, query: query)
-                    if hits.isEmpty { Text(query.isEmpty ? "Add a person and choose your connection." : "No matches. Search All people for unlisted entries.").foregroundStyle(KinTheme.secondary) }
-                    ForEach(hits) { person in
-                        NavigationLink(value: person.id) { PersonRow(person: person, today: today) }
-                    }
+            Group {
+                if hits.isEmpty {
+                    if isSearching { noMatches }
+                    else { emptyState }
+                } else {
+                    List(hits) { person in
+                        NavigationLink(value: person.id) {
+                            if scope == .yours { FamilyIndexRow(person: person, store: store, today: today) }
+                            else { PersonRow(person: person, today: today, showsAge: false) }
+                        }
+                        .listRowBackground(KinTheme.background)
+                        .listRowSeparatorTint(KinTheme.border)
+                    }.listStyle(.plain)
                 }
             }
-            .kinForm().navigationTitle("Kin").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Find your people")
+            .kinForm().navigationTitle(scope == .yours ? "Kin" : "All people").navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: scope == .yours ? "Find your people" : "Find all people")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button { showingAbout = true } label: { Image(systemName: "info.circle") }.accessibilityLabel("About Kin") }
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button("Your people", systemImage: scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
+                        Button("All people", systemImage: scope == .all ? "checkmark" : "person.3") { switchScope(.all) }
+                        Button("About", systemImage: "info.circle") { showingAbout = true }
+                    } label: { Image(systemName: "line.3.horizontal") }
+                    .accessibilityLabel("Navigation menu")
+                    .accessibilityHint(scope == .yours ? "Showing Your people" : "Showing All people")
+                    .accessibilityIdentifier("people-menu")
+                }
                 ToolbarItem(placement: .primaryAction) { Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add person") }
             }
             .navigationDestination(for: UUID.self) { id in PersonDetail(store: store, personID: id, today: today).id(id) }
@@ -34,15 +50,89 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in today = Date() }
         }.notebookAvailability(store)
     }
+    private func switchScope(_ selection: PeopleScope) { scope = selection; query = "" }
+    private var emptyState: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                Image("notebook").renderingMode(.template).resizable().scaledToFit()
+                    .foregroundStyle(KinTheme.accent).frame(width: 124, height: 124).accessibilityHidden(true)
+                VStack(spacing: 12) {
+                    Text(store.people.isEmpty ? "Keep your people close." : "Your people is empty")
+                        .font(.largeTitle).fontDesign(.serif).multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(store.people.isEmpty
+                         ? "Names, ages, and the little things you want to remember. A small, private notebook for the people in your life."
+                         : "People with a Friend, Family, or Colleague connection appear here. Your saved entries are still in All people, in the menu.")
+                        .font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
+                }.fixedSize(horizontal: false, vertical: true)
+                if store.people.isEmpty {
+                    Button { adding = true } label: {
+                        Label("Add your first person", systemImage: "plus").foregroundStyle(KinTheme.background).frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.borderedProminent).controlSize(.large)
+                } else {
+                    Button { switchScope(.all) } label: {
+                        Label("Browse all people", systemImage: "person.3").frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.bordered).controlSize(.large)
+                }
+                Label("Private, on your iPhone", systemImage: "lock")
+                    .font(.caption).foregroundStyle(KinTheme.secondary)
+            }.padding(28).padding(.top, 32).frame(maxWidth: 520).frame(maxWidth: .infinity)
+        }
+    }
+    private var noMatches: some View {
+        ContentUnavailableView {
+            Label("No matches", systemImage: "magnifyingglass")
+        } description: {
+            Text(scope == .yours ? "Try another name or stable entry label. Unlisted entries are in All people." : "Try another name or stable entry label.")
+        } actions: {
+            if scope == .yours { Button("Search all people") { scope = .all } }
+        }
+    }
 }
-struct AllPeopleView: View {
+/// Index previews follow explicit parent links only; partner links imply no children.
+struct FamilyIndexRow: View {
+    let person: Person
     let store: KinStore
     let today: Date
-    @State private var query = ""
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var previewAvatarSize = 40.0
+    private var rules: AgeRules { AgeRules(calendar: .current) }
+    private var children: [Person] {
+        let ids = Set(store.parentLinks.filter { $0.parentID == person.id }.map(\.childID))
+        return store.people.filter { ids.contains($0.id) }.sorted { $0.reference < $1.reference }
+    }
+    private var partners: [Person] {
+        let ids = Set(store.partnerLinks.filter { ($0.firstID == person.id || $0.secondID == person.id) && $0.status == .current }.map { $0.other(than: person.id) })
+        return store.people.filter { ids.contains($0.id) }.sorted { $0.reference < $1.reference }
+    }
     var body: some View {
-        List(PeopleIndex.results(store.people, query: query, includeUnlisted: true)) { person in
-            NavigationLink(value: person.id) { PersonRow(person: person, today: today) }
-        }.kinForm().navigationTitle("All people").searchable(text: $query, prompt: "Name or stable entry label")
+        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
+            PersonAvatar(person: person, today: today)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(person.displayName).font(.headline).fontDesign(.serif).fixedSize(horizontal: false, vertical: true)
+                if children.isEmpty {
+                    Text(partners.isEmpty ? "No children added yet" : "With " + partners.map(\.displayName).joined(separator: ", "))
+                        .font(.subheadline).foregroundStyle(KinTheme.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible(), alignment: .leading)] : [GridItem(.adaptive(minimum: 125), alignment: .leading)], alignment: .leading, spacing: 12) {
+                        ForEach(children.prefix(3)) { child in
+                            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))) {
+                                PersonAvatar(person: child, today: today, size: previewAvatarSize)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(child.displayName).font(.subheadline).foregroundStyle(KinTheme.secondary)
+                                    Text(rules.displayAge(for: child.birthday, on: today)).font(.title3).fontDesign(.serif)
+                                    if let grade = rules.grade(for: child.birthday, on: today) {
+                                        Text("Approx. " + grade).font(.caption).foregroundStyle(KinTheme.secondary)
+                                    }
+                                }.fixedSize(horizontal: false, vertical: true)
+                            }.accessibilityElement(children: .combine)
+                                .accessibilityIdentifier("child-preview-" + child.id.uuidString)
+                        }
+                        if children.count > 3 { Text("+\(children.count - 3) more").font(.caption).foregroundStyle(KinTheme.secondary) }
+                    }
+                }
+            }
+        }.padding(.vertical, 16)
     }
 }
 struct PersonAvatar: View {
@@ -60,14 +150,14 @@ struct PersonAvatar: View {
 struct PersonRow: View {
     let person: Person
     let today: Date
+    var showsAge = true
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))) {
             PersonAvatar(person: person, today: today)
             VStack(alignment: .leading, spacing: 5) {
                 Text(person.displayName).font(.headline).fontDesign(.serif)
-                if person.nameUnknown { Text("Name unknown").font(.caption) }
-                Text(AgeRules(calendar: .current).displayAge(for: person.birthday, on: today)).font(.subheadline).foregroundStyle(KinTheme.secondary)
+                if showsAge { Text(AgeRules(calendar: .current).displayAge(for: person.birthday, on: today)).font(.subheadline).foregroundStyle(KinTheme.secondary) }
             }
         }.padding(.vertical, 8)
     }

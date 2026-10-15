@@ -9,6 +9,13 @@ enum LifeStage: String, CaseIterable, Codable, Sendable {
 struct AgeRules: Sendable {
     let calendar: Calendar
     init(calendar: Calendar) { self.calendar = CivilDate.gregorian(in: calendar.timeZone) }
+    static let estimatedAgeRange = 0...120
+    static func estimatedAge(from text: String) -> Int? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) }),
+              let age = Int(value), estimatedAgeRange.contains(age) else { return nil }
+        return age
+    }
     private func years(from start: CivilDate, to end: CivilDate) -> Int {
         end.year - start.year - ((end.month, end.day) < (start.month, start.day) ? 1 : 0)
     }
@@ -18,7 +25,7 @@ struct AgeRules: Sendable {
         case .unknown: return nil
         case .exact(let day): return day.isValid ? (day, day) : nil
         case .estimated(let age, let reference):
-            guard reference.isValid, (0...120).contains(age), reference.year > age + 1 else { return nil }
+            guard reference.isValid, Self.estimatedAgeRange.contains(age), reference.year > age + 1 else { return nil }
             let cal = CivilDate.pickerCalendar
             guard let oldest = cal.date(byAdding: .year, value: -age - 1, to: reference.pickerDate),
                   let earliest = cal.date(byAdding: .day, value: 1, to: oldest),
@@ -48,6 +55,11 @@ struct AgeRules: Sendable {
         guard let age = age(for: birthday, on: date) else { return "Age unknown" }
         return "\(birthday.isEstimated ? "~" : "")\(age) years"
     }
+    // Profile presentation only; this never changes stored relationship records.
+    func showsPartnerAndChildSections(for birthday: Birthday, on date: Date) -> Bool {
+        guard let age = age(for: birthday, on: date) else { return true }
+        return age >= 16
+    }
     func allowsPhoto(_ birthday: Birthday, on date: Date) -> Bool {
         guard birthday.isStructurallyValid, let range = ageRange(for: birthday, on: date) else { return false }
         return range.lowerBound >= 18 && (age(for: birthday, on: date) ?? 0) >= 18
@@ -68,7 +80,7 @@ struct AgeRules: Sendable {
         case .exact(let birth):
             guard birth.isValid, birth <= today else { throw KinError.invalidBirthday }
         case .estimated(let age, let reference):
-            guard reference.isValid, reference <= today, (0...120).contains(age), birthBounds(birthday) != nil else { throw KinError.invalidBirthday }
+            guard reference.isValid, reference <= today, Self.estimatedAgeRange.contains(age), birthBounds(birthday) != nil else { throw KinError.invalidBirthday }
         }
     }
 }

@@ -33,6 +33,23 @@ private func adult(_ name: String = "Synthetic") -> Person {
         #expect(PeopleIndex.results(reopened.people, query: "Revised").count == 1)
         #expect(try reopened.entityCount("PersonRecord") == 3)
     }
+    @Test("Correcting a profile to under sixteen preserves every explicit relationship on reopen")
+    func youngerProfilePreservesRelationships() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("people.sqlite")
+        let store = try KinStore(storeURL: url)
+        let a = adult("Synthetic A"), b = adult("Synthetic B"), c = Person()
+        for person in [a,b,c] { try store.savePerson(person) }
+        let parent = ParentLink(parentID: a.id, childID: c.id), partner = PartnerLink(firstID: a.id, secondID: b.id)
+        try store.saveParentLink(parent); try store.savePartnerLink(partner)
+        var edit = try store.person(a.id); edit.birthday = .estimated(age: 15, referenceDate: testDay)
+        try store.savePerson(edit); try store.close()
+        let reopened = try KinStore(storeURL: url); defer { try? reopened.close() }
+        #expect(reopened.parentLinks == [parent]); #expect(reopened.partnerLinks == [partner])
+        #expect(reopened.people.count == 3)
+        #expect(!AgeRules(calendar: utc).showsPartnerAndChildSections(for: try reopened.person(a.id).birthday, on: testNow))
+    }
     @Test("Unlinking never deletes people; deletion removes only incident links and the person's photo")
     func deletion() throws {
         let store = try KinStore(inMemory: true); defer { try? store.close() }

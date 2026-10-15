@@ -16,20 +16,35 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
 - One authoritative Person with a stable identity, optional names, gender, notes,
   optional protected adult photo, and unknown, exact, or estimated birth information.
 - Independent Friend, Family, and Colleague connections under Your connection.
-  Any selected connection puts a person on the combined index once. All people
-  provides searchable recovery for unlisted entries and disconnected profiles.
+  Any selected connection puts a person on the combined index once. All people,
+  available from the navigation menu, provides searchable recovery for unlisted
+  entries and disconnected profiles. Your people is the default menu view; About
+  is available in the same menu.
 - Explicit parent links (biological, adoptive, step, unspecified) and mutual partner
   links (current, former, unknown), with reuse of existing people or atomic create/link.
+  New partner links default to Current; explicit Former/Unknown choices are retained.
+  Selecting an existing person opens an unsaved relationship editor with Save/Cancel.
+- Your people index previews explicitly linked children with age and approximate
+  school-grade cues; the indexed person’s own age stays on their profile.
 - Shared Add/Edit workflows, one-time Contacts imports, and explicit Save/Cancel.
 - Local Core Data SQLite storage with Complete Protection and failure recovery.
 - Adaptive system controls and accessibility labels, including larger text.
 
-Unknown first names display “Name unknown.” Such entries use a permanent
+Leave an unknown first name blank; whitespace-only first names are also treated
+as unknown. There is no separate unknown-name control. These entries use a permanent
 context label such as “Child 3.” Numbers are notebook references, never birth order.
 Naming later preserves identity and all links. Labels stay stable across profiles.
 Top-level additions require a connection choice; linked additions start unlisted.
 Editing connections later can remove a person from the index without deleting them.
+Profiles with a recorded current age under 16 hide Partners and Children, including
+their add controls; Parents and all stored links remain. Unknown ages are not assumed
+to be under 16. This display rule is separate from the adult-photo requirement.
 
+Estimated ages accept direct whole-number entry from 0 to 120, with a number keypad
+and Done action. Empty or invalid input disables Save without changing the saved age.
+Age corrections requiring photo removal present explicit Cancel and Remove photo
+and save actions. Cancel keeps the correction as an unsaved draft. Person deletion
+and relationship removal also have visible Cancel actions.
 Estimates retain the entered age and civil as-of date. The displayed ~age advances
 on each as-of anniversary; no birthday is fabricated or persisted. Grades use the
 existing September school-year convention and are explicitly approximate, especially
@@ -230,3 +245,8 @@ about earlier backups. Revisit this design before background sync, widgets, or s
 Apple references: [Data Protection classes](https://support.apple.com/guide/security/secb010e978a/web),
 [Core Data protection option](https://developer.apple.com/documentation/coredata/nspersistentstorefileprotectionkey),
 and [protected-data lifecycle callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationprotecteddatawillbecomeunavailable(_:)).
+
+Native photo-warning UI regression tests use synthetic simulator Photos fixtures.
+Seed an isolated simulator with `xcrun simctl addmedia <simulator-id> <synthetic-image>`
+before running that test; it reports a skip if the simulator has no image available.
+Never use a personal photo library for automated UI validation.

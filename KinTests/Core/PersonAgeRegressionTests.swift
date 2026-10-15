@@ -7,6 +7,25 @@ private func regressionDay(_ year: Int, _ month: Int, _ day: Int, zone: TimeZone
     CivilDate.gregorian(in: zone).date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
 }
 @Suite("Retained civil age and presentation regressions") struct PersonAgeRegressionTests {
+    @Test("Profile relationship sections use recorded age with an independent sixteen boundary", arguments: [
+        (Birthday.unknown, CivilDate(year: 2026, month: 10, day: 15), true),
+        (.exact(CivilDate(year: 2010, month: 10, day: 15)), CivilDate(year: 2026, month: 10, day: 14), false),
+        (.exact(CivilDate(year: 2010, month: 10, day: 15)), CivilDate(year: 2026, month: 10, day: 15), true),
+        (.estimated(age: 15, referenceDate: CivilDate(year: 2025, month: 10, day: 15)), CivilDate(year: 2026, month: 10, day: 14), false),
+        (.estimated(age: 15, referenceDate: CivilDate(year: 2025, month: 10, day: 15)), CivilDate(year: 2026, month: 10, day: 15), true),
+        (.estimated(age: 16, referenceDate: CivilDate(year: 2026, month: 10, day: 15)), CivilDate(year: 2026, month: 10, day: 15), true)
+    ])
+    func profileSections(_ birth: Birthday, _ day: CivilDate, _ expected: Bool) {
+        let rules = AgeRules(calendar: regressionCalendar)
+        #expect(rules.showsPartnerAndChildSections(for: birth, on: day.pickerDate) == expected)
+        #expect(!rules.allowsPhoto(birth, on: day.pickerDate))
+    }
+    @Test("Direct estimated age input accepts complete years without overflow or empty coercion", arguments: [
+        ("0", 0 as Int?), ("80", 80), ("120", 120), (" 80 ", 80),
+        ("", nil), ("   ", nil), ("-1", nil), ("121", nil), ("8.5", nil), ("age80", nil),
+        ("9999999999999999999999999999999999999", nil)
+    ])
+    func directAgeInput(_ text: String, _ expected: Int?) { #expect(AgeRules.estimatedAge(from: text) == expected) }
     @Test("Every school grade remains mapped correctly", arguments: [
         (4, nil as String?), (5, "Kindergarten"), (6, "1st Grade"), (7, "2nd Grade"), (8, "3rd Grade"),
         (9, "4th Grade"), (10, "5th Grade"), (11, "6th Grade"), (12, "7th Grade"), (13, "8th Grade"),
