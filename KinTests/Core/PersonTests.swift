@@ -11,6 +11,51 @@ private func adult(_ name: String = "Synthetic") -> Person {
 }
 @MainActor private final class FailureSwitch { var enabled = false }
 @Suite("Person identity and graph") @MainActor struct PersonTests {
+    @Test("Add parent creates the directed link atomically, keeps one stable identity, and persists every parent type", arguments: Parentage.allCases)
+    func addParent(parentage: Parentage) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("people.sqlite")
+        let store = try KinStore(storeURL: url)
+        let child = Person(firstName: "Synthetic Child", birthday: .estimated(age: 3, referenceDate: testDay), connections: [.family])
+        let parent = Person(), existing = adult("Synthetic Existing Parent")
+        try store.savePerson(child)
+        try store.savePerson(parent, relationship: .parent(of: child.id, parentage: parentage))
+        try store.savePerson(existing)
+        try store.saveParentLink(ParentLink(parentID: existing.id, childID: child.id, parentage: .adoptive))
+        let saved = try store.person(parent.id)
+        #expect(saved.firstName == nil && saved.displayName == "Parent 2" && saved.connections.isEmpty)
+        #expect(PeopleIndex.results(store.people, query: "").count == 2)
+        #expect(store.parentLinks.count == 2)
+        #expect(store.parentLinks.contains { $0.parentID == parent.id && $0.childID == child.id && $0.parentage == parentage })
+        var named = saved; named.firstName = "Named later"; named.notes = "Fictional parent note"
+        try store.savePerson(named)
+        try store.close()
+        let reopened = try KinStore(storeURL: url); defer { try? reopened.close() }
+        #expect(reopened.people.count == 3 && reopened.parentLinks.count == 2)
+        var unnamed = try reopened.person(parent.id); unnamed.firstName = nil
+        try reopened.savePerson(unnamed)
+        #expect(try reopened.person(parent.id).displayName == "Parent 2")
+        #expect(try reopened.person(parent.id).notes == "Fictional parent note")
+        let link = try #require(reopened.parentLinks.first { $0.parentID == parent.id })
+        try reopened.unlinkParent(link.id)
+        #expect(reopened.people.count == 3 && reopened.parentLinks.count == 1)
+        #expect(try reopened.person(existing.id).id == existing.id)
+    }
+    @Test("Add parent rejects missing children, self links, duplicates, and ancestry cycles before changing people")
+    func addParentInvariants() throws {
+        let store = try KinStore(inMemory: true); defer { try? store.close() }
+        let a = Person(), b = Person(), c = Person()
+        for person in [a,b,c] { try store.savePerson(person) }
+        try store.saveParentLink(ParentLink(parentID: a.id, childID: b.id))
+        try store.saveParentLink(ParentLink(parentID: b.id, childID: c.id))
+        let before = store.people
+        #expect(throws: KinError.invalidLink) { try store.savePerson(try store.person(a.id), relationship: .parent(of: a.id, parentage: .step)) }
+        #expect(throws: KinError.invalidLink) { try store.savePerson(try store.person(a.id), relationship: .parent(of: b.id, parentage: .adoptive)) }
+        #expect(throws: KinError.cycle) { try store.savePerson(try store.person(c.id), relationship: .parent(of: a.id, parentage: .biological)) }
+        #expect(throws: KinError.missingPerson) { try store.savePerson(Person(), relationship: .parent(of: UUID(), parentage: .unspecified)) }
+        #expect(store.people == before && store.parentLinks.count == 2)
+    }
     @Test("One identity shared across friendships, partnerships and parent links persists after relaunch")
     func sharedIdentity() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

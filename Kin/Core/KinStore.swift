@@ -3,6 +3,7 @@ import CoreData
 import Observation
 
 enum NewRelationship: Equatable {
+    case parent(of: UUID, parentage: Parentage)
     case child(of: UUID, parentage: Parentage)
     case partner(of: UUID, status: PartnerStatus)
 }
@@ -165,7 +166,7 @@ enum NewRelationship: Equatable {
         // A save can commit before a later read fails. Never replay it automatically.
         // Reopen and reload the committed state before the user chooses to retry.
         suspend()
-        recoveryError = protectedDataAvailable() ? "The operation couldn’t finish. Reopen your notebook to check what was saved, then try again." : nil
+        recoveryError = protectedDataAvailable() ? "Kin couldn’t finish that change. Open your notebook again to check what was saved, then try again." : nil
         return protectedDataAvailable() ? error : NotebookAccessError.locked
     }
 
@@ -191,7 +192,7 @@ enum NewRelationship: Equatable {
         let decoded = try personRecords.map { object -> Person in
             var person: Person = try decode(object)
             guard object.value(forKey: "id") as? UUID == person.id, person.reference > 0, person.revision > 0, person.revision < Int.max,
-                  ["Person", "Child", "Partner"].contains(person.unnamedRole), person.birthday.isStructurallyValid else { throw KinError.invalidData }
+                  ["Person", "Parent", "Child", "Partner"].contains(person.unnamedRole), person.birthday.isStructurallyValid else { throw KinError.invalidData }
             person.photo = includePhotos ? object.value(forKey: "photo") as? Data : nil
             return person
         }
@@ -245,6 +246,8 @@ enum NewRelationship: Equatable {
                 guard retry == old else { throw KinError.staleEdit }
                 if let relationship {
                     switch relationship {
+                    case .parent(let id, let kind):
+                        guard parentLinks.contains(where: { $0.parentID == draft.id && $0.childID == id && $0.parentage == kind }) else { throw KinError.staleEdit }
                     case .child(let id, let kind):
                         guard parentLinks.contains(where: { $0.parentID == id && $0.childID == draft.id && $0.parentage == kind }) else { throw KinError.staleEdit }
                     case .partner(let id, let status):
@@ -273,6 +276,9 @@ enum NewRelationship: Equatable {
         var parent: ParentLink?, partner: PartnerLink?
         if let relationship {
             switch relationship {
+            case .parent(let id, let kind):
+                _ = try person(id); parent = ParentLink(parentID: value.id, childID: id, parentage: kind)
+                try validateParent(parent!, against: parentLinks)
             case .child(let id, let kind):
                 _ = try person(id); parent = ParentLink(parentID: id, childID: value.id, parentage: kind)
                 try validateParent(parent!, against: parentLinks)
@@ -286,7 +292,7 @@ enum NewRelationship: Equatable {
                 let state = try records("NotebookState").first ?? NSEntityDescription.insertNewObject(forEntityName: "NotebookState", into: context)
                 let next: Int = state.isInserted ? 1 : try decode(state)
                 value.reference = next
-                value.unnamedRole = if case .child = relationship { "Child" } else if case .partner = relationship { "Partner" } else { "Person" }
+                value.unnamedRole = if case .parent = relationship { "Parent" } else if case .child = relationship { "Child" } else if case .partner = relationship { "Partner" } else { "Person" }
                 try encode(next + 1, id: Self.stateID, into: state)
             }
             value.revision += 1

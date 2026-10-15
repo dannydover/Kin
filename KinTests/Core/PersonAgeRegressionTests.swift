@@ -20,12 +20,15 @@ private func regressionDay(_ year: Int, _ month: Int, _ day: Int, zone: TimeZone
         #expect(rules.showsPartnerAndChildSections(for: birth, on: day.pickerDate) == expected)
         #expect(!rules.allowsPhoto(birth, on: day.pickerDate))
     }
-    @Test("Direct estimated age input accepts complete years without overflow or empty coercion", arguments: [
-        ("0", 0 as Int?), ("80", 80), ("120", 120), (" 80 ", 80),
-        ("", nil), ("   ", nil), ("-1", nil), ("121", nil), ("8.5", nil), ("age80", nil),
-        ("9999999999999999999999999999999999999", nil)
-    ])
-    func directAgeInput(_ text: String, _ expected: Int?) { #expect(AgeRules.estimatedAge(from: text) == expected) }
+    @Test("Estimated age boundaries remain zero through 120", arguments: [0,80,120,-1,121,Int.max])
+    func estimatedAgeBoundaries(_ age: Int) {
+        let birthday = Birthday.estimated(age: age,referenceDate: CivilDate(year: 2026,month: 10,day: 15))
+        if (0...120).contains(age) {
+            #expect(throws: Never.self) { try AgeRules(calendar: regressionCalendar).validate(birthday,on: regressionDay(2026,10,15)) }
+        } else {
+            #expect(throws: (any Error).self) { try AgeRules(calendar: regressionCalendar).validate(birthday,on: regressionDay(2026,10,15)) }
+        }
+    }
     @Test("Every school grade remains mapped correctly", arguments: [
         (4, nil as String?), (5, "Kindergarten"), (6, "1st Grade"), (7, "2nd Grade"), (8, "3rd Grade"),
         (9, "4th Grade"), (10, "5th Grade"), (11, "6th Grade"), (12, "7th Grade"), (13, "8th Grade"),

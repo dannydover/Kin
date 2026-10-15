@@ -1,7 +1,7 @@
 import SwiftUI
 
 private enum DetailSheet: String, Identifiable {
-    case edit, child, partner
+    case edit, parent, child, partner
     var id: String { rawValue }
 }
 struct PersonDetail: View {
@@ -30,8 +30,9 @@ struct PersonDetail: View {
                 if let person = store.people.first(where: { $0.id == personID }) {
                     switch route {
                     case .edit: PersonEditor(store: store, person: person)
-                    case .child: AddRelationshipView(store: store, sourceID: personID, child: true)
-                    case .partner: AddRelationshipView(store: store, sourceID: personID, child: false)
+                    case .parent: AddRelationshipView(store: store, sourceID: personID, kind: .parent)
+                    case .child: AddRelationshipView(store: store, sourceID: personID, kind: .child)
+                    case .partner: AddRelationshipView(store: store, sourceID: personID, kind: .partner)
                     }
                 }
             }
@@ -47,7 +48,7 @@ struct PersonDetail: View {
                     PersonRow(person: person, today: today)
                     if let grade = AgeRules(calendar: .current).grade(for: person.birthday, on: today) { Text("Approximate school grade: \(grade)") }
                     Text("Gender: \(person.gender.rawValue.capitalized)")
-                    Text(person.connections.isEmpty ? "Unlisted · available in All people" : "Your connection: " + person.connections.map { $0.rawValue.capitalized }.sorted().joined(separator: ", "))
+                    Text(person.connections.isEmpty ? "Not in Your people · find in All people" : "Your connection: " + person.connections.map { $0.rawValue.capitalized }.sorted().joined(separator: ", "))
                     if case .exact(let date) = person.birthday { Text("Birthday: \(date.formatted())") }
                     if case .estimated(let age, let reference) = person.birthday {
                         Text("Estimated \(age) as of \(reference.formatted())")
@@ -72,6 +73,7 @@ struct PersonDetail: View {
                     ForEach(store.parentLinks.filter { $0.childID == personID }) { link in
                         relationshipRow(link.parentID, subtitle: "\(link.parentage.rawValue.capitalized) parent") { parentEdit = link }
                     }
+                    Button("Add parent") { sheet = .parent }
                 }
                 Section {
                     Button("Delete person", role: .destructive) { deleting = true }.kinDestructiveText()
@@ -80,10 +82,10 @@ struct PersonDetail: View {
         }.kinForm().navigationTitle(person.displayName).navigationBarTitleDisplayMode(.inline)
             .alert("Delete \(person.displayName)?", isPresented: $deleting) {
                 Button("Delete person", role: .destructive) {
-                    do { try store.deletePerson(personID); dismiss() } catch { self.error = error.localizedDescription }
+                    do { try store.deletePerson(personID); dismiss() } catch { self.error = UserFacingError.message(error) }
                 }.kinDestructiveText().accessibilityIdentifier("confirm-delete-person")
                 Button("Cancel", role: .cancel) { }
-            } message: { Text("Removes this person, their photo, notes, and incident relationships. Other people stay in Kin and remain available in All people.") }
+            } message: { Text("Deletes this person’s details, photo, and relationships. Other people won’t be deleted. You can still find them in All people.") }
     }
     @ViewBuilder private func relationshipRow(_ id: UUID, subtitle: String, edit: @escaping () -> Void) -> some View {
         if let person = store.people.first(where: { $0.id == id }) {
@@ -95,27 +97,43 @@ struct PersonDetail: View {
         }
     }
 }
+enum AddRelationshipKind {
+    case parent, child, partner
+    var title: String {
+        switch self {
+        case .parent: "Add parent"
+        case .child: "Add child"
+        case .partner: "Add partner"
+        }
+    }
+}
 struct AddRelationshipView: View {
     let store: KinStore
     let sourceID: UUID
-    let child: Bool
+    let kind: AddRelationshipKind
     @State private var query = ""
     @State private var parentage: Parentage = .unspecified
     @State private var status: PartnerStatus = .current
     @Environment(\.dismiss) private var dismiss
-    private var relationship: NewRelationship { child ? .child(of: sourceID, parentage: parentage) : .partner(of: sourceID, status: status) }
+    private var relationship: NewRelationship {
+        switch kind {
+        case .parent: .parent(of: sourceID, parentage: parentage)
+        case .child: .child(of: sourceID, parentage: parentage)
+        case .partner: .partner(of: sourceID, status: status)
+        }
+    }
     var body: some View {
         List {
             Group {
-                Section { relationshipPickers(child: child, parentage: $parentage, status: $status) }
+                Section { relationshipPickers(child: kind != .partner, parentage: $parentage, status: $status) }
                 Section {
                     NavigationLink("Create new person") { PersonEditor(store: store, relationship: relationship, onSaved: { dismiss() }) }
-                } footer: { Text("New child and partner entries start unlisted. Their profile lets you add a connection at any time.") }
+                } footer: { Text("New people added here don’t appear in Your people until you choose Friend, Family, or Colleague on their profile.") }
                 Section("Link an existing person") {
                     ForEach(PeopleIndex.results(store.people, query: query, includeUnlisted: true).filter { $0.id != sourceID }) { person in
                         NavigationLink {
-                            if child {
-                                RelationshipEditor(store: store, parent: ParentLink(parentID: sourceID, childID: person.id, parentage: parentage), isNew: true, onSaved: { dismiss() })
+                            if kind != .partner {
+                                RelationshipEditor(store: store, parent: ParentLink(parentID: kind == .parent ? person.id : sourceID, childID: kind == .parent ? sourceID : person.id, parentage: parentage), isNew: true, onSaved: { dismiss() })
                             } else {
                                 RelationshipEditor(store: store, partner: PartnerLink(firstID: sourceID, secondID: person.id, status: status), isNew: true, onSaved: { dismiss() })
                             }
@@ -123,7 +141,7 @@ struct AddRelationshipView: View {
                     }
                 }
             }.listRowBackground(KinTheme.editableFormRow)
-        }.kinForm().navigationTitle(child ? "Add child" : "Add partner").searchable(text: $query, prompt: "Find an existing person")
+        }.kinForm().navigationTitle(kind.title).searchable(text: $query, prompt: "Find an existing person")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .notebookAvailability(store)
     }
@@ -157,10 +175,10 @@ struct RelationshipEditor: View {
                 }
                 relationshipPickers(child: parent != nil, parentage: $parentage, status: $status)
                 if isNew {
-                    Text("The relationship is added only when you save.").font(.footnote)
+                    Text("Save to add this relationship.").font(.footnote)
                 } else {
                     Button("Remove relationship", role: .destructive) { removing = true }.kinDestructiveText()
-                    Text("Removing a link preserves both people and their information.").font(.footnote)
+                    Text("Removes only this relationship. Both people and their details stay.").font(.footnote)
                 }
             }.listRowBackground(KinTheme.editableFormRow)
         }.kinForm().navigationTitle(isNew ? "Add relationship" : "Edit relationship")
@@ -174,7 +192,7 @@ struct RelationshipEditor: View {
                         if let parent { try store.unlinkParent(parent.id) }
                         if let partner { try store.unlinkPartner(partner.id) }
                         dismiss()
-                    } catch { self.error = error.localizedDescription }
+                    } catch { self.error = UserFacingError.message(error) }
                 }.kinDestructiveText().accessibilityIdentifier("confirm-unlink")
                 Button("Cancel", role: .cancel) { }
             } message: { Text("Both people remain available in All people.") }
@@ -191,12 +209,12 @@ struct RelationshipEditor: View {
                 partner.status = status; try store.savePartnerLink(partner)
             }
             if let onSaved { onSaved() } else { dismiss() }
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = UserFacingError.message(error) }
     }
 }
 @ViewBuilder private func relationshipPickers(child: Bool, parentage: Binding<Parentage>, status: Binding<PartnerStatus>) -> some View {
     if child {
-        Picker("Parentage", selection: parentage) { ForEach(Parentage.allCases) { Text($0.rawValue.capitalized).tag($0) } }
+        Picker("Parent relationship", selection: parentage) { ForEach(Parentage.allCases) { Text($0.rawValue.capitalized).tag($0) } }
     } else {
         Picker("Partner status", selection: status) { ForEach(PartnerStatus.allCases) { Text($0.rawValue.capitalized).tag($0) } }
     }

@@ -81,16 +81,16 @@ enum KinError: LocalizedError, Equatable {
     case invalidName, invalidBirthday, missingPerson, invalidLink, cycle, invalidData, incompatibleStore, photoNotAllowed, photoRemovalRequired, staleEdit
     var errorDescription: String? {
         switch self {
-        case .invalidName: "Names must be 200 characters or fewer. Leave unknown names blank."
-        case .invalidBirthday: "Use a valid date on or before today and an age from 0 to 120."
-        case .missingPerson: "This person is no longer available."
-        case .invalidLink: "Choose two different existing people. This relationship may already exist."
-        case .cycle: "A person cannot be their own ancestor. Review the parent links."
-        case .invalidData: "Kin couldn’t read the saved notebook. Your data has not been reset."
-        case .incompatibleStore: "This notebook uses an earlier or unsupported format. It has been left untouched. An explicit reset must be coordinated before using this version."
-        case .photoNotAllowed: "Photos require a known age of at least 18. Every age represented by an estimate must be at least 18."
-        case .photoRemovalRequired: "This age change requires removing the existing photo. Confirm removal before saving."
-        case .staleEdit: "This person changed while the editor was open. Cancel and reopen to review the saved information."
+        case .invalidName: "Please shorten each name to 200 characters or less. You can leave a name blank if you don’t know it."
+        case .invalidBirthday: "Choose a valid date that isn’t in the future. Enter an age between 0 and 120 for an estimate."
+        case .missingPerson: "This person is no longer in your notebook. Go back to All people to check."
+        case .invalidLink: "Choose two different people who are already saved. If they’re already linked, edit that relationship instead."
+        case .cycle: "This would make someone their own ancestor. Check the parent and child you selected."
+        case .invalidData: "Kin couldn’t read your saved notebook. Your data hasn’t been reset. Try opening it again."
+        case .incompatibleStore: "This version of Kin can’t open this notebook’s format. Your data hasn’t been changed. Keep it until you’ve decided whether to use another version or arrange a reset."
+        case .photoNotAllowed: "Kin can only keep photos when we can be sure the person is at least 18. Check their birthday or estimate, or remove the photo."
+        case .photoRemovalRequired: "This age means Kin can’t keep the saved photo. Confirm that you want to remove it before saving."
+        case .staleEdit: "This person’s details changed while you were editing. Cancel this edit and open it again to see what’s saved."
         }
     }
 }

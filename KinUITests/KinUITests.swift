@@ -2,6 +2,86 @@ import XCTest
 
 final class KinUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    @MainActor func testAddParentsForYoungPersonReuseCreateNavigateAndUnlink() {
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launch(); addPerson(app,name: "Synthetic Young"); addPerson(app,name: "Synthetic Existing Parent")
+        app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
+        let birth = app.buttons["Birth information, Unknown"]
+        reveal(birth,in: app); birth.tap(); app.buttons["Estimated age"].tap()
+        chooseAge(app,value: 3); app.buttons["Save"].tap()
+        XCTAssertFalse(app.buttons["Add child"].exists); XCTAssertFalse(app.buttons["Add partner"].exists)
+        app.buttons["Add parent"].tap()
+        XCTAssertTrue(app.buttons["Parent relationship, Unspecified"].exists)
+        XCTAssertFalse(app.buttons["Synthetic Young"].exists)
+        app.buttons["Synthetic Existing Parent"].tap()
+        app.navigationBars["Add relationship"].buttons["Cancel"].tap()
+        app.navigationBars["Add parent"].buttons["Cancel"].tap()
+        XCTAssertFalse(app.buttons["Edit relationship with Synthetic Existing Parent"].exists)
+        app.buttons["Add parent"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Biological"].tap()
+        app.buttons["Synthetic Existing Parent"].tap(); app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
+        // Re-selecting a linked person must reject the duplicate without changing either person.
+        app.buttons["Add parent"].tap(); app.buttons["Synthetic Existing Parent"].tap(); app.buttons["Save"].tap()
+        XCTAssertTrue(app.alerts["Couldn’t finish"].waitForExistence(timeout: 5)); app.alerts.buttons["OK"].tap()
+        app.navigationBars["Add relationship"].buttons["Cancel"].tap(); app.navigationBars["Add parent"].buttons["Cancel"].tap()
+        app.staticTexts["Synthetic Existing Parent"].tap()
+        XCTAssertTrue(app.navigationBars["Synthetic Existing Parent"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Synthetic Young"].exists)
+        // The reverse link would create a cycle and must also fail visibly.
+        reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
+        app.cells.buttons["Synthetic Young"].tap(); app.buttons["Save"].tap()
+        XCTAssertTrue(app.alerts["Couldn’t finish"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["This would make someone their own ancestor. Check the parent and child you selected."].exists)
+        app.alerts.buttons["OK"].tap(); app.navigationBars["Add relationship"].buttons["Cancel"].tap(); app.navigationBars["Add parent"].buttons["Cancel"].tap()
+        app.navigationBars.buttons["Synthetic Young"].tap()
+        app.buttons["Add parent"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Step"].tap()
+        app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Parent 3"].waitForExistence(timeout: 5)); XCTAssertTrue(app.staticTexts["Step parent"].exists)
+        capture(app,"Young profile with two explicitly added parents")
+        app.terminate(); app.launch()
+        let youngRow = app.cells.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Synthetic Young"))
+        XCTAssertEqual(youngRow.count,1); youngRow.element.tap()
+        app.buttons["Edit relationship with Synthetic Existing Parent"].tap(); app.buttons["Remove relationship"].tap()
+        app.alerts["Remove relationship?"].buttons["Cancel"].tap()
+        app.buttons["Remove relationship"].tap(); app.buttons.matching(identifier: "confirm-unlink").allElementsBoundByIndex.last!.tap()
+        XCTAssertFalse(app.buttons["Edit relationship with Synthetic Existing Parent"].exists)
+        XCTAssertTrue(app.staticTexts["Parent 3"].exists)
+        app.navigationBars.buttons["Kin"].tap(); openAllPeople(app)
+        XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].exists); XCTAssertTrue(app.staticTexts["Parent 3"].exists)
+    }
+    @MainActor func testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launch(); addPerson(app,name: "Synthetic Child")
+        app.staticTexts["Synthetic Child"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
+        app.buttons["Create new person"].tap()
+        XCTAssertTrue(app.buttons["Save"].isEnabled)
+        func selectSample() throws {
+            app.buttons["Import from Contacts"].tap()
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
+                app.navigationBars["Contacts"].buttons["Cancel"].tap()
+                throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
+            }
+            app.cells["John Appleseed"].tap()
+            XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
+        }
+        try selectSample(); app.navigationBars["Contact birth information"].buttons["Cancel"].tap()
+        XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"First name (optional)")
+        try selectSample(); reveal(app.buttons["Continue without importing photo"],in: app)
+        app.buttons["Continue without importing photo"].tap(); app.navigationBars["Add person"].buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["John Appleseed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Unspecified parent"].exists)
+        app.staticTexts["John Appleseed"].tap()
+        XCTAssertTrue(app.navigationBars["John Appleseed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Synthetic Child"].exists)
+        capture(app,"Imported parent links back to the original child")
+        app.terminate(); app.launch()
+        XCTAssertFalse(app.staticTexts["John Appleseed"].exists)
+        app.staticTexts["Synthetic Child"].tap(); reveal(app.staticTexts["John Appleseed"],in: app)
+        XCTAssertTrue(app.staticTexts["John Appleseed"].exists)
+        app.navigationBars.buttons["Kin"].tap(); openAllPeople(app)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "John Appleseed").count,1)
+    }
     @MainActor func testSharedEditorUnlistedRecoveryCancelAndRelaunch() {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
@@ -248,55 +328,56 @@ final class KinUITests: XCTestCase {
     @MainActor func testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addPerson(app, name: "Synthetic Young")
-        app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
-        app.buttons["Birth information, Unknown"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
+        let initialBirthday = app.buttons["Birth information, Unknown"]
+        reveal(initialBirthday, in: app); initialBirthday.tap()
         app.buttons["Estimated age"].tap()
-        app.textFields["Estimated age in years"].tap(); app.textFields["Estimated age in years"].typeText("3")
-        app.buttons["Done"].tap()
+        chooseAge(app,value: 3)
         app.buttons["Save"].tap()
         XCTAssertFalse(app.buttons["Add partner"].exists); XCTAssertFalse(app.buttons["Add child"].exists)
         XCTAssertFalse(app.staticTexts["Partners"].exists); XCTAssertFalse(app.staticTexts["Children"].exists)
         XCTAssertTrue(app.staticTexts["Parents"].exists)
         capture(app, "Under sixteen profile keeps Parents and hides family add controls")
-        app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
-        app.buttons["Birth information, Estimated age"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.navigationBars.buttons["Edit"].tap()
+        let birthday = app.buttons["Birth information, Estimated age"]
+        reveal(birthday,in: app); birthday.tap()
+        XCTAssertTrue(app.buttons["Unknown"].waitForExistence(timeout: 5))
         app.buttons["Unknown"].tap(); app.buttons["Save"].tap()
         XCTAssertTrue(app.buttons["Add partner"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Add child"].exists)
     }
-    @MainActor func testDirectEstimatedAgeEntryValidationAndCancel() {
+    @MainActor func testEstimatedAgeWheelBoundariesAndCancel() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app, name: "Synthetic Older")
-        app.staticTexts["Synthetic Older"].tap(); app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
-        app.buttons["Birth information, Unknown"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap(); app.buttons["Estimated age"].tap()
-        XCTAssertFalse(app.buttons["Save"].isEnabled)
-        let age = app.textFields["Estimated age in years"]
-        age.tap(); age.typeText("80"); app.buttons["Done"].tap()
-        XCTAssertTrue(app.buttons["Save"].isEnabled); capture(app, "Direct estimated age eighty")
-        app.buttons["Save"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Estimated 80 as of")).firstMatch.waitForExistence(timeout: 5))
-        app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
-        age.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
-        age.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2))
-        XCTAssertTrue((age.value as? String) == "" || (age.value as? String) == "0–120")
-        XCTAssertFalse(app.buttons["Save"].isEnabled)
-        age.typeText("121"); XCTAssertFalse(app.buttons["Save"].isEnabled); capture(app, "Invalid estimated age range feedback")
-        age.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3) + "0")
-        XCTAssertTrue(app.buttons["Save"].isEnabled)
-        app.buttons["Cancel"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Estimated 80 as of")).firstMatch.waitForExistence(timeout: 5))
+        app.launch(); addEstimatedAdult(app,name: "Synthetic Older")
+        app.navigationBars.buttons["Edit"].tap()
+        let age = app.buttons["choose-estimated-age"]
+        reveal(age,in: app); age.tap()
+        app.pickerWheels.firstMatch.adjust(toPickerWheelValue: "120")
+        app.navigationBars["Age in years"].buttons["Cancel"].tap()
+        XCTAssertEqual(age.value as? String,"80")
+        chooseAge(app,value: 120); app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 120 as of")).firstMatch.waitForExistence(timeout: 5))
+        app.navigationBars.buttons["Edit"].tap(); chooseAge(app,value: 0)
+        app.navigationBars["Edit person"].buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 120 as of")).firstMatch.exists)
+        app.navigationBars.buttons["Edit"].tap(); chooseAge(app,value: 0); app.buttons["Save"].tap()
+        app.terminate(); app.launch(); app.staticTexts["Synthetic Older"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 0 as of")).firstMatch.exists)
     }
-    @MainActor func testEstimatedAgeEntryAtLargestDynamicType() {
+    @MainActor func testEstimatedAgeWheelAtLargestDynamicType() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addEstimatedAdult(app, name: "Synthetic Large Age")
-        app.terminate(); app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]; app.launch()
+        app.launch(); addEstimatedAdult(app,name: "Synthetic Large Age")
+        app.terminate(); app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]; app.launch()
         app.staticTexts["Synthetic Large Age"].tap(); app.navigationBars.buttons["Edit"].tap()
-        let age = app.textFields["Estimated age in years"]
-        reveal(age, in: app); age.tap(); age.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2) + "80")
-        capture(app, "Largest Dynamic Type age keypad")
-        XCTAssertTrue(app.buttons["Done"].isHittable); app.buttons["Done"].tap()
-        XCTAssertTrue(app.buttons["Save"].isEnabled); XCTAssertEqual(age.value as? String, "80")
-        capture(app, "Largest Dynamic Type direct age field")
-        app.buttons["Cancel"].tap()
+        let age = app.buttons["choose-estimated-age"]
+        reveal(age,in: app); age.tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 5))
+        app.pickerWheels.firstMatch.adjust(toPickerWheelValue: "120")
+        capture(app,"Largest Dynamic Type native age wheel")
+        XCTAssertTrue(app.navigationBars["Age in years"].buttons["Done"].isHittable)
+        XCTAssertTrue(app.navigationBars["Age in years"].buttons["Cancel"].isHittable)
+        app.navigationBars["Age in years"].buttons["Cancel"].tap()
+        XCTAssertEqual(age.value as? String,"80")
+        app.navigationBars["Edit person"].buttons["Cancel"].tap()
     }
     @MainActor func testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
@@ -310,8 +391,9 @@ final class KinUITests: XCTestCase {
         fixture.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap(); XCTAssertTrue(app.buttons["Change photo"].waitForExistence(timeout: 10))
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Save"])
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed); app.buttons["Save"].tap()
-        app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
-        app.buttons["Birth information, Estimated age"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.navigationBars.buttons["Edit"].tap()
+        let birthPicker = app.buttons["Birth information, Estimated age"]
+        reveal(birthPicker, in: app); birthPicker.tap()
         app.buttons["Unknown"].tap(); app.buttons["Save"].tap()
         let warning = app.alerts["Remove the existing photo?"]
         XCTAssertTrue(warning.waitForExistence(timeout: 5)); XCTAssertTrue(warning.buttons["Cancel"].isHittable)
@@ -323,11 +405,74 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Change photo"].exists)
         capture(app, "Visible Cancel preserves saved photo and age after relaunch")
     }
+    @MainActor func testContactMissingBirthdayPromptCancellationAndEstimatedImport() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launch(); addEstimatedAdult(app, name: "Synthetic Existing Draft")
+        app.navigationBars.buttons["Edit"].tap(); app.swipeUp(); app.buttons["Add photo"].tap()
+        XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 15))
+        let fixture = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        guard fixture.waitForExistence(timeout: 10) else { throw XCTSkip("Seed an isolated simulator with a synthetic Photos image.") }
+        fixture.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Change photo"].waitForExistence(timeout: 10))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"),object: app.buttons["Save"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready],timeout: 10),.completed); app.buttons["Save"].tap()
+        app.navigationBars.buttons["Edit"].tap()
+        func selectSample() throws {
+            reveal(app.buttons["Import from Contacts"],in: app)
+            app.buttons["Import from Contacts"].tap()
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
+                app.navigationBars["Contacts"].buttons["Cancel"].tap()
+                throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card and no birthday.")
+            }
+            app.cells["John Appleseed"].tap()
+            XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
+        }
+        try selectSample(); capture(app, "Contact missing birthday asks for birth information")
+        let birthPicker = app.buttons["Birth information, Unknown"]
+        reveal(birthPicker,in: app); birthPicker.tap()
+        XCTAssertTrue(app.buttons["Exact birthday"].exists)
+        XCTAssertTrue(app.buttons["Unknown"].exists); app.buttons["Unknown"].tap()
+        app.navigationBars["Contact birth information"].buttons["Cancel"].tap()
+        XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic Existing Draft")
+        try selectSample()
+        reveal(app.buttons["Continue without importing photo"],in: app)
+        app.buttons["Continue without importing photo"].tap()
+        XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"John")
+        let unknownBirth = app.buttons["Birth information, Unknown"]
+        reveal(unknownBirth,in: app); unknownBirth.tap(); app.buttons["Estimated age"].tap()
+        XCTAssertFalse(app.buttons["Save"].isEnabled)
+        chooseAge(app,value: 19)
+        reveal(app.buttons["Add photo"],in: app)
+        XCTAssertTrue(app.buttons["Add photo"].exists)
+        XCTAssertFalse(app.buttons["Change photo"].exists)
+        app.navigationBars["Edit person"].buttons["Cancel"].tap()
+        XCTAssertTrue(app.navigationBars["Synthetic Existing Draft"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 80 as of")).firstMatch.exists)
+        app.navigationBars.buttons["Edit"].tap(); try selectSample()
+        let picker = app.buttons["Birth information, Unknown"]
+        reveal(picker,in: app); picker.tap(); app.buttons["Estimated age"].tap()
+        chooseAge(app,value: 19,contact: true)
+        capture(app, "Contact import accepts a confirmed estimated age")
+        app.navigationBars["Contact birth information"].buttons["Import"].tap()
+        app.navigationBars["Edit person"].buttons["Save"].tap()
+        XCTAssertTrue(app.navigationBars["John Appleseed"].waitForExistence(timeout: 5))
+        app.terminate(); app.launch(); app.staticTexts["John Appleseed"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 19 as of")).firstMatch.exists)
+    }
     @MainActor private func addEstimatedAdult(_ app: XCUIApplication, name: String) {
         addPerson(app, name: name); app.staticTexts[name].tap(); app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
         app.buttons["Birth information, Unknown"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap(); app.buttons["Estimated age"].tap()
-        app.textFields["Estimated age in years"].tap(); app.textFields["Estimated age in years"].typeText("80")
-        app.buttons["Done"].tap(); app.buttons["Save"].tap()
+        XCTAssertFalse(app.buttons["Save"].isEnabled)
+        chooseAge(app,value: 80); app.buttons["Save"].tap()
+    }
+    @MainActor private func chooseAge(_ app: XCUIApplication,value: Int,contact: Bool = false) {
+        let button = app.buttons[(contact ? "contact-" : "") + "choose-estimated-age"]
+        reveal(button,in: app); button.tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 5))
+        app.pickerWheels.firstMatch.adjust(toPickerWheelValue: String(value))
+        capture(app,"Native age wheel selecting " + String(value))
+        app.navigationBars["Age in years"].buttons["Done"].tap()
     }
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<12 {

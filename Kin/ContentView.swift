@@ -62,7 +62,7 @@ struct ContentView: View {
                         .accessibilityAddTraits(.isHeader)
                     Text(store.people.isEmpty
                          ? "Names, ages, and the little things you want to remember. A small, private notebook for the people in your life."
-                         : "People with a Friend, Family, or Colleague connection appear here. Your saved entries are still in All people, in the menu.")
+                         : "Choose Friend, Family, or Colleague to show someone here. Everyone you’ve saved is in All people in the menu.")
                         .font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
                 }.fixedSize(horizontal: false, vertical: true)
                 if store.people.isEmpty {
@@ -83,7 +83,7 @@ struct ContentView: View {
         ContentUnavailableView {
             Label("No matches", systemImage: "magnifyingglass")
         } description: {
-            Text(scope == .yours ? "Try another name or stable entry label. Unlisted entries are in All people." : "Try another name or stable entry label.")
+            Text(scope == .yours ? "Try another name or a label like Child 2. Search All people for anyone outside Your people." : "Try another name or a label like Child 2.")
         } actions: {
             if scope == .yours { Button("Search all people") { scope = .all } }
         }

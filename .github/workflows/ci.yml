@@ -9,7 +9,7 @@ concurrency:
   group: kin-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  validate:
+  core-validation:
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -35,11 +35,66 @@ jobs:
           python3 scripts/check-repository.py
       - name: Core tests
         run: scripts/test-core.sh
+  simulator-tests:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify test toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
+      - name: Create isolated iOS 27 simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
       - name: Unit, integration, and UI regression suite (iOS 27)
+        timeout-minutes: 25
         run: >-
           xcodebuild -project Kin.xcodeproj -scheme Kin
-          -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0'
-          -derivedDataPath DerivedData clean test CODE_SIGNING_ALLOWED=NO
+          -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR"
+          -derivedDataPath DerivedData
+          -resultBundlePath "$RUNNER_TEMP/KinTests.xcresult"
+          -parallel-testing-enabled NO -collect-test-diagnostics never
+          -test-timeouts-enabled YES -default-test-execution-time-allowance 240
+          -maximum-test-execution-time-allowance 300
+          clean test CODE_SIGNING_ALLOWED=NO
+      - name: Require finalized results with full fixture coverage
+        run: |
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
+      - name: Remove this run's isolated simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
+            xcrun simctl shutdown "$KIN_CI_SIMULATOR" || true
+            xcrun simctl delete "$KIN_CI_SIMULATOR"
+          fi
+  release-validation:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify Release toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
       - name: Unsigned iPhone Release build
         run: |
           scripts/build-unsigned-device.sh
@@ -53,3 +108,16 @@ jobs:
           STRIP_INSTALLED_PRODUCT=YES STRIP_STYLE=debugging
       - name: Validate simulator Release app
         run: python3 scripts/check-release.py DerivedData/Build/Products/Release-iphonesimulator/Kin.app
+  # Keep the existing required check, and require every independent job to finish.
+  # Completed assertions alone never turn a hung/cancelled xcodebuild into success.
+  validate:
+    needs: [core-validation, simulator-tests, release-validation]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all validation jobs
+        run: |
+          test "${{ needs.core-validation.result }}" = success
+          test "${{ needs.simulator-tests.result }}" = success
+          test "${{ needs.release-validation.result }}" = success

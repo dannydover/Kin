@@ -10,12 +10,6 @@ struct AgeRules: Sendable {
     let calendar: Calendar
     init(calendar: Calendar) { self.calendar = CivilDate.gregorian(in: calendar.timeZone) }
     static let estimatedAgeRange = 0...120
-    static func estimatedAge(from text: String) -> Int? {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) }),
-              let age = Int(value), estimatedAgeRange.contains(age) else { return nil }
-        return age
-    }
     private func years(from start: CivilDate, to end: CivilDate) -> Int {
         end.year - start.year - ((end.month, end.day) < (start.month, start.day) ? 1 : 0)
     }

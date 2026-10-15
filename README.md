@@ -24,6 +24,10 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
   links (current, former, unknown), with reuse of existing people or atomic create/link.
   New partner links default to Current; explicit Former/Unknown choices are retained.
   Selecting an existing person opens an unsaved relationship editor with Save/Cancel.
+  Add parent is available in every profile’s Parents section, including children
+  under 16 and profiles with no parents yet. Reuse a person or create/import one
+  through the shared editor; the selected person is the parent of the open profile.
+  Multiple explicit parents are allowed. Removing a relationship keeps both people.
 - Your people index previews explicitly linked children with age and approximate
   school-grade cues; the indexed person’s own age stays on their profile.
 - Shared Add/Edit workflows, one-time Contacts imports, and explicit Save/Cancel.
@@ -37,11 +41,13 @@ Naming later preserves identity and all links. Labels stay stable across profile
 Top-level additions require a connection choice; linked additions start unlisted.
 Editing connections later can remove a person from the index without deleting them.
 Profiles with a recorded current age under 16 hide Partners and Children, including
-their add controls; Parents and all stored links remain. Unknown ages are not assumed
+their add controls; Parents, Add parent, and all stored links remain. Unknown ages are not assumed
 to be under 16. This display rule is separate from the adult-photo requirement.
 
-Estimated ages accept direct whole-number entry from 0 to 120, with a number keypad
-and Done action. Empty or invalid input disables Save without changing the saved age.
+Estimated ages use a native scrollable wheel from 0 to 120 in a compact sheet,
+with a larger sheet at accessibility text sizes. Done applies the chosen age to
+the draft; Cancel or dismissing the wheel preserves the prior value. A new estimate
+requires a deliberate age choice, including zero, before Save is enabled.
 Age corrections requiring photo removal present explicit Cancel and Remove photo
 and save actions. Cancel keeps the correction as an unsaved draft. Person deletion
 and relationship removal also have visible Cancel actions.
@@ -52,6 +58,23 @@ for estimates. Photos require both the displayed age and the youngest age repres
 by an estimate to be at least 18. Unknown ages cannot import, store, or display photos.
 Changing an age to an ineligible value requires confirmation before removing the
 existing photo; canceling the editor preserves the saved age and photo.
+
+Contacts imports use the native single-contact picker without requesting address-book
+access. Every selection opens an import review before changing the person draft.
+A complete valid birthday imports as an exact civil date; alternate-calendar dates
+use their recorded calendar, era, and leap-month information. Incomplete, ambiguous,
+invalid, or future dates ask for birth information using the same exact/estimated
+controls. Yearless birthdays remain in Contacts; Kin never fills in a year.
+
+The review identifies the current draft and selected contact. Confirmed import replaces
+names, birth information, and photo while retaining identity, notes, connections,
+and relationships. The prior person's adulthood and photo never carry into another
+contact. Continue without importing photo uses the selected complete birthday or
+Unknown and clears any previous draft photo. Cancel preserves the entire prior draft.
+Photo properties are accessed only after the selected or explicitly confirmed birth
+information establishes safe adulthood. No contact photo is read for unresolved or
+minor ages. Imported edits still require Save, and stored adult-photo removal retains
+its explicit age-correction confirmation.
 
 Removing a relationship preserves both people. Deleting a person removes their
 incident links and photo, never another person. Duplicate/self links and parentage
@@ -86,7 +109,8 @@ scripts/test-core.sh
 # Full suite, including UIKit Contacts/photo integration tests.
 xcodebuild -project Kin.xcodeproj -scheme Kin \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0' \
-  -derivedDataPath DerivedData test CODE_SIGNING_ALLOWED=NO
+  -derivedDataPath DerivedData -parallel-testing-enabled NO \
+  -collect-test-diagnostics never test CODE_SIGNING_ALLOWED=NO
 
 # Compile a Release build for iPhone without provisioning or signing.
 scripts/build-unsigned-device.sh
@@ -108,9 +132,19 @@ never use a real notebook for automated or destructive testing.
 
 [Build and test](.github/workflows/ci.yml) runs on ordinary pull requests and
 pushes to `main` with read-only repository permissions and no persisted checkout
-credentials. It checks the indexed repository for prohibited data, runs both test
-suites after a clean app build, and compiles unsigned iPhone and simulator Release builds. It does not
-provision, distribute, or upload build products or logs as artifacts.
+credentials. Independent bounded jobs check repository privacy and core tests,
+run the full iOS test scheme, and compile/validate unsigned iPhone and simulator
+Release builds. The required `validate` check passes only when every job succeeds.
+A timeout or hung result finalization remains a failure even when assertions finish.
+
+The simulator job creates and removes only its own fresh iPhone simulator, seeds a
+metadata-free synthetic Photos image, runs tests serially without verbose failure
+diagnostic collection, and checks the finalized result summary for zero skips or
+failures. Native Contacts UI coverage uses the simulator’s standard fictional sample
+card; missing fixtures fail the finalized-result gate. This matches the locally
+verified invocation while avoiding shared simulator/cloned-runner teardown state.
+Release validation runs independently so test cleanup cannot prevent those builds.
+The workflow does not provision, distribute, or upload build products or logs as artifacts.
 
 Release checks verify the iOS 26 minimum, iPhone-only device family, privacy
 manifest, absence of debug previews and personal build paths, and absence of

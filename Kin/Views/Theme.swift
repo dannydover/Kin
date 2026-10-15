@@ -71,7 +71,7 @@ struct ChildAvatar: View {
 struct ErrorMessage: ViewModifier {
     @Binding var message: String?
     func body(content: Content) -> some View {
-        content.alert("Couldn’t save changes", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+        content.alert("Couldn’t finish", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
         } message: { Text(message ?? "Try again.") }
     }

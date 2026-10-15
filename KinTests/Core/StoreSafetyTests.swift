@@ -85,8 +85,8 @@ import Testing
         #expect(throws: (any Error).self) { try store.unlinkPartner(partner.id) }
         #expect(store.partnerLinks == [partner])
     }
-    @Test("Creation/link explicit retry after post-commit failure does not duplicate either", arguments: [false,true])
-    func postCommit(committed: Bool) throws {
+    @Test("Creation/link explicit retry after post-commit failure does not duplicate either", arguments: [false,true], [false,true])
+    func postCommit(committed: Bool, addingParent: Bool) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let failure = SaveFailure()
@@ -97,12 +97,15 @@ import Testing
         defer { try? store.close() }
         let parent = Person(); try store.savePerson(parent)
         let child = Person(); failure.fail = true
-        #expect(throws: (any Error).self) { try store.savePerson(child, relationship: .child(of: parent.id, parentage: .adoptive)) }
+        let relationship: NewRelationship = addingParent ? .parent(of: parent.id, parentage: .adoptive) : .child(of: parent.id, parentage: .adoptive)
+        #expect(throws: (any Error).self) { try store.savePerson(child, relationship: relationship) }
         #expect(!store.isReady && store.isClosed)
         failure.fail = false; try store.resume()
         #expect(store.people.count == (committed ? 2 : 1))
-        try store.savePerson(child, relationship: .child(of: parent.id, parentage: .adoptive))
+        try store.savePerson(child, relationship: relationship)
         #expect(store.people.count == 2 && store.parentLinks.count == 1)
+        #expect(store.parentLinks.first?.parentID == (addingParent ? child.id : parent.id))
+        #expect(store.parentLinks.first?.childID == (addingParent ? parent.id : child.id))
     }
     @Test("Compatible corrupt person payload is rejected before opening or modifying source files", arguments: [Int.min,-1,121,Int.max])
     func corruptPayload(age: Int) throws {

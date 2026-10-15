@@ -1,15 +1,39 @@
 import SwiftUI
 import ContactsUI
 
-struct ContactSnapshot {
+@MainActor struct ContactSnapshot {
     var firstName: String
     var lastName: String
-    var photo: Data?
+    var birthInformation: ContactBirthInformation = .missing
+    // The selected card is retained only for this import. Reading image properties
+    // is delayed until a confirmed birthday establishes safe photo eligibility.
+    private var loadPhoto: () -> Data? = { nil }
+
+    init(firstName: String, lastName: String, birthInformation: ContactBirthInformation = .missing, loadPhoto: @escaping () -> Data? = { nil }) {
+        self.firstName = firstName; self.lastName = lastName
+        self.birthInformation = birthInformation; self.loadPhoto = loadPhoto
+    }
+    func photo(for birthday: Birthday, today: Date, calendar: Calendar) -> Data? {
+        guard AgeRules(calendar: calendar).allowsPhoto(birthday, on: today) else { return nil }
+        return loadPhoto()
+    }
+    init(contact: CNContact, today: Date = Date(), timeZone: TimeZone = .current) {
+        firstName = contact.isKeyAvailable(CNContactGivenNameKey) ? contact.givenName : ""
+        lastName = contact.isKeyAvailable(CNContactFamilyNameKey) ? contact.familyName : ""
+        birthInformation = ContactBirthInformation.resolve(
+            gregorian: contact.isKeyAvailable(CNContactBirthdayKey) ? contact.birthday : nil,
+            alternate: contact.isKeyAvailable(CNContactNonGregorianBirthdayKey) ? contact.nonGregorianBirthday : nil,
+            today: CivilDate(today, timeZone: timeZone))
+        loadPhoto = {
+            guard contact.isKeyAvailable(CNContactImageDataAvailableKey), contact.imageDataAvailable,
+                  contact.isKeyAvailable(CNContactThumbnailImageDataKey) else { return nil }
+            return contact.thumbnailImageData
+        }
+    }
 }
 
 /// UIKit owns the system picker's dismissal. SwiftUI owns only the inert container.
 struct ContactPicker: UIViewControllerRepresentable {
-    var includePhoto = false
     var onSelect: (ContactSnapshot) -> Void
     var onCancel: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -60,8 +84,7 @@ struct ContactPicker: UIViewControllerRepresentable {
         init(parent: ContactPicker) { self.parent = parent }
         func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
             guard outcome == nil, !finished else { return }
-            outcome = .selected(ContactSnapshot(firstName: contact.givenName, lastName: contact.familyName,
-                                                 photo: parent.includePhoto && contact.imageDataAvailable ? contact.thumbnailImageData : nil))
+            outcome = .selected(ContactSnapshot(contact: contact))
         }
         func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
             guard outcome == nil, !finished else { return }

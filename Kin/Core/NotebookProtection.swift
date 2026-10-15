@@ -4,8 +4,8 @@ enum NotebookAccessError: LocalizedError {
     case locked, reopenRequired
     var errorDescription: String? {
         switch self {
-        case .locked: "Unlock your iPhone to use your notebook. Your draft is still here; try saving again after unlocking."
-        case .reopenRequired: "Reopen your notebook, check what was saved, then try again. Your draft is still here."
+        case .locked: "Unlock your iPhone, then try again. Your unsaved edits are still on this screen."
+        case .reopenRequired: "Open your notebook again and check what was saved before trying again. Your unsaved edits are still on this screen."
         }
     }
 }

@@ -21,7 +21,7 @@ struct KinApp: App {
                     ContentUnavailableView {
                         Label("Your notebook couldn’t open", systemImage: "book.closed")
                     } description: {
-                        Text("Your saved data has not been reset. \(loadError)")
+                        Text(loadError)
                     } actions: { Button("Try Again") { load() } }
                 } else { ProgressView("Opening Kin…") }
             }
@@ -43,12 +43,12 @@ struct KinApp: App {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--kin-preview") {
-            do { store = try KinStore(inMemory: true); loadError = nil } catch { loadError = error.localizedDescription }
+            do { store = try KinStore(inMemory: true); loadError = nil } catch { loadError = UserFacingError.message(error, opening: true) }
             return
         }
         if let index = arguments.firstIndex(of: "--kin-test-notebook") {
             guard arguments.indices.contains(index + 1), let token = UUID(uuidString: arguments[index + 1]) else {
-                loadError = "The isolated test notebook identifier is invalid. The saved notebook has not been opened."
+                loadError = "Kin couldn’t open this test notebook. Your saved notebook hasn’t been opened."
                 return
             }
             do {
@@ -56,7 +56,7 @@ struct KinApp: App {
                 let url = root.appendingPathComponent("KinTestNotebooks").appendingPathComponent(token.uuidString).appendingPathComponent("Kin.sqlite")
                 let notebook = try KinStore(storeURL: url, protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
                 store = notebook; lifecycle.store = notebook; loadError = nil
-            } catch { loadError = error.localizedDescription }
+            } catch { loadError = UserFacingError.message(error, opening: true) }
             return
         }
         #endif
@@ -71,7 +71,7 @@ struct KinApp: App {
             if !UIApplication.shared.isProtectedDataAvailable {
                 lifecycle.refresh()
                 loadError = nil
-            } else { loadError = error.localizedDescription }
+            } else { loadError = UserFacingError.message(error, opening: true) }
         }
     }
 }
