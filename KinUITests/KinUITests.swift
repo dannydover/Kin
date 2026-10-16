@@ -723,19 +723,20 @@ final class KinUITests: XCTestCase {
         guard requireTestState(app, "New person name entered", {
             firstName.value as? String == name
         }) else { return }
-        let friends = app.switches["Friend"].switches
-        guard requireTestState(app, "Single Friend control available", {
+        let friends = app.switches.matching(identifier: "Friend")
+        guard requireTestState(app, "Single named Friend control available", {
             friends.count == 1
         }) else { return }
-        let friend = friends.element
-        reveal(friend, in: app, requireHittable: true)
+        positionFriendControl(friends, in: app)
         guard requireTestState(app, "Friend ready and initially off", {
-            friend.isHittable && friend.value as? String == "0"
+            friends.count == 1 && friends.element.isHittable
+                && friends.element.value as? String == "0"
         }) else { return }
+        let friend = friends.element
         friend.tap()
         let save = editor.buttons.matching(identifier: "Save")
         guard requireTestState(app, "Friend on and Save enabled", {
-            friend.value as? String == "1" && save.count == 1
+            friends.count == 1 && friend.value as? String == "1" && save.count == 1
                 && save.element.isEnabled && save.element.isHittable
         }) else { return }
         save.element.tap()
@@ -745,6 +746,44 @@ final class KinUITests: XCTestCase {
                 && app.cells.containing(.staticText, identifier: name).count == 1
         }) else { return }
         XCTAssertTrue(app.staticTexts[name].exists)
+    }
+    @MainActor private func positionFriendControl(_ matches: XCUIElementQuery, in app: XCUIApplication) {
+        // The labeled switch is the stable interaction target. Its nested
+        // accessibility child is not a reliable scroll or visibility anchor.
+        for _ in 0..<3 {
+            guard matches.count == 1 else { return }
+            let control = matches.element
+            guard control.exists else { return }
+            if control.isHittable { return }
+            let frame = control.frame
+            let bounds = app.frame
+            let editor = app.navigationBars["Add person"]
+            guard editor.exists, !frame.isEmpty, !frame.isNull, !frame.isInfinite,
+                  frame.minX.isFinite, frame.maxX.isFinite, frame.minY.isFinite, frame.maxY.isFinite,
+                  bounds.height.isFinite, bounds.height > 0 else { return }
+            let top = editor.frame.maxY + 8
+            var bottom = bounds.maxY - 8
+            let keyboards = app.keyboards
+            guard keyboards.count <= 1 else { return }
+            if keyboards.count == 1 {
+                let keyboard = keyboards.element.frame
+                guard !keyboard.isEmpty, !keyboard.isNull, !keyboard.isInfinite else { return }
+                bottom = min(bottom, keyboard.minY - 8)
+            }
+            let height = bottom - top
+            guard top.isFinite, bottom.isFinite, height >= 80 else { return }
+            let movingUp: Bool
+            if frame.maxY > bottom { movingUp = true }
+            else if frame.minY < top { movingUp = false }
+            else { return } // In-view but unhittable: wait/fail, do not guess a scroll.
+            let distance = min(80, height * 0.2)
+            let startY = movingUp ? bottom - height * 0.25 : top + height * 0.25
+            let endY = startY + (movingUp ? -distance : distance)
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: (startY - bounds.minY) / bounds.height))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: (endY - bounds.minY) / bounds.height))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            // Re-resolve the labeled query before any further movement.
+        }
     }
     @MainActor private func requireTestState(_ app: XCUIApplication, _ stage: String,
                                              _ condition: @escaping () -> Bool,
@@ -769,7 +808,8 @@ final class KinUITests: XCTestCase {
             + "editEditor=\(app.navigationBars["Edit person"].exists); "
             + "photos=\(app.navigationBars["Photos"].exists); contacts=\(app.navigationBars["Contacts"].exists); "
             + "birthReview=\(app.navigationBars["Contact birth information"].exists); "
-            + "friend=\(friendState); saveUnique=\(saves.count == 1); "
+            + "friendUnique=\(friends.count == 1); friend=\(friendState); "
+            + "friendHittable=\(friends.count == 1 && friends.element.isHittable); saveUnique=\(saves.count == 1); "
             + "saveEnabled=\(saves.count == 1 && saves.element.isEnabled); alert=\(app.alerts.count > 0)"
         let state = XCTAttachment(string: flags)
         state.name = "Bounded UI control state"; state.lifetime = .keepAlways; add(state)
