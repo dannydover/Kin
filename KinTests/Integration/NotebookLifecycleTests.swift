@@ -11,22 +11,23 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try KinStore(storeURL: directory.appendingPathComponent("test.sqlite"))
         defer { try? store.close() }
-        let friend = Friend(firstName: "Rowan", lastName: "Vale")
-        try store.saveFriend(friend)
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         let lifecycle = NotebookLifecycle()
         lifecycle.store = store
         lifecycle.applicationProtectedDataWillBecomeUnavailable(.shared)
         #expect(!lifecycle.isAvailable)
         #expect(store.isClosed && !store.isReady)
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
         // This test drives callback wiring; it does not actually lock the device.
         if UIApplication.shared.isProtectedDataAvailable {
             lifecycle.applicationProtectedDataDidBecomeAvailable(.shared)
             #expect(lifecycle.store === store)
             #expect(store.isReady && lifecycle.isAvailable)
-            #expect(store.friends == [friend])
+            #expect(store.people == [friend])
             lifecycle.refresh()
-            #expect(store.friends == [friend])
+            #expect(store.people == [friend])
         }
     }
 }

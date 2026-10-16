@@ -28,6 +28,17 @@ struct CivilDate: Codable, Equatable, Comparable, Sendable {
     var pickerDate: Date {
         Self.pickerCalendar.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
     }
+    /// Render the stored civil day; a device calendar or UTC+14 timezone must
+    /// never reinterpret the noon-UTC picker bridge as a different birthday.
+    func formatted(locale: Locale = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = Self.pickerCalendar
+        formatter.timeZone = Self.pickerCalendar.timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: pickerDate)
+    }
     static func < (lhs: Self, rhs: Self) -> Bool {
         (lhs.year, lhs.month, lhs.day) < (rhs.year, rhs.month, rhs.day)
     }
@@ -38,72 +49,5 @@ struct CivilDate: Codable, Equatable, Comparable, Sendable {
         month = try values.decode(Int.self, forKey: .month)
         day = try values.decode(Int.self, forKey: .day)
         guard isValid else { throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid Gregorian civil date")) }
-    }
-}
-
-enum Birthday: Equatable, Sendable {
-    case exact(CivilDate)
-    case estimated(age: Int, referenceDate: CivilDate)
-    // Preserve old instants losslessly until the user confirms the intended civil date.
-    case legacyExact(Date)
-    case legacyEstimated(age: Int, referenceDate: Date)
-
-    var requiresDateReview: Bool {
-        switch self { case .legacyExact, .legacyEstimated: true; default: false }
-    }
-    var isEstimated: Bool {
-        switch self { case .estimated, .legacyEstimated: true; default: false }
-    }
-    /// UTC is an explicitly disclosed starting suggestion, not an inferred original timezone.
-    var editingSuggestion: Birthday {
-        switch self {
-        case .legacyExact(let instant): .exact(CivilDate(instant, timeZone: CivilDate.pickerCalendar.timeZone))
-        case .legacyEstimated(let age, let instant): .estimated(age: age, referenceDate: CivilDate(instant, timeZone: CivilDate.pickerCalendar.timeZone))
-        default: self
-        }
-    }
-}
-extension Birthday: Codable {
-    private enum Keys: String, CodingKey { case schemaVersion, kind, date, age, exact, estimated }
-    private enum LegacyKeys: String, CodingKey { case _0, age, referenceDate }
-    init(from decoder: any Decoder) throws {
-        let values = try decoder.container(keyedBy: Keys.self)
-        if values.contains(.schemaVersion) {
-            guard try values.decode(Int.self, forKey: .schemaVersion) == 2 else {
-                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unsupported birthday schema; data preserved"))
-            }
-            let date = try values.decode(CivilDate.self, forKey: .date)
-            switch try values.decode(String.self, forKey: .kind) {
-            case "exact": self = .exact(date)
-            case "estimated":
-                let age = try values.decode(Int.self, forKey: .age)
-                guard (0...120).contains(age) else { throw KinError.invalidBirthday }
-                self = .estimated(age: age, referenceDate: date)
-            default: throw KinError.invalidData
-            }
-        } else if values.contains(.exact) && !values.contains(.estimated) {
-            let old = try values.nestedContainer(keyedBy: LegacyKeys.self, forKey: .exact)
-            self = .legacyExact(try old.decode(Date.self, forKey: ._0))
-        } else if values.contains(.estimated) && !values.contains(.exact) {
-            let old = try values.nestedContainer(keyedBy: LegacyKeys.self, forKey: .estimated)
-            self = .legacyEstimated(age: try old.decode(Int.self, forKey: .age), referenceDate: try old.decode(Date.self, forKey: .referenceDate))
-        } else { throw KinError.invalidData }
-    }
-    func encode(to encoder: any Encoder) throws {
-        var values = encoder.container(keyedBy: Keys.self)
-        switch self {
-        case .exact(let date):
-            try values.encode(2, forKey: .schemaVersion); try values.encode("exact", forKey: .kind)
-            try values.encode(date, forKey: .date)
-        case .estimated(let age, let reference):
-            try values.encode(2, forKey: .schemaVersion); try values.encode("estimated", forKey: .kind)
-            try values.encode(reference, forKey: .date); try values.encode(age, forKey: .age)
-        case .legacyExact(let instant):
-            var old = values.nestedContainer(keyedBy: LegacyKeys.self, forKey: .exact)
-            try old.encode(instant, forKey: ._0)
-        case .legacyEstimated(let age, let instant):
-            var old = values.nestedContainer(keyedBy: LegacyKeys.self, forKey: .estimated)
-            try old.encode(age, forKey: .age); try old.encode(instant, forKey: .referenceDate)
-        }
     }
 }

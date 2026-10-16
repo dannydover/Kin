@@ -1,6 +1,10 @@
 import Foundation
 import CoreData
+import SQLite3
 import Testing
+#if os(iOS)
+import UIKit
+#endif
 @testable import Kin
 
 @MainActor private final class Availability {
@@ -24,12 +28,12 @@ import Testing
         defer { try? store.close() }
         #expect(store.isClosed && !store.isReady)
         #expect(!FileManager.default.fileExists(atPath: url.path))
-        #expect(throws: NotebookAccessError.self) { try store.saveFriend(Friend(firstName: "Rowan", lastName: "Vale")) }
+        #expect(throws: NotebookAccessError.self) { try store.savePerson(Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))) }
         #expect(throws: NotebookAccessError.self) { try store.resume() }
         availability.available = true
         try store.resume()
         #expect(store.isReady)
-        #expect(store.friends.isEmpty)
+        #expect(store.people.isEmpty)
     }
 
     @Test("Repeated lock/unlock preserves saved families and an independent editor draft")
@@ -39,29 +43,29 @@ import Testing
         let availability = Availability()
         let store = try KinStore(storeURL: url, protectedDataAvailable: { availability.available })
         defer { try? store.close() }
-        let friend = Friend(firstName: "Rowan", lastName: "Vale")
-        try store.saveFriend(friend)
-        let partner = Partner(firstName: "Mira", lastName: "Vale")
-        try store.savePartner(partner, friendID: friend.id)
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         var draft = friend; draft.notes = "Unsaved fictional note"
         for _ in 0..<3 {
             // The warning arrives before UIApplication necessarily reports false.
             store.suspend()
-            #expect(throws: NotebookAccessError.self) { try store.saveFriend(draft) }
+            #expect(throws: NotebookAccessError.self) { try store.savePerson(draft) }
             availability.available = false
             #expect(store.isClosed && !store.isReady)
-            #expect(store.friends.first?.notes == "")
+            #expect(store.people.first?.notes == "")
             #expect(throws: NotebookAccessError.self) { try store.reload() }
-            #expect(throws: NotebookAccessError.self) { try store.deleteFriend(friend.id) }
-            #expect(throws: NotebookAccessError.self) { try store.entityCount("FriendRecord") }
+            #expect(throws: NotebookAccessError.self) { try store.deletePerson(friend.id) }
+            #expect(throws: NotebookAccessError.self) { try store.entityCount("PersonRecord") }
             availability.available = true
             try store.resume()
             try store.resume() // duplicate availability/foreground events are harmless
-            #expect(store.friends.first?.partners == [partner])
+            #expect(store.people.first?.id == friend.id)
         }
-        try store.saveFriend(draft)
-        #expect(store.friends.first?.notes == draft.notes)
-        #expect(store.friends.first?.partners == [partner])
+        try store.savePerson(draft)
+        draft = try store.person(draft.id)
+        #expect(store.people.first?.notes == draft.notes)
+        #expect(store.people.first?.id == friend.id)
     }
 
     @Test("Lock during save can be retried without loss or duplicate records", arguments: [false, true])
@@ -78,18 +82,20 @@ import Testing
             try context.save()
         })
         defer { try? store.close() }
-        var draft = Friend(firstName: "Rowan", lastName: "Vale")
-        try store.saveFriend(draft)
+        var draft = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))
+        try store.savePerson(draft)
+        draft = try store.person(draft.id)
         draft.notes = "Fictional revised note"
         availability.interruptSave = true
-        #expect(throws: NotebookAccessError.self) { try store.saveFriend(draft) }
+        #expect(throws: NotebookAccessError.self) { try store.savePerson(draft) }
         #expect(!store.isReady && store.isClosed)
         availability.available = true; availability.interruptSave = false
         try store.resume()
-        #expect(store.friends.first?.notes == (committed ? draft.notes : ""))
-        try store.saveFriend(draft)
-        #expect(try store.entityCount("FriendRecord") == 1)
-        #expect(store.friends.first == draft)
+        #expect(store.people.first?.notes == (committed ? draft.notes : ""))
+        try store.savePerson(draft)
+        draft = try store.person(draft.id)
+        #expect(try store.entityCount("PersonRecord") == 1)
+        #expect(store.people.first == draft)
     }
 
     @Test("A failed reopen leaves the database intact and remains retryable")
@@ -98,8 +104,9 @@ import Testing
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let store = try KinStore(storeURL: url)
         defer { try? store.close() }
-        let friend = Friend(firstName: "Rowan", lastName: "Vale")
-        try store.saveFriend(friend)
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)))
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         store.suspend()
         let holding = url.deletingLastPathComponent().appendingPathComponent("holding")
         try FileManager.default.moveItem(at: url, to: holding)
@@ -107,12 +114,12 @@ import Testing
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
         #expect(throws: (any Error).self) { try store.resume() }
         #expect(!store.isReady && store.recoveryError != nil)
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
         try FileManager.default.removeItem(at: url)
         try FileManager.default.moveItem(at: holding, to: url)
         try store.resume()
         #expect(store.isReady && store.recoveryError == nil)
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
     }
 
     @Test("Large external payloads survive repeated saves and suspend/reopen")
@@ -122,19 +129,93 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try KinStore(storeURL: url)
         defer { try? store.close() }
-        var friend = Friend(firstName: "Rowan", lastName: "Vale", photo: Data(repeating: 17, count: 2_000_000))
-        try store.saveFriend(friend)
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)), photo: Data(repeating: 17, count: 2_000_000))
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)!.allObjects.compactMap { $0 as? URL }
         #expect(files.contains { $0.path.contains("_EXTERNAL_DATA/") })
         store.suspend(); try store.resume()
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
         friend.photo = Data(repeating: 42, count: 2_000_001)
-        try store.saveFriend(friend)
+        try store.savePerson(friend)
+        friend = try store.person(friend.id)
         store.suspend(); try store.resume()
-        #expect(store.friends == [friend])
+        #expect(store.people == [friend])
+    }
+
+    @Test("Compatibility inspection preserves committed identities and links still in the WAL")
+    func committedWAL() throws {
+        let url = try temporaryURL(), directory = url.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = try KinStore(storeURL: url)
+        defer { try? source.close() }
+        let parent = Person(firstName: "Synthetic parent"), child = Person(firstName: "Synthetic child")
+        try source.savePerson(parent)
+        try source.savePerson(child, relationship: .child(of: parent.id, parentage: .adoptive))
+        let expectedPeople = source.people, expectedLinks = source.parentLinks
+        let wal = URL(fileURLWithPath: url.path + "-wal")
+        #expect(try Data(contentsOf: wal).count > 32)
+        // immutable deliberately ignores WAL: prove the committed people cannot
+        // be recovered by inspecting the main file alone.
+        var database: OpaquePointer?
+        let uri = "file:" + url.path + "?immutable=1"
+        try #require(sqlite3_open_v2(uri, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK)
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        let prepared = sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM ZPERSONRECORD", -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        if prepared == SQLITE_OK {
+            try #require(sqlite3_step(statement) == SQLITE_ROW)
+            #expect(sqlite3_column_int64(statement, 0) == 0)
+        } else {
+            #expect(prepared == SQLITE_ERROR)
+            #expect(String(cString: sqlite3_errmsg(database)).contains("no such table"))
+        }
+        // Copy source bytes while its writer remains open, retaining WAL-only commits.
+        let copyDirectory = directory.appendingPathComponent("copy")
+        try NotebookProtection.prepare(directory: copyDirectory)
+        let copy = copyDirectory.appendingPathComponent("test.sqlite")
+        for suffix in ["", "-wal", "-shm"] {
+            let file = URL(fileURLWithPath: url.path + suffix)
+            if FileManager.default.fileExists(atPath: file.path) {
+                let target = URL(fileURLWithPath: copy.path + suffix)
+                #if os(iOS)
+                try Data(contentsOf: file).write(to: target, options: [.atomic, .completeFileProtection])
+                #else
+                try Data(contentsOf: file).write(to: target, options: .atomic)
+                #endif
+            }
+        }
+        let before = try ["", "-wal", "-shm"].map { try Data(contentsOf: URL(fileURLWithPath: url.path + $0)) }
+        let reopened = try KinStore(storeURL: copy)
+        defer { try? reopened.close() }
+        #expect(reopened.people == expectedPeople && reopened.parentLinks == expectedLinks)
+        #expect(try ["", "-wal", "-shm"].map { try Data(contentsOf: URL(fileURLWithPath: url.path + $0)) } == before)
     }
 
     #if os(iOS) && !targetEnvironment(simulator)
+    @Test("Sampled transient compatibility files have Complete Protection")
+    func inspectionCreationProtection() throws {
+        try #require(UIApplication.shared.isProtectedDataAvailable)
+        let url = try temporaryURL(), directory = url.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store = try KinStore(storeURL:url,protectedDataAvailable:{ UIApplication.shared.isProtectedDataAvailable })
+        defer { try? store.close() }
+        var person = Person(firstName:"Synthetic",birthday:.exact(CivilDate(year:1980,month:1,day:1)),photo:Data(repeating:17,count:2_000_000))
+        try store.savePerson(person); person = try store.person(person.id)
+        let observer = InspectionCreationObserver(); observer.start()
+        defer { observer.stop() }
+        for _ in 0..<8 {
+            store.suspend(); try store.resume()
+            #expect(store.people == [person])
+        }
+        observer.stop()
+        let samples = observer.samples()
+        // A missed race is inconclusive, not a passing protection result.
+        #expect(samples.contains { $0["file"] == "." })
+        #expect(samples.contains { $0["file"] == "inspection.sqlite" })
+        for sample in samples { #expect(sample["complete"] == "true", "Transient inspection file protection: \(sample)") }
+    }
     @Test("Protection upgrade covers existing sidecars and nested files without changing bytes")
     func existingCompanions() throws {
         let url = try temporaryURL()
@@ -169,16 +250,17 @@ import Testing
                 #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.protectionKey] as? FileProtectionType == .complete)
             }
         }
-        var friend = Friend(firstName: "Rowan", lastName: "Vale", photo: Data(repeating: 17, count: 2_000_000))
+        var friend = Person(firstName: "Rowan", lastName: "Vale", birthday: .exact(CivilDate(year: 1980, month: 1, day: 1)), photo: Data(repeating: 17, count: 2_000_000))
         let old = try KinStore(storeURL: url)
-        try old.saveFriend(friend)
+        try old.savePerson(friend)
+        friend = try old.person(friend.id)
         try old.close()
         for file in try allFiles() {
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
         }
         let upgraded = try KinStore(storeURL: url)
         defer { try? upgraded.close() }
-        #expect(upgraded.friends == [friend])
+        #expect(upgraded.people == [friend])
         try expectComplete()
         #expect(FileManager.default.fileExists(atPath: url.path + "-wal"))
         #expect(FileManager.default.fileExists(atPath: url.path + "-shm"))
@@ -189,13 +271,52 @@ import Testing
         try Data("synthetic".utf8).write(to: probe)
         try expectComplete()
         friend.photo = Data(repeating: 42, count: 2_000_001)
-        try upgraded.saveFriend(friend)
+        try upgraded.savePerson(friend)
+        friend = try upgraded.person(friend.id)
         let laterPayloads = try allFiles().filter { $0.path.contains("_EXTERNAL_DATA/") }
         #expect(!Set(laterPayloads).subtracting(payloads).isEmpty)
         try expectComplete()
         upgraded.suspend(); try upgraded.resume()
-        #expect(upgraded.friends == [friend])
+        #expect(upgraded.people == [friend])
         try expectComplete()
     }
     #endif
 }
+
+#if os(iOS) && !targetEnvironment(simulator)
+// Poll independent creation-time attributes without changing production code.
+private final class InspectionCreationObserver: @unchecked Sendable {
+    private let lock = NSLock()
+    private var running = false
+    private var rows: [String:[String:String]] = [:]
+    private let finished = DispatchSemaphore(value:0)
+    func start() {
+        lock.lock(); running = true; lock.unlock()
+        DispatchQueue.global(qos:.userInitiated).async { [self] in
+            defer { finished.signal() }
+            while isRunning() {
+                let root = FileManager.default.temporaryDirectory
+                for directory in (try? FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:nil)) ?? [] {
+                    let database = directory.appendingPathComponent("inspection.sqlite")
+                    guard FileManager.default.fileExists(atPath:database.path) else { continue }
+                    for file in [directory] + ((try? FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil)) ?? []) {
+                        guard let attributes = try? FileManager.default.attributesOfItem(atPath:file.path), let protection = attributes[.protectionKey] as? FileProtectionType else { continue }
+                        let name = file == directory ? "." : file.lastPathComponent
+                        let key = directory.lastPathComponent + "/" + name + "/" + protection.rawValue
+                        let row = ["directory":directory.lastPathComponent,"file":name,"complete":String(protection == .complete),"actual":protection.rawValue]
+                        lock.lock(); rows[key] = row; lock.unlock()
+                    }
+                }
+                Thread.sleep(forTimeInterval:0.001)
+            }
+        }
+    }
+    private func isRunning() -> Bool { lock.lock(); defer { lock.unlock() }; return running }
+    func stop() {
+        lock.lock(); let wasRunning = running; running = false; lock.unlock()
+        if wasRunning { _ = finished.wait(timeout:.now() + 2) }
+    }
+    func samples() -> [[String:String]] { lock.lock(); defer { lock.unlock() }; return Array(rows.values) }
+}
+
+#endif

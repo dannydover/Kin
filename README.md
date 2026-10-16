@@ -1,7 +1,7 @@
 # Kin
 
-Kin is a personal reference tool for remembering the people in your friends' families:
-names, children, ages, grades, relationships, and the little details worth keeping.
+Kin is a local notebook for remembering your people: names, ages, relationships,
+and the little details worth keeping.
 
 ## Development status
 
@@ -13,11 +13,72 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
 
 ## App features
 
-- Friends, current and former partners, and children grouped into families.
-- Exact birthdays or estimated ages with reference dates, plus estimated school grades.
-- Editable notes, optional photos, and one-time Contacts name/photo imports.
-- Local Core Data storage, search, and explicit Save/Cancel editing.
-- Adaptive layouts and accessibility support, including larger text.
+- One authoritative Person with a stable identity, optional names, gender, notes,
+  optional protected adult photo, and unknown, exact, or estimated birth information.
+- Independent Friend, Family, and Colleague connections under Your connection.
+  Any selected connection puts a person on the combined index once. All people,
+  available from the navigation menu, provides searchable recovery for unlisted
+  entries and disconnected profiles. Your people is the default menu view; About
+  is available in the same menu.
+- Explicit parent links (biological, adoptive, step, unspecified) and mutual partner
+  links (current, former, unknown), with reuse of existing people or atomic create/link.
+  New partner links default to Current; explicit Former/Unknown choices are retained.
+  Selecting an existing person opens an unsaved relationship editor with Save/Cancel.
+  Add parent is available in every profile’s Parents section, including children
+  under 16 and profiles with no parents yet. Reuse a person or create/import one
+  through the shared editor; the selected person is the parent of the open profile.
+  Multiple explicit parents are allowed. Removing a relationship keeps both people.
+- Your people index previews explicitly linked children with age and approximate
+  school-grade cues; the indexed person’s own age stays on their profile.
+- Shared Add/Edit workflows, one-time Contacts imports, and explicit Save/Cancel.
+- Local Core Data SQLite storage with Complete Protection and failure recovery.
+- Adaptive system controls and accessibility labels, including larger text.
+
+Leave an unknown first name blank; whitespace-only first names are also treated
+as unknown. There is no separate unknown-name control. These entries use a permanent
+context label such as “Child 3.” Numbers are notebook references, never birth order.
+Naming later preserves identity and all links. Labels stay stable across profiles.
+Top-level additions require a connection choice; linked additions start unlisted.
+Editing connections later can remove a person from the index without deleting them.
+Profiles with a recorded current age under 16 hide Partners and Children, including
+their add controls; Parents, Add parent, and all stored links remain. Unknown ages are not assumed
+to be under 16. This display rule is separate from the adult-photo requirement.
+
+Estimated ages use a native scrollable wheel from 0 to 120 in a compact sheet,
+with a larger sheet at accessibility text sizes. Done applies the chosen age to
+the draft; Cancel or dismissing the wheel preserves the prior value. A new estimate
+requires a deliberate age choice, including zero, before Save is enabled.
+Age corrections requiring photo removal present explicit Cancel and Remove photo
+and save actions. Cancel keeps the correction as an unsaved draft. Person deletion
+and relationship removal also have visible Cancel actions.
+Estimates retain the entered age and civil as-of date. The displayed ~age advances
+on each as-of anniversary; no birthday is fabricated or persisted. Grades use the
+existing September school-year convention and are explicitly approximate, especially
+for estimates. Photos require both the displayed age and the youngest age represented
+by an estimate to be at least 18. Unknown ages cannot import, store, or display photos.
+Changing an age to an ineligible value requires confirmation before removing the
+existing photo; canceling the editor preserves the saved age and photo.
+
+Contacts imports use the native single-contact picker without requesting address-book
+access. Every selection opens an import review before changing the person draft.
+A complete valid birthday imports as an exact civil date; alternate-calendar dates
+use their recorded calendar, era, and leap-month information. Incomplete, ambiguous,
+invalid, or future dates ask for birth information using the same exact/estimated
+controls. Yearless birthdays remain in Contacts; Kin never fills in a year.
+
+The review identifies the current draft and selected contact. Confirmed import replaces
+names, birth information, and photo while retaining identity, notes, connections,
+and relationships. The prior person's adulthood and photo never carry into another
+contact. Continue without importing photo uses the selected complete birthday or
+Unknown and clears any previous draft photo. Cancel preserves the entire prior draft.
+Photo properties are accessed only after the selected or explicitly confirmed birth
+information establishes safe adulthood. No contact photo is read for unresolved or
+minor ages. Imported edits still require Save, and stored adult-photo removal retains
+its explicit age-correction confirmation.
+
+Removing a relationship preserves both people. Deleting a person removes their
+incident links and photo, never another person. Duplicate/self links and parentage
+cycles are rejected. Kin does not infer kinship, siblings, cousins, or other fields.
 
 Future features and proposals are tracked in [GitHub issues](https://github.com/dannydover/Kin/issues).
 An issue is a proposal or work item, not a release commitment.
@@ -37,17 +98,19 @@ open Kin.xcodeproj
 
 In Xcode, select the shared **Kin** scheme and an available **iPhone simulator**.
 Use **Product > Build**, **Product > Run**, or **Product > Test**. The shared
-scheme includes the complete KinTests unit/integration suite (63 tests in 16
-suites); the retained starter UI-test templates are not part of that suite.
+scheme includes KinTests unit/integration tests and UI regressions
+covering unlisted recovery, canceled edits, naming later, shared partner reuse,
+unlinking, deletion, and process relaunch.
 
 ```sh
-# Core-only package suite (50 tests); no external packages.
+# Core-only package suite; no external packages.
 scripts/test-core.sh
 
 # Full suite, including UIKit Contacts/photo integration tests.
 xcodebuild -project Kin.xcodeproj -scheme Kin \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0' \
-  -derivedDataPath DerivedData test CODE_SIGNING_ALLOWED=NO
+  -derivedDataPath DerivedData -parallel-testing-enabled NO \
+  -collect-test-diagnostics never test CODE_SIGNING_ALLOWED=NO
 
 # Compile a Release build for iPhone without provisioning or signing.
 scripts/build-unsigned-device.sh
@@ -59,17 +122,39 @@ target remains iOS 26.0. An unsigned device build is a compilation check and
 cannot be installed as a signed app. For personal device development, configure
 your own team locally and keep signing settings and materials out of commits.
 
-Debug-only in-memory previews can be launched with `--kin-preview list` or
-`--kin-preview empty`. They use fictional fixtures and do not open the saved
-notebook. Release builds omit this preview entry point.
+Debug-only `--kin-preview empty` uses an empty in-memory notebook. UI regression
+launches use `--kin-test-notebook` followed by a generated UUID to create a separate
+persisted test notebook; relaunching with the same token reuses only that test store.
+Both routes are omitted from Release. Run tests in a fresh isolated simulator;
+never use a real notebook for automated or destructive testing.
+
+Before the full suite, allow only the UI test runner to create synthetic Contacts
+in that isolated simulator:
+`xcrun simctl privacy <simulator-id> grant contacts com.intriguingideas.KinUITests.xctrunner`.
+Kin itself retains selection-only picker access and does not request address-book
+permission. The runner creates and removes its own adult, minor, and birthday-free
+cards; never grant this fixture access against a personal Contacts store.
 
 ## Continuous integration
 
 [Build and test](.github/workflows/ci.yml) runs on ordinary pull requests and
 pushes to `main` with read-only repository permissions and no persisted checkout
-credentials. It checks the indexed repository for prohibited data, runs both test
-suites after a clean app build, and compiles unsigned iPhone and simulator Release builds. It does not
-provision, distribute, or upload build products or logs as artifacts.
+credentials. Independent bounded jobs check repository privacy and core tests,
+run the full iOS test scheme, and compile/validate unsigned iPhone and simulator
+Release builds. The required `validate` check passes only when every job succeeds.
+A timeout or hung result finalization remains a failure even when assertions finish.
+
+The simulator job creates and removes only its own fresh iPhone simulator, seeds a
+metadata-free synthetic Photos image, runs tests serially without verbose failure
+diagnostic collection, and checks the finalized result summary for zero skips or
+failures. It grants Contacts access only to the UI test runner, which creates and
+removes dedicated synthetic cards with full adult/minor birthdays, photos, and no
+birthday. Native picker tests verify age-gated import and persistence; navigation
+checks also use the simulator’s standard fictional sample card. Missing fixtures
+fail the finalized-result gate. This matches the locally verified invocation while
+avoiding shared simulator/cloned-runner teardown state.
+Release validation runs independently so test cleanup cannot prevent those builds.
+The workflow does not provision, distribute, or upload build products or logs as artifacts.
 
 Release checks verify the iOS 26 minimum, iPhone-only device family, privacy
 manifest, absence of debug previews and personal build paths, and absence of
@@ -143,55 +228,69 @@ does not change the MIT terms or exclude asset copyrights from the license.
 
 ### Notebook protection and device validation
 
-Kin requests iOS Complete Protection for its SQLite store. Before opening an existing
-notebook, it upgrades the dedicated notebook directory and all existing files,
-including SQLite companions and external binary payloads, in place. It checks the
-files again after opening and saving; protected directories and the Core Data store
-option cover newly created files. The schema and notebook location stay unchanged.
-Updating an installed app with the same bundle identity and signing setup is the
-intended path. Open it once while unlocked to upgrade its existing files. Deleting
-or reinstalling the app is unnecessary and would discard its notebook.
+Kin requests Complete Protection for SQLite, its WAL/SHM companions, external photo
+payloads, directories, and protected temporary compatibility-inspection copies.
+Protection is verified on devices before/after opening and after saving. The store
+closes synchronously when protected data becomes unavailable and reopens after unlock.
+Views keep value drafts while the process remains alive. Unsaved edits do not survive
+process termination. Failed saves never trigger automatic operation replay or reset.
+An explicit retry of an already committed identical person/link save is idempotent;
+a newer conflicting edit requires canceling and reopening the editor.
 
-Kin closes its store when protected data is about to become unavailable and reopens
-it after unlock or return to the foreground. The same views and value drafts remain
-in memory. Failed saves leave the editor open; after recovery, check the saved state
-and explicitly retry. A save may already have committed before a subsequent read
-failed, so Kin never automatically repeats an operation. Unsaved drafts do not
-survive process termination. This is file protection, not a separate app passcode,
-instantaneous erasure of memory, or a guarantee about previously made backups.
-Revisit this design before adding background sync, widgets, or background saves.
+**This Person schema is incompatible with the earlier Friend/Partner/Child schema.**
+The default notebook location is retained specifically to detect an existing store,
+not silently open a fresh replacement. Compatibility is inspected on a protected
+disposable copy because Core Data metadata reads can change SQLite sidecars. Person
+payloads and graph invariants are also checked on that copy before the original opens;
+malformed estimates fail safely instead of reaching age calculations. External photos
+stay in their protected original support directory. Date labels explicitly render the
+stored Gregorian civil day in UTC, independently of device calendar and timezone. A legacy,
+unsupported, corrupt, or locked notebook is never deleted or migrated automatically.
+Old data migration is outside this version's scope. Existing installations will show
+an error until an explicit reset is coordinated; this build must not be presented as
+a seamless update preserving old schema data.
 
-The automated suite simulates availability changes and save failures. Its physical-device file
-attribute test covers an existing weaker-protection store, SQLite/WAL/SHM, large
-external payloads, later payload creation, inheritance and reopening. Simulator
-results do **not** establish real lock-time access denial or verify protection
-attributes; the simulator does not implement the device attribute readback. Before releasing, use a
-passcode-protected physical iPhone and synthetic records only:
+No reset control is shipped. For a disposable simulator notebook, create a fresh
+simulator or a new debug test token. For an existing physical installation, first
+obtain explicit approval for a destructive reset and preserve any desired data with
+an agreed secure device backup. Only after approval, delete the app through iOS and
+install the coordinated signed build. Offloading alone retains its data. No reset,
+phone installation, signing, or publication is performed by the automated suite.
 
-1. Use a spare test device, or explicitly approve an in-place update of the existing
-   test app. Keep its bundle identity and signing unchanged. Do not uninstall it.
-   First save a synthetic family with photos in the previous build, then update
-   while unlocked and verify every field, relationship and photo survives.
-2. Run `NotebookProtectionTests.fileProtectionUpgrade` on the device. Inspect the
-   notebook directory's protection attributes while unlocked; require Complete
-   Protection for the database, WAL/SHM, every support directory and external file.
-   Add/change large synthetic photos and repeat, including after relaunch.
-3. Open each friend/partner/child editor, change fields without saving, then lock
-   and unlock repeatedly. Verify the draft remains, Save succeeds once, and Cancel
-   discards only the draft. Repeat from the background and after returning active.
-4. Lock during an explicit Save (repeat with large synthetic photos). After unlock,
-   verify the previous or fully committed family, never a partial family; retry
-   from the retained draft and check there are no duplicates. Repeat deletion and
-   confirm no unintended additional record is removed.
-5. With a debugger/test harness attached, verify protected file reads fail once iOS
-   withdraws protected-data access, including reads through previously opened
-   handles. Check SQLite, its companions, and an external payload, then verify
-   reads and saves recover after unlock. Allow iOS's protection grace period.
-6. Relaunch, reboot and perform first unlock. A launch attempted while protected
-   data is unavailable must wait without creating/resetting a notebook; normal
-   opening must recover after unlock. Never interpret an inaccessible notebook as
-   corruption or delete it as recovery.
+Simulator tests exercise availability callbacks, lock/save interruption before and
+after commit, protected lifecycle recovery, external-photo persistence, rejected old
+stores, and byte preservation. They do not prove actual lock-time denial or physical
+protection attributes. Earlier hardware results apply only to their reviewed tree;
+this model and photo storage require fresh validation before release:
+
+1. Use a passcode-protected test iPhone and synthetic data, with explicit coordination
+   before installation or any reset. Verify the old schema is rejected intact.
+2. With the fresh Person notebook, run the device-only protection attribute tests.
+   Check SQLite/WAL/SHM, support directories, external photos, later-created files,
+   temporary compatibility copies, repeated saves, and relaunch.
+3. In every Add/Edit/link flow, verify Dynamic Type, VoiceOver focus/order/labels,
+   unknown names, All people recovery, optional names, and connection choices.
+4. Test Contacts and Photos imports at unknown, under-18, exact-18, and estimated-18
+   boundaries. Correct an adult age to minor/unknown, cancel the confirmation/editor,
+   verify saved photo preservation, then confirm removal and relaunch.
+5. Keep a value draft open through repeated lock/unlock and background transitions.
+   Lock during large-photo saves, link saves, unlink, and deletion. Require a fully
+   committed or unchanged transaction after recovery, never a partial graph.
+6. Repeat the real lock harness with the Person model and separate photo attribute.
+   Verify SQLite, WAL, SHM, external photo, and later-file reads through fresh and
+   pre-opened handles fail while UIKit reports protected data unavailable. Verify
+   a readable control and read/save/reopen recovery after unlock.
+7. Relaunch, reboot, and perform first unlock. Locked launch must wait without
+   opening, creating, or resetting a notebook. Never treat inaccessible data as empty.
+
+File protection is not an extra app passcode, immediate memory erasure, or a guarantee
+about earlier backups. Revisit this design before background sync, widgets, or saves.
 
 Apple references: [Data Protection classes](https://support.apple.com/guide/security/secb010e978a/web),
 [Core Data protection option](https://developer.apple.com/documentation/coredata/nspersistentstorefileprotectionkey),
 and [protected-data lifecycle callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationprotecteddatawillbecomeunavailable(_:)).
+
+Native photo-warning UI regression tests use synthetic simulator Photos fixtures.
+Seed an isolated simulator with `xcrun simctl addmedia <simulator-id> <synthetic-image>`
+before running that test; it reports a skip if the simulator has no image available.
+Never use a personal photo library for automated UI validation.

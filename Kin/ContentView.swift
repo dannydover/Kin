@@ -2,107 +2,164 @@ import SwiftUI
 
 struct ContentView: View {
     let store: KinStore
+    private enum PeopleScope { case yours, all }
+    @State private var scope = PeopleScope.yours
     @State private var query = ""
-    private enum AddRoute: String, Identifiable { case manual, contacts; var id: String { rawValue } }
-    @State private var adding: AddRoute?
+    @State private var adding = false
     @State private var showingAbout = false
-    @State private var deletion: Friend?
-    @State private var error: String?
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
-    private var hits: [SearchHit] { FamilySearch.results(in: store.friends, query: query) }
-
+    private var hits: [Person] { PeopleIndex.results(store.people, query: query, includeUnlisted: scope == .all) }
+    private var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var body: some View {
         NavigationStack {
             Group {
-                if store.friends.isEmpty && query.isEmpty { emptyState }
-                else if hits.isEmpty {
-                    ContentUnavailableView { Label("No matches", systemImage: "magnifyingglass") }
-                    description: { Text("No matches for “\(query)”. Try a friend, partner, or child’s name.") }
+                if hits.isEmpty {
+                    if isSearching { noMatches }
+                    else { emptyState }
                 } else {
-                    List {
-                        if query.isEmpty {
-                            Text("A little context. A closer connection.")
-                                .font(.subheadline).foregroundStyle(KinTheme.secondary)
-                                .listRowBackground(KinTheme.background).listRowSeparator(.hidden)
+                    List(hits) { person in
+                        NavigationLink(value: person.id) {
+                            if scope == .yours { FamilyIndexRow(person: person, store: store, today: today) }
+                            else { PersonRow(person: person, today: today, showsAge: false) }
                         }
-                        ForEach(hits) { hit in
-                            if let friend = store.friends.first(where: { $0.id == hit.friendID }) {
-                                NavigationLink(value: friend.id) {
-                                    if let subtitle = hit.subtitle {
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            Text(hit.title).font(.headline).fontDesign(.serif)
-                                            Text(subtitle).font(.caption).foregroundStyle(KinTheme.secondary)
-                                        }.padding(.vertical, 12)
-                                    } else { FriendRow(friend: friend, today: today) }
-                                }
-                                .listRowBackground(KinTheme.background)
-                                .listRowSeparatorTint(KinTheme.border)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    if hit.allowsFamilyDeletion {
-                                        Button("Delete Friend", role: .destructive) { deletion = friend }
-                                    }
-                                }
-                            }
-                        }
-                    }.listStyle(.plain).scrollContentBackground(.hidden)
+                        .listRowBackground(KinTheme.background)
+                        .listRowSeparatorTint(KinTheme.border)
+                    }.listStyle(.plain)
                 }
             }
-            .background(KinTheme.background).foregroundStyle(KinTheme.text)
-            .navigationTitle("Kin").navigationBarTitleDisplayMode(.inline)
-            .kinSearch(enabled: !store.friends.isEmpty, query: $query)
+            .kinForm().navigationTitle(scope == .yours ? "Kin" : "All people").navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: scope == .yours ? "Find your people" : "Find all people")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showingAbout = true } label: { Image(systemName: "info.circle") }
-                        .accessibilityLabel("About Kin")
-                        .accessibilityHint("Includes the Privacy Policy link")
+                    Menu {
+                        Button("Your people", systemImage: scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
+                        Button("All people", systemImage: scope == .all ? "checkmark" : "person.3") { switchScope(.all) }
+                        Button("About", systemImage: "info.circle") { showingAbout = true }
+                    } label: { Image(systemName: "line.3.horizontal") }
+                    .accessibilityLabel("Navigation menu")
+                    .accessibilityHint(scope == .yours ? "Showing Your people" : "Showing All people")
+                    .accessibilityIdentifier("people-menu")
                 }
-                ToolbarItem(placement: .principal) { Text("Kin").font(.title).fontDesign(.serif).foregroundStyle(KinTheme.text).accessibilityAddTraits(.isHeader) }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { adding = .manual } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("Add friend")
-                }
+                ToolbarItem(placement: .primaryAction) { Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add person") }
             }
-            .navigationDestination(for: UUID.self) { id in FriendDetail(store: store, friendID: id, today: today) }
-            .sheet(item: $adding) { route in NavigationStack { FriendEditor(store: store, importFirst: route == .contacts) } }
+            .navigationDestination(for: UUID.self) { id in PersonDetail(store: store, personID: id, today: today).id(id) }
+            .sheet(isPresented: $adding) { NavigationStack { PersonEditor(store: store) } }
             .sheet(isPresented: $showingAbout) { AboutKinView() }
-            .confirmationDialog("Delete \(deletion?.fullName ?? "friend") and their family?", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } }), titleVisibility: .visible) {
-                Button("Delete Friend and Family", role: .destructive) {
-                    if let deletion { do { try store.deleteFriend(deletion.id) } catch { self.error = error.localizedDescription } }
-                    deletion = nil
-                }
-            } message: { Text("Their partners, children, photos, and notes will be removed from Kin. This cannot be undone.") }
-            .kinError($error)
-            .task {
-                #if DEBUG
-                let arguments = ProcessInfo.processInfo.arguments
-                if arguments.contains("--kin-preview") && arguments.contains("list-confirm") { deletion = store.friends.first }
-                if arguments.contains("--kin-preview") && arguments.contains("about") { showingAbout = true }
-                #endif
-            }
             .onChange(of: scenePhase) { _, phase in if phase == .active { today = Date() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in today = Date() }
-        }
-        .notebookAvailability(store)
+        }.notebookAvailability(store)
     }
+    private func switchScope(_ selection: PeopleScope) { scope = selection; query = "" }
     private var emptyState: some View {
         ScrollView {
             VStack(spacing: 24) {
                 Image("notebook").renderingMode(.template).resizable().scaledToFit()
                     .foregroundStyle(KinTheme.accent).frame(width: 124, height: 124).accessibilityHidden(true)
                 VStack(spacing: 12) {
-                    Text("Keep your people close.").font(.largeTitle).fontDesign(.serif).multilineTextAlignment(.center)
-                    Text("A small notebook for your friends’ families. Names, ages, and the little things you want to remember.")
+                    Text(store.people.isEmpty ? "Keep your people close." : "Your people is empty")
+                        .font(.largeTitle).fontDesign(.serif).multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(store.people.isEmpty
+                         ? "Names, ages, and the little things you want to remember. A small, private notebook for the people in your life."
+                         : "Choose Friend, Family, or Colleague to show someone here. Everyone you’ve saved is in All people in the menu.")
                         .font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
+                }.fixedSize(horizontal: false, vertical: true)
+                if store.people.isEmpty {
+                    Button { adding = true } label: {
+                        Label("Add your first person", systemImage: "plus").foregroundStyle(KinTheme.background).frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.borderedProminent).controlSize(.large)
+                } else {
+                    Button { switchScope(.all) } label: {
+                        Label("Browse all people", systemImage: "person.3").frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.bordered).controlSize(.large)
                 }
-                Text("Add your first friend").font(.title3).fontDesign(.serif).padding(.top, 12)
-                VStack(spacing: 12) {
-                    Button { adding = .contacts } label: { Label("Import from Contacts", systemImage: "person.crop.circle.badge.plus").frame(maxWidth: .infinity, minHeight: 44) }
-                    Button { adding = .manual } label: { Label("Add Manually", systemImage: "square.and.pencil").frame(maxWidth: .infinity, minHeight: 44) }
-                }.buttonStyle(.bordered).controlSize(.large)
-                Label("Private, on your iPhone", systemImage: "lock").font(.caption).foregroundStyle(KinTheme.secondary)
+                Label("Private, on your iPhone", systemImage: "lock")
+                    .font(.caption).foregroundStyle(KinTheme.secondary)
             }.padding(28).padding(.top, 32).frame(maxWidth: 520).frame(maxWidth: .infinity)
         }
+    }
+    private var noMatches: some View {
+        ContentUnavailableView {
+            Label("No matches", systemImage: "magnifyingglass")
+        } description: {
+            Text(scope == .yours ? "Try another name or a label like Child 2. Search All people for anyone outside Your people." : "Try another name or a label like Child 2.")
+        } actions: {
+            if scope == .yours { Button("Search all people") { scope = .all } }
+        }
+    }
+}
+/// Index previews follow explicit parent links only; partner links imply no children.
+struct FamilyIndexRow: View {
+    let person: Person
+    let store: KinStore
+    let today: Date
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var previewAvatarSize = 40.0
+    private var rules: AgeRules { AgeRules(calendar: .current) }
+    private var children: [Person] {
+        let ids = Set(store.parentLinks.filter { $0.parentID == person.id }.map(\.childID))
+        return store.people.filter { ids.contains($0.id) }.sorted { $0.reference < $1.reference }
+    }
+    private var partners: [Person] {
+        let ids = Set(store.partnerLinks.filter { ($0.firstID == person.id || $0.secondID == person.id) && $0.status == .current }.map { $0.other(than: person.id) })
+        return store.people.filter { ids.contains($0.id) }.sorted { $0.reference < $1.reference }
+    }
+    var body: some View {
+        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
+            PersonAvatar(person: person, today: today)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(person.displayName).font(.headline).fontDesign(.serif).fixedSize(horizontal: false, vertical: true)
+                if children.isEmpty {
+                    Text(partners.isEmpty ? "No children added yet" : "With " + partners.map(\.displayName).joined(separator: ", "))
+                        .font(.subheadline).foregroundStyle(KinTheme.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible(), alignment: .leading)] : [GridItem(.adaptive(minimum: 125), alignment: .leading)], alignment: .leading, spacing: 12) {
+                        ForEach(children.prefix(3)) { child in
+                            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))) {
+                                PersonAvatar(person: child, today: today, size: previewAvatarSize)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(child.displayName).font(.subheadline).foregroundStyle(KinTheme.secondary)
+                                    Text(rules.displayAge(for: child.birthday, on: today)).font(.title3).fontDesign(.serif)
+                                    if let grade = rules.grade(for: child.birthday, on: today) {
+                                        Text("Approx. " + grade).font(.caption).foregroundStyle(KinTheme.secondary)
+                                    }
+                                }.fixedSize(horizontal: false, vertical: true)
+                            }.accessibilityElement(children: .combine)
+                                .accessibilityIdentifier("child-preview-" + child.id.uuidString)
+                        }
+                        if children.count > 3 { Text("+\(children.count - 3) more").font(.caption).foregroundStyle(KinTheme.secondary) }
+                    }
+                }
+            }
+        }.padding(.vertical, 16)
+    }
+}
+struct PersonAvatar: View {
+    let person: Person
+    let today: Date
+    var size: CGFloat = 48
+    var body: some View {
+        if let age = AgeRules(calendar: .current).age(for: person.birthday, on: today), age < 18 {
+            ChildAvatar(stage: .forAge(age), gender: person.gender, size: size)
+        } else {
+            InitialAvatar(first: person.firstName ?? "?", last: person.lastName ?? "", photo: person.visiblePhoto(on: today), gender: person.gender, size: size)
+        }
+    }
+}
+struct PersonRow: View {
+    let person: Person
+    let today: Date
+    var showsAge = true
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))) {
+            PersonAvatar(person: person, today: today)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(person.displayName).font(.headline).fontDesign(.serif)
+                if showsAge { Text(AgeRules(calendar: .current).displayAge(for: person.birthday, on: today)).font(.subheadline).foregroundStyle(KinTheme.secondary) }
+            }
+        }.padding(.vertical, 8)
     }
 }
 private struct AboutKinView: View {
@@ -127,14 +184,6 @@ private struct AboutKinView: View {
                                     .accessibilityLabel(appVersion.accessibilityLabel)
                             }
                             .frame(maxWidth: .infinity)
-                            Link(destination: URL(string: "https://www.intriguingideas.com/kin-privacy-policy")!) {
-                                Label("Privacy Policy", systemImage: "arrow.up.right.square")
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                    .padding(16)
-                                    .background(KinTheme.field, in: RoundedRectangle(cornerRadius: 22))
-                            }
-                            .accessibilityHint("Opens the Kin Privacy Policy in your browser")
                             Spacer(minLength: 24)
                             VStack(spacing: 8) {
                                 Image(systemName: "heart.fill")
@@ -149,6 +198,16 @@ private struct AboutKinView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .id("indie-message")
+                            Link(destination: URL(string: "https://www.intriguingideas.com/kin-privacy-policy")!) {
+                                Label("Privacy Policy", systemImage: "arrow.up.right.square")
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .padding(16)
+                                    .background(KinTheme.field, in: RoundedRectangle(cornerRadius: 22))
+                            }
+                            .accessibilityHint("Opens the Kin Privacy Policy in your browser")
+                            .accessibilityIdentifier("about-privacy-policy")
+                            .id("privacy-policy")
                         }
                         .frame(minHeight: max(0, geometry.size.height - 48))
                         .padding(24)
@@ -157,7 +216,7 @@ private struct AboutKinView: View {
                         #if DEBUG
                         let arguments = ProcessInfo.processInfo.arguments
                         if arguments.contains("--kin-preview") && arguments.contains("--about-bottom") {
-                            proxy.scrollTo("indie-message", anchor: .bottom)
+                            proxy.scrollTo("privacy-policy", anchor: .bottom)
                         }
                         #endif
                     }
@@ -172,49 +231,5 @@ private struct AboutKinView: View {
         #if DEBUG
         .presentationDetents(ProcessInfo.processInfo.arguments.contains("--kin-preview") && ProcessInfo.processInfo.arguments.contains("--about-compact") ? [.height(420)] : [.large])
         #endif
-    }
-}
-struct FriendRow: View {
-    let friend: Friend
-    let today: Date
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var previewAvatarSize = 40.0
-    private var rules: AgeRules { AgeRules(calendar: CivilDate.gregorian(in: .current)) }
-    var body: some View {
-        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
-            InitialAvatar(first: friend.firstName, last: friend.lastName, photo: friend.photo)
-            VStack(alignment: .leading, spacing: 10) {
-                Text(friend.fullName).font(.headline).fontDesign(.serif).fixedSize(horizontal: false, vertical: true)
-                if friend.children.isEmpty {
-                    Text(friend.currentPartner.map { "With \($0.fullName)" } ?? "No children added yet")
-                        .font(.subheadline).foregroundStyle(KinTheme.secondary)
-                } else {
-                    LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible(), alignment: .leading)] : [GridItem(.adaptive(minimum: 125), alignment: .leading)], alignment: .leading, spacing: 12) {
-                        previews
-                    }
-                }
-            }
-        }.padding(.vertical, 16)
-    }
-    @ViewBuilder private var previews: some View {
-        ForEach(friend.children.prefix(3)) { child in
-            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))) {
-                if let age = rules.age(for: child.birthday, on: today) {
-                    ChildAvatar(stage: .forAge(age), gender: child.gender, size: previewAvatarSize)
-                } else {
-                    Image(systemName: "calendar.badge.exclamationmark").frame(width: previewAvatarSize, height: previewAvatarSize).foregroundStyle(KinTheme.secondary).accessibilityHidden(true)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(child.firstName).font(.subheadline).foregroundStyle(KinTheme.secondary).fixedSize(horizontal: false, vertical: true)
-                    Text(rules.displayAge(for: child.birthday, on: today)).font(.title3).fontDesign(.serif).foregroundStyle(KinTheme.text)
-                }
-            }.accessibilityElement(children: .ignore)
-                .accessibilityLabel(ageLabel(for: child))
-        }
-        if friend.children.count > 3 { Text("+\(friend.children.count - 3) more").font(.caption).foregroundStyle(KinTheme.secondary) }
-    }
-    private func ageLabel(for child: Child) -> String {
-        guard let age = rules.age(for: child.birthday, on: today) else { return "\(child.firstName), date needs review" }
-        return "\(child.firstName), \(child.birthday.isEstimated ? "approximately " : "")\(age) years old"
     }
 }

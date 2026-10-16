@@ -4,6 +4,17 @@ import Testing
 @testable import Kin
 
 @Suite("Contact import lifecycle") @MainActor struct ContactPickerTests {
+    @Test("Picker exposes birthday and photo fields for the selected card")
+    func pickerFields() {
+        let view = ContactPicker(onSelect: { _ in }, onCancel: {})
+        let picker = ContactPicker.makePicker(delegate: view.makeCoordinator())
+        let keys = Set(picker.displayedPropertyKeys ?? [])
+        #expect(keys.contains(CNContactBirthdayKey))
+        #expect(keys.contains(CNContactNonGregorianBirthdayKey))
+        #expect(keys.contains(CNContactThumbnailImageDataKey))
+        #expect(keys.contains(CNContactImageDataKey))
+    }
+
     private func controllerType<T: UIViewControllerRepresentable>(of view: T) -> UIViewController.Type { T.UIViewControllerType.self }
 
     @Test("System picker does not own the SwiftUI editor sheet")
@@ -47,19 +58,19 @@ import Testing
     func importRequiresExplicitSave() throws {
         let store = try KinStore(inMemory: true)
         defer { try? store.close() }
-        var draft = Friend(firstName: "", lastName: "")
+        var draft = Person(firstName: "", lastName: "")
         let view = ContactPicker(onSelect: { snapshot in
             draft.firstName = snapshot.firstName; draft.lastName = snapshot.lastName
         }, onCancel: {})
         let coordinator = view.makeCoordinator()
         let contact = CNMutableContact(); contact.givenName = "Synthetic"; contact.familyName = "Friend"
         coordinator.contactPicker(CNContactPickerViewController(), didSelect: contact)
-        #expect(draft.firstName.isEmpty)
+        #expect(draft.firstName?.isEmpty ?? true)
         coordinator.pickerDidDismiss()
         #expect(draft.firstName == "Synthetic")
-        #expect(store.friends.isEmpty)
-        try store.saveFriend(draft)
-        #expect(store.friends.count == 1)
+        #expect(store.people.isEmpty)
+        try store.savePerson(draft)
+        #expect(store.people.count == 1)
     }
 
     @Test("Leaving a picker invalidates pending callbacks; a new import works")

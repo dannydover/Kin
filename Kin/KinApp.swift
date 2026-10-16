@@ -5,70 +5,68 @@ import Combine
 @main
 struct KinApp: App {
     @UIApplicationDelegateAdaptor(NotebookLifecycle.self) private var lifecycle
+    var body: some Scene {
+        WindowGroup { NotebookRoot(lifecycle: lifecycle) }
+    }
+}
+
+/// Observe the same delegate instance inside the scene's view graph.
+private struct NotebookRoot: View {
+    @ObservedObject var lifecycle: NotebookLifecycle
     @Environment(\.scenePhase) private var scenePhase
     @State private var store: KinStore?
     @State private var loadError: String?
-    var body: some Scene {
-        WindowGroup {
-            Group {
-                if let store {
-                    #if DEBUG
-                    if let previewScreen { DevelopmentPreview(store: store, screen: previewScreen, today: previewDate) }
-                    else { ContentView(store: store) }
-                    #else
-                    ContentView(store: store)
-                    #endif
-                }
-                else if !lifecycle.isAvailable {
-                    ContentUnavailableView("Notebook locked", systemImage: "lock", description: Text("Unlock your iPhone to open Kin."))
-                }
-                else if let loadError {
-                    ContentUnavailableView {
-                        Label("Your notebook couldn’t open", systemImage: "book.closed")
-                    } description: {
-                        Text("Your saved data has not been reset. \(loadError)")
-                    } actions: { Button("Try Again") { load() } }
-                } else { ProgressView("Opening Kin…") }
+    var body: some View {
+        Group {
+            if let store {
+                ContentView(store: store)
             }
-            .preferredColorScheme(.dark).tint(KinTheme.accent)
-            .background(KinTheme.background)
-            .task { if store == nil { load() } }
-            .onChange(of: lifecycle.isAvailable) { _, available in
-                if available && store == nil { load() }
+            else if !lifecycle.isAvailable {
+                ContentUnavailableView("Notebook locked", systemImage: "lock", description: Text("Unlock your iPhone to open Kin."))
             }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    lifecycle.refresh()
-                    if store == nil { load() }
-                }
+            else if let loadError {
+                ContentUnavailableView {
+                    Label("Your notebook couldn’t open", systemImage: "book.closed")
+                } description: {
+                    Text(loadError)
+                } actions: { Button("Try Again") { load() } }
+            } else { ProgressView("Opening Kin…") }
+        }
+        .preferredColorScheme(.dark).tint(KinTheme.accent)
+        .background(KinTheme.background)
+        .task {
+            // Delegate construction can precede UIKit's initial availability.
+            lifecycle.refresh()
+            if store == nil { load() }
+        }
+        .onChange(of: lifecycle.isAvailable) { _, available in
+            if available && store == nil { load() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                lifecycle.refresh()
+                if store == nil { load() }
             }
         }
     }
-    #if DEBUG
-    private var previewScreen: String? {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let index = arguments.firstIndex(of: "--kin-preview"), arguments.indices.contains(index + 1) else { return nil }
-        return arguments[index + 1]
-    }
-    private var previewDate: Date { Date(timeIntervalSince1970: 1790899200) }
-    #endif
     private func load() {
         #if DEBUG
-        if let previewScreen {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--kin-preview") {
+            do { store = try KinStore(inMemory: true); loadError = nil } catch { loadError = UserFacingError.message(error, opening: true) }
+            return
+        }
+        if let index = arguments.firstIndex(of: "--kin-test-notebook") {
+            guard arguments.indices.contains(index + 1), let token = UUID(uuidString: arguments[index + 1]) else {
+                loadError = "Kin couldn’t open this test notebook. Your saved notebook hasn’t been opened."
+                return
+            }
             do {
-                let preview = try KinStore(inMemory: true)
-                if previewScreen != "empty" {
-                    for var friend in DemoFamilies.make(on: previewDate, calendar: .current) {
-                        if previewScreen == "long-names" {
-                            friend.firstName = "Alexandria-Clementine"
-                            friend.lastName = "Willowbrook-Montgomery"
-                            for index in friend.children.indices { friend.children[index].firstName = "Christopher-Alexander" }
-                        }
-                        try preview.saveFriend(friend)
-                    }
-                }
-                store = preview; loadError = nil
-            } catch { loadError = error.localizedDescription }
+                let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+                let url = root.appendingPathComponent("KinTestNotebooks").appendingPathComponent(token.uuidString).appendingPathComponent("Kin.sqlite")
+                let notebook = try KinStore(storeURL: url, protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+                store = notebook; lifecycle.store = notebook; loadError = nil
+            } catch { loadError = UserFacingError.message(error, opening: true) }
             return
         }
         #endif
@@ -83,7 +81,7 @@ struct KinApp: App {
             if !UIApplication.shared.isProtectedDataAvailable {
                 lifecycle.refresh()
                 loadError = nil
-            } else { loadError = error.localizedDescription }
+            } else { loadError = UserFacingError.message(error, opening: true) }
         }
     }
 }
