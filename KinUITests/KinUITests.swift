@@ -727,16 +727,20 @@ final class KinUITests: XCTestCase {
         guard requireTestState(app, "Single named Friend control available", {
             friends.count == 1
         }) else { return }
-        positionFriendControl(friends, in: app)
-        guard requireTestState(app, "Friend ready and initially off", {
-            friends.count == 1 && friends.element.isHittable
+        let controls = friends.element.switches
+        guard requireTestState(app, "Friend control unique and initially off", {
+            friends.count == 1 && controls.count == 1
                 && friends.element.value as? String == "0"
+                && controls.element.value as? String == "0"
         }) else { return }
-        let friend = friends.element
-        friend.tap()
+        // The labeled accessibility wrapper spans the row; its nested switch
+        // is the demonstrated action target. Let XCTest scroll it into view.
+        controls.element.tap()
         let save = editor.buttons.matching(identifier: "Save")
         guard requireTestState(app, "Friend on and Save enabled", {
-            friends.count == 1 && friend.value as? String == "1" && save.count == 1
+            friends.count == 1 && controls.count == 1
+                && friends.element.value as? String == "1" && controls.element.value as? String == "1"
+                && friends.element.isHittable && controls.element.isHittable && save.count == 1
                 && save.element.isEnabled && save.element.isHittable
         }) else { return }
         save.element.tap()
@@ -746,44 +750,6 @@ final class KinUITests: XCTestCase {
                 && app.cells.containing(.staticText, identifier: name).count == 1
         }) else { return }
         XCTAssertTrue(app.staticTexts[name].exists)
-    }
-    @MainActor private func positionFriendControl(_ matches: XCUIElementQuery, in app: XCUIApplication) {
-        // The labeled switch is the stable interaction target. Its nested
-        // accessibility child is not a reliable scroll or visibility anchor.
-        for _ in 0..<3 {
-            guard matches.count == 1 else { return }
-            let control = matches.element
-            guard control.exists else { return }
-            if control.isHittable { return }
-            let frame = control.frame
-            let bounds = app.frame
-            let editor = app.navigationBars["Add person"]
-            guard editor.exists, !frame.isEmpty, !frame.isNull, !frame.isInfinite,
-                  frame.minX.isFinite, frame.maxX.isFinite, frame.minY.isFinite, frame.maxY.isFinite,
-                  bounds.height.isFinite, bounds.height > 0 else { return }
-            let top = editor.frame.maxY + 8
-            var bottom = bounds.maxY - 8
-            let keyboards = app.keyboards
-            guard keyboards.count <= 1 else { return }
-            if keyboards.count == 1 {
-                let keyboard = keyboards.element.frame
-                guard !keyboard.isEmpty, !keyboard.isNull, !keyboard.isInfinite else { return }
-                bottom = min(bottom, keyboard.minY - 8)
-            }
-            let height = bottom - top
-            guard top.isFinite, bottom.isFinite, height >= 80 else { return }
-            let movingUp: Bool
-            if frame.maxY > bottom { movingUp = true }
-            else if frame.minY < top { movingUp = false }
-            else { return } // In-view but unhittable: wait/fail, do not guess a scroll.
-            let distance = min(80, height * 0.2)
-            let startY = movingUp ? bottom - height * 0.25 : top + height * 0.25
-            let endY = startY + (movingUp ? -distance : distance)
-            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: (startY - bounds.minY) / bounds.height))
-            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: (endY - bounds.minY) / bounds.height))
-            start.press(forDuration: 0.05, thenDragTo: end)
-            // Re-resolve the labeled query before any further movement.
-        }
     }
     @MainActor private func requireTestState(_ app: XCUIApplication, _ stage: String,
                                              _ condition: @escaping () -> Bool,
