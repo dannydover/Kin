@@ -1,126 +1,67 @@
-name: Build and test
+name: Temporary synthetic Edit diagnostic
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [diagnostic/edit-identity-20261016]
 permissions:
   contents: read
 concurrency:
-  group: kin-ci-${{ github.workflow }}-${{ github.ref }}
+  group: edit-identity-diagnostic-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  core-validation:
+  focused-edit-diagnostic:
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify toolchain and simulator runtime
+      - name: Verify matching toolchain and repository privacy
         run: |
-          xcodebuild -version
-          xcrun swift --version
-          xcodebuild -showsdks
-          xcrun simctl list runtimes
-          xcrun simctl list devices available
           xcodebuild -version | grep -Fx 'Xcode 27.0'
           xcodebuild -version | grep -Fx 'Build version 27A266a'
-          xcrun swift --version | grep -F 'Apple Swift version 6.4'
           test "$(uname -m)" = arm64
-      - name: Repository privacy guard
-        run: |
-          python3 -m unittest discover -s scripts/tests -v
           python3 scripts/check-repository.py
-      - name: Core tests
-        run: scripts/test-core.sh
-  simulator-tests:
-    runs-on: xcode-27
-    timeout-minutes: 50
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Verify test toolchain
+      - name: Create this diagnostic's isolated synthetic simulator
         run: |
-          xcodebuild -version | grep -Fx 'Xcode 27.0'
-          xcodebuild -version | grep -Fx 'Build version 27A266a'
-          xcrun swift --version | grep -F 'Apple Swift version 6.4'
-          test "$(uname -m)" = arm64
-      - name: Create isolated iOS 27 simulator
+          KIN_EDIT_SIMULATOR=$(xcrun simctl create "Kin Edit diagnostic ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_EDIT_SIMULATOR=$KIN_EDIT_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_EDIT_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_EDIT_SIMULATOR" -b
+      - name: Compare broad query, strict candidate, and inherited action
+        timeout-minutes: 15
         run: |
-          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
-          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
-          xcrun simctl boot "$KIN_CI_SIMULATOR"
-          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
-          # Only the UI test runner seeds synthetic Contacts; Kin itself retains
-          # selection-only picker access without an address-book permission.
-          xcrun simctl privacy "$KIN_CI_SIMULATOR" grant contacts com.intriguingideas.KinUITests.xctrunner
-          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
-          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
-      - name: Unit, integration, and UI regression suite (iOS 27)
-        timeout-minutes: 45
-        run: >-
-          xcodebuild -project Kin.xcodeproj -scheme Kin
-          -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR"
-          -derivedDataPath DerivedData
-          -resultBundlePath "$RUNNER_TEMP/KinTests.xcresult"
-          -parallel-testing-enabled NO -collect-test-diagnostics never
-          -test-timeouts-enabled YES -default-test-execution-time-allowance 240
-          -maximum-test-execution-time-allowance 600
-          clean test CODE_SIGNING_ALLOWED=NO
-      - name: Require finalized results with full fixture coverage
-        run: |
-          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
-          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
-      - name: Remove this run's isolated simulator
+          xcodebuild -project Kin.xcodeproj -scheme Kin \
+            -destination "platform=iOS Simulator,id=$KIN_EDIT_SIMULATOR" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath "$RUNNER_TEMP/EditIdentity.xcresult" \
+            -only-testing:KinUITests/EditIdentityDiagnosticTests \
+            -test-iterations 3 -parallel-testing-enabled NO \
+            -collect-test-diagnostics never -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 240 \
+            -maximum-test-execution-time-allowance 600 \
+            test CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/EditIdentity-build.log" 2>&1
+      - name: Export and privacy-check explicit synthetic evidence
+        id: synthetic-evidence
         if: always()
         run: |
-          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
-            xcrun simctl shutdown "$KIN_CI_SIMULATOR" || true
-            xcrun simctl delete "$KIN_CI_SIMULATOR"
+          if [ -d "$RUNNER_TEMP/EditIdentity.xcresult" ]; then
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/EditIdentity.xcresult" --output-path "$RUNNER_TEMP/EditIdentity-export" > "$RUNNER_TEMP/EditIdentity-export.log" 2>&1
           fi
-  release-validation:
-    runs-on: xcode-27
-    timeout-minutes: 30
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@v4
+          python3 scripts/prepare-edit-diagnostic-artifact.py "$RUNNER_TEMP/EditIdentity-build.log" "$RUNNER_TEMP/EditIdentity-export" "$RUNNER_TEMP/EditIdentity-reviewed"
+      - name: Retain reviewed synthetic screenshots and control observations
+        if: always() && steps.synthetic-evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
         with:
-          persist-credentials: false
-      - name: Verify Release toolchain
+          name: synthetic-edit-identity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/EditIdentity-reviewed/
+          if-no-files-found: error
+          retention-days: 3
+      - name: Remove only this diagnostic's simulator
+        if: always()
         run: |
-          xcodebuild -version | grep -Fx 'Xcode 27.0'
-          xcodebuild -version | grep -Fx 'Build version 27A266a'
-          xcrun swift --version | grep -F 'Apple Swift version 6.4'
-          test "$(uname -m)" = arm64
-      - name: Unsigned iPhone Release build
-        run: |
-          scripts/build-unsigned-device.sh
-          python3 scripts/check-release.py DerivedData/Build/Products/Release-iphoneos/Kin.app
-      - name: Unsigned simulator Release build
-        run: >-
-          xcodebuild -project Kin.xcodeproj -scheme Kin
-          -destination 'generic/platform=iOS Simulator'
-          -configuration Release -derivedDataPath DerivedData
-          build CODE_SIGNING_ALLOWED=NO DEPLOYMENT_POSTPROCESSING=YES
-          STRIP_INSTALLED_PRODUCT=YES STRIP_STYLE=debugging
-      - name: Validate simulator Release app
-        run: python3 scripts/check-release.py DerivedData/Build/Products/Release-iphonesimulator/Kin.app
-  # Keep the existing required check, and require every independent job to finish.
-  # Completed assertions alone never turn a hung/cancelled xcodebuild into success.
-  validate:
-    needs: [core-validation, simulator-tests, release-validation]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Require all validation jobs
-        run: |
-          test "${{ needs.core-validation.result }}" = success
-          test "${{ needs.simulator-tests.result }}" = success
-          test "${{ needs.release-validation.result }}" = success
+          if [ -n "${KIN_EDIT_SIMULATOR:-}" ]; then
+            xcrun simctl shutdown "$KIN_EDIT_SIMULATOR" || true
+            xcrun simctl delete "$KIN_EDIT_SIMULATOR"
+          fi
