@@ -5,37 +5,47 @@ import Combine
 @main
 struct KinApp: App {
     @UIApplicationDelegateAdaptor(NotebookLifecycle.self) private var lifecycle
+    var body: some Scene {
+        WindowGroup { NotebookRoot(lifecycle: lifecycle) }
+    }
+}
+
+/// Observe the same delegate instance inside the scene's view graph.
+private struct NotebookRoot: View {
+    @ObservedObject var lifecycle: NotebookLifecycle
     @Environment(\.scenePhase) private var scenePhase
     @State private var store: KinStore?
     @State private var loadError: String?
-    var body: some Scene {
-        WindowGroup {
-            Group {
-                if let store {
-                    ContentView(store: store)
-                }
-                else if !lifecycle.isAvailable {
-                    ContentUnavailableView("Notebook locked", systemImage: "lock", description: Text("Unlock your iPhone to open Kin."))
-                }
-                else if let loadError {
-                    ContentUnavailableView {
-                        Label("Your notebook couldn’t open", systemImage: "book.closed")
-                    } description: {
-                        Text(loadError)
-                    } actions: { Button("Try Again") { load() } }
-                } else { ProgressView("Opening Kin…") }
+    var body: some View {
+        Group {
+            if let store {
+                ContentView(store: store)
             }
-            .preferredColorScheme(.dark).tint(KinTheme.accent)
-            .background(KinTheme.background)
-            .task { if store == nil { load() } }
-            .onChange(of: lifecycle.isAvailable) { _, available in
-                if available && store == nil { load() }
+            else if !lifecycle.isAvailable {
+                ContentUnavailableView("Notebook locked", systemImage: "lock", description: Text("Unlock your iPhone to open Kin."))
             }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    lifecycle.refresh()
-                    if store == nil { load() }
-                }
+            else if let loadError {
+                ContentUnavailableView {
+                    Label("Your notebook couldn’t open", systemImage: "book.closed")
+                } description: {
+                    Text(loadError)
+                } actions: { Button("Try Again") { load() } }
+            } else { ProgressView("Opening Kin…") }
+        }
+        .preferredColorScheme(.dark).tint(KinTheme.accent)
+        .background(KinTheme.background)
+        .task {
+            // Delegate construction can precede UIKit's initial availability.
+            lifecycle.refresh()
+            if store == nil { load() }
+        }
+        .onChange(of: lifecycle.isAvailable) { _, available in
+            if available && store == nil { load() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                lifecycle.refresh()
+                if store == nil { load() }
             }
         }
     }

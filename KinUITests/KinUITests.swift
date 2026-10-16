@@ -4,6 +4,28 @@ import UIKit
 
 final class KinUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    @MainActor func testNormalColdLaunchOpensNotebookAndPreservesSavedPerson() throws {
+        #if targetEnvironment(simulator)
+        // Run only in a fresh isolated simulator: exercise the normal notebook,
+        // with no preview/test-store arguments, including in Release builds.
+        let app = XCUIApplication()
+        app.launchArguments = []
+        app.launch()
+        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["Notebook locked"].exists)
+        let name = "Synthetic Cold Launch " + String(UUID().uuidString.prefix(8))
+        addPerson(app, name: name)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["Notebook locked"].exists)
+        app.staticTexts[name].tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
+        app.terminate()
+        #else
+        throw XCTSkip("Normal notebook startup regression requires an isolated simulator.")
+        #endif
+    }
     @MainActor func testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addPerson(app,name: "Synthetic Source")
