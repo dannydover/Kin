@@ -607,9 +607,22 @@ final class KinUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [ready],timeout: 10),.completed); app.buttons["Save"].tap()
         app.navigationBars.buttons["Edit"].tap()
         func selectSample() throws {
-            reveal(app.buttons["Import from Contacts"],in: app)
-            app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            let editor = app.navigationBars["Edit person"]
+            guard requireTestState(app, "Contacts import editor ready", {
+                editor.exists && editor.isHittable
+                    && !app.navigationBars["Photos"].exists
+                    && !app.navigationBars["Contact birth information"].exists
+            }) else { return }
+            let importButton = app.buttons["Import from Contacts"]
+            reveal(importButton, in: app, requireHittable: true)
+            guard requireTestState(app, "Contacts import draft and button ready", {
+                importButton.isHittable
+                    && app.textFields["First name (optional)"].value as? String == "Synthetic Existing Draft"
+            }) else { return }
+            importButton.tap()
+            let appeared = app.navigationBars["Contacts"].waitForExistence(timeout: 10)
+            if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
+            XCTAssertTrue(appeared)
             let search = app.searchFields.firstMatch
             XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText(contactName)
             let card = app.collectionViews["Search results"].cells[contactName].firstMatch
@@ -668,11 +681,12 @@ final class KinUITests: XCTestCase {
         capture(app,"Native age wheel selecting " + String(value))
         app.navigationBars["Age in years"].buttons["Done"].tap()
     }
-    @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+    @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication, requireHittable: Bool = false) {
         for _ in 0..<12 {
             if element.exists {
                 let frame = element.frame
-                if frame.minY >= 145 && frame.maxY <= app.frame.maxY - 100 { return }
+                if frame.minY >= 145 && frame.maxY <= app.frame.maxY - 100
+                    && (!requireHittable || element.isHittable) { return }
                 if frame.height > 0 && frame.minY < 145 { app.swipeDown(); continue }
             }
             app.swipeUp()
@@ -695,12 +709,71 @@ final class KinUITests: XCTestCase {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
     }
     @MainActor private func addPerson(_ app: XCUIApplication, name: String) {
-        app.buttons["Add person"].tap()
-        app.textFields["First name (optional)"].tap()
-        app.textFields["First name (optional)"].typeText(name)
-        app.switches["Friend"].switches.firstMatch.tap()
-        app.buttons["Save"].tap()
-        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 5))
+        let add = app.buttons.matching(identifier: "Add person")
+        guard requireTestState(app, "Add person action ready", {
+            add.count == 1 && add.element.isHittable
+        }) else { return }
+        add.element.tap()
+        let editor = app.navigationBars["Add person"]
+        let firstName = app.textFields["First name (optional)"]
+        guard requireTestState(app, "New person editor ready", {
+            editor.exists && editor.isHittable && firstName.isHittable
+        }) else { return }
+        firstName.tap(); firstName.typeText(name)
+        guard requireTestState(app, "New person name entered", {
+            firstName.value as? String == name
+        }) else { return }
+        let friends = app.switches["Friend"].switches
+        guard requireTestState(app, "Single Friend control available", {
+            friends.count == 1
+        }) else { return }
+        let friend = friends.element
+        reveal(friend, in: app, requireHittable: true)
+        guard requireTestState(app, "Friend ready and initially off", {
+            friend.isHittable && friend.value as? String == "0"
+        }) else { return }
+        friend.tap()
+        let save = editor.buttons.matching(identifier: "Save")
+        guard requireTestState(app, "Friend on and Save enabled", {
+            friend.value as? String == "1" && save.count == 1
+                && save.element.isEnabled && save.element.isHittable
+        }) else { return }
+        save.element.tap()
+        // Use the original five-second outcome bound for both dismissal and row.
+        guard requireTestState(app, "Saved person returned to exact index row", {
+            !editor.exists && app.staticTexts[name].exists
+                && app.cells.containing(.staticText, identifier: name).count == 1
+        }) else { return }
+        XCTAssertTrue(app.staticTexts[name].exists)
+    }
+    @MainActor private func requireTestState(_ app: XCUIApplication, _ stage: String,
+                                             _ condition: @escaping () -> Bool,
+                                             file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        if condition() { return true }
+        let expected = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+        let ready = XCTWaiter.wait(for: [expected], timeout: 5) == .completed
+        if !ready {
+            recordTestState(app, stage: stage)
+            XCTFail("UI precondition failed: " + stage, file: file, line: line)
+        }
+        return ready
+    }
+    @MainActor private func recordTestState(_ app: XCUIApplication, stage: String) {
+        // Fixed control-state flags only: no names, field contents, contact data,
+        // screenshots, store paths, or full accessibility hierarchy.
+        let saves = app.buttons.matching(identifier: "Save")
+        let friends = app.switches.matching(identifier: "Friend")
+        let value = friends.count == 1 ? friends.element.value as? String : nil
+        let friendState = value == "0" ? "off" : value == "1" ? "on" : "unavailable"
+        let flags = "stage=\(stage); addEditor=\(app.navigationBars["Add person"].exists); "
+            + "editEditor=\(app.navigationBars["Edit person"].exists); "
+            + "photos=\(app.navigationBars["Photos"].exists); contacts=\(app.navigationBars["Contacts"].exists); "
+            + "birthReview=\(app.navigationBars["Contact birth information"].exists); "
+            + "friend=\(friendState); saveUnique=\(saves.count == 1); "
+            + "saveEnabled=\(saves.count == 1 && saves.element.isEnabled); alert=\(app.alerts.count > 0)"
+        let state = XCTAttachment(string: flags)
+        state.name = "Bounded UI control state"; state.lifetime = .keepAlways; add(state)
+        print("Kin UI state: " + flags)
     }
 
 }
