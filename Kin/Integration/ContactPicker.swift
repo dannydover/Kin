@@ -20,14 +20,19 @@ import ContactsUI
     init(contact: CNContact, today: Date = Date(), timeZone: TimeZone = .current) {
         firstName = contact.isKeyAvailable(CNContactGivenNameKey) ? contact.givenName : ""
         lastName = contact.isKeyAvailable(CNContactFamilyNameKey) ? contact.familyName : ""
-        birthInformation = ContactBirthInformation.resolve(
-            gregorian: contact.isKeyAvailable(CNContactBirthdayKey) ? contact.birthday : nil,
-            alternate: contact.isKeyAvailable(CNContactNonGregorianBirthdayKey) ? contact.nonGregorianBirthday : nil,
+        let hasBirthday = contact.isKeyAvailable(CNContactBirthdayKey)
+        let hasAlternateBirthday = contact.isKeyAvailable(CNContactNonGregorianBirthdayKey)
+        let resolved = ContactBirthInformation.resolve(
+            gregorian: hasBirthday ? contact.birthday : nil,
+            alternate: hasAlternateBirthday ? contact.nonGregorianBirthday : nil,
             today: CivilDate(today, timeZone: timeZone))
+        // An omitted picker field does not establish that the card has no birthday.
+        birthInformation = resolved == .missing && !(hasBirthday && hasAlternateBirthday) ? .unavailable : resolved
         loadPhoto = {
-            guard contact.isKeyAvailable(CNContactImageDataAvailableKey), contact.imageDataAvailable,
-                  contact.isKeyAvailable(CNContactThumbnailImageDataKey) else { return nil }
-            return contact.thumbnailImageData
+            // Picker payloads can include image bytes without the availability flag,
+            // or only the full-size image. This closure still runs after the age gate.
+            if contact.isKeyAvailable(CNContactThumbnailImageDataKey), let data = contact.thumbnailImageData { return data }
+            return contact.isKeyAvailable(CNContactImageDataKey) ? contact.imageData : nil
         }
     }
 }
@@ -36,6 +41,14 @@ import ContactsUI
 struct ContactPicker: UIViewControllerRepresentable {
     var onSelect: (ContactSnapshot) -> Void
     var onCancel: () -> Void
+    @MainActor static func makePicker(delegate: CNContactPickerDelegate) -> CNContactPickerViewController {
+        let picker = CNContactPickerViewController()
+        picker.delegate = delegate
+        picker.displayedPropertyKeys = [CNContactGivenNameKey, CNContactFamilyNameKey,
+            CNContactBirthdayKey, CNContactNonGregorianBirthdayKey,
+            CNContactThumbnailImageDataKey, CNContactImageDataKey]
+        return picker
+    }
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
     func makeUIViewController(context: Context) -> Container {
         Container(coordinator: context.coordinator)
@@ -63,9 +76,7 @@ struct ContactPicker: UIViewControllerRepresentable {
             super.viewDidAppear(animated)
             if !hasPresented {
                 hasPresented = true
-                let picker = CNContactPickerViewController()
-                picker.delegate = coordinator
-                picker.displayedPropertyKeys = []
+                let picker = ContactPicker.makePicker(delegate: coordinator)
                 // A full-screen child returns appearance callbacks to this container
                 // only after its automatic dismissal transition completes.
                 picker.modalPresentationStyle = .fullScreen

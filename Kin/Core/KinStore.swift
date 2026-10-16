@@ -129,14 +129,33 @@ enum NewRelationship: Equatable {
             try bytes.write(to: target, options: .atomic)
             #endif
         }
-        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(ofType: NSSQLiteStoreType, at: copy, options: [NSReadOnlyPersistentStoreOption: true])
-        guard Self.model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) else { throw KinError.incompatibleStore }
+        var inspectionOptions: [AnyHashable: Any] = [
+            NSReadOnlyPersistentStoreOption: true,
+            NSMigratePersistentStoresAutomaticallyOption: false,
+            NSInferMappingModelAutomaticallyOption: false,
+            // This disposable copy has one connection. Request exclusive locking
+            // so SQLite can use an in-memory WAL index without a shared-memory file.
+            NSSQLitePragmasOption: ["locking_mode": "EXCLUSIVE"]
+        ]
+        #if os(iOS)
+        inspectionOptions[NSPersistentStoreFileProtectionKey] = FileProtectionType.complete
+        #endif
         let coordinator = NSPersistentStoreCoordinator(managedObjectModel: Self.model)
         let inspectionContext = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
         inspectionContext.persistentStoreCoordinator = coordinator
-        let inspectionStore = try coordinator.addPersistentStore(ofType: NSSQLiteStoreType, configurationName: nil, at: copy,
-            options: [NSReadOnlyPersistentStoreOption: true, NSMigratePersistentStoresAutomaticallyOption: false])
+        let inspectionStore: NSPersistentStore
+        do {
+            // Adding the read-only store checks model compatibility itself. A
+            // separate metadata-only open can create sidecars with default protection.
+            inspectionStore = try coordinator.addPersistentStore(ofType: NSSQLiteStoreType, configurationName: nil, at: copy,
+                options: inspectionOptions)
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSPersistentStoreIncompatibleVersionHashError {
+            throw KinError.incompatibleStore
+        }
         defer { inspectionContext.reset(); try? coordinator.remove(inspectionStore) }
+        guard Self.model.isConfiguration(withName: nil, compatibleWithStoreMetadata: coordinator.metadata(for: inspectionStore)) else {
+            throw KinError.incompatibleStore
+        }
         try NotebookProtection.prepare(directory: scratch)
         // Validate payloads and graph before touching the real store. External
         // photo bytes stay in their original protected support directory and

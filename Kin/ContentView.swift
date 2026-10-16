@@ -184,14 +184,6 @@ private struct AboutKinView: View {
                                     .accessibilityLabel(appVersion.accessibilityLabel)
                             }
                             .frame(maxWidth: .infinity)
-                            Link(destination: URL(string: "https://www.intriguingideas.com/kin-privacy-policy")!) {
-                                Label("Privacy Policy", systemImage: "arrow.up.right.square")
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                    .padding(16)
-                                    .background(KinTheme.field, in: RoundedRectangle(cornerRadius: 22))
-                            }
-                            .accessibilityHint("Opens the Kin Privacy Policy in your browser")
                             Spacer(minLength: 24)
                             VStack(spacing: 8) {
                                 Image(systemName: "heart.fill")
@@ -206,6 +198,16 @@ private struct AboutKinView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .id("indie-message")
+                            Link(destination: URL(string: "https://www.intriguingideas.com/kin-privacy-policy")!) {
+                                Label("Privacy Policy", systemImage: "arrow.up.right.square")
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .padding(16)
+                                    .background(KinTheme.field, in: RoundedRectangle(cornerRadius: 22))
+                            }
+                            .accessibilityHint("Opens the Kin Privacy Policy in your browser")
+                            .accessibilityIdentifier("about-privacy-policy")
+                            .id("privacy-policy")
                         }
                         .frame(minHeight: max(0, geometry.size.height - 48))
                         .padding(24)
@@ -214,7 +216,7 @@ private struct AboutKinView: View {
                         #if DEBUG
                         let arguments = ProcessInfo.processInfo.arguments
                         if arguments.contains("--kin-preview") && arguments.contains("--about-bottom") {
-                            proxy.scrollTo("indie-message", anchor: .bottom)
+                            proxy.scrollTo("privacy-policy", anchor: .bottom)
                         }
                         #endif
                     }

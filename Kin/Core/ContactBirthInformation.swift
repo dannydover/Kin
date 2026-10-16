@@ -3,7 +3,7 @@ import Foundation
 /// Contacts dates are civil components. Never let Foundation fill a missing year,
 /// normalize an invalid day, or select a current era for an ambiguous calendar.
 enum ContactBirthInformation: Equatable {
-    case exact(CivilDate), missing, yearless, invalid, ambiguousCalendar
+    case exact(CivilDate), missing, unavailable, yearless, invalid, ambiguousCalendar
 
     static func resolve(gregorian: DateComponents?, alternate: DateComponents?, today: CivilDate) -> Self {
         if let gregorian {
@@ -49,6 +49,7 @@ enum ContactBirthInformation: Equatable {
         switch self {
         case .exact: "This contact has a birthday with a year."
         case .missing: "This contact doesn’t have a full birthday saved."
+        case .unavailable: "Contacts didn’t share this person’s birthday with Kin. Enter their birthday or estimated age here, or continue without a photo."
         case .yearless: "This contact’s birthday has no year, so Kin can’t tell their age. The birthday stays in Contacts as it is."
         case .invalid: "Kin couldn’t use this birthday as written. Check that it’s a real date that isn’t in the future, or leave the age unknown."
         case .ambiguousCalendar: "Kin can’t tell the exact date from this contact’s calendar details. Check the birthday here or leave the age unknown."

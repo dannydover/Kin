@@ -128,6 +128,13 @@ persisted test notebook; relaunching with the same token reuses only that test s
 Both routes are omitted from Release. Run tests in a fresh isolated simulator;
 never use a real notebook for automated or destructive testing.
 
+Before the full suite, allow only the UI test runner to create synthetic Contacts
+in that isolated simulator:
+`xcrun simctl privacy <simulator-id> grant contacts com.intriguingideas.KinUITests.xctrunner`.
+Kin itself retains selection-only picker access and does not request address-book
+permission. The runner creates and removes its own adult, minor, and birthday-free
+cards; never grant this fixture access against a personal Contacts store.
+
 ## Continuous integration
 
 [Build and test](.github/workflows/ci.yml) runs on ordinary pull requests and
@@ -140,9 +147,12 @@ A timeout or hung result finalization remains a failure even when assertions fin
 The simulator job creates and removes only its own fresh iPhone simulator, seeds a
 metadata-free synthetic Photos image, runs tests serially without verbose failure
 diagnostic collection, and checks the finalized result summary for zero skips or
-failures. Native Contacts UI coverage uses the simulator’s standard fictional sample
-card; missing fixtures fail the finalized-result gate. This matches the locally
-verified invocation while avoiding shared simulator/cloned-runner teardown state.
+failures. It grants Contacts access only to the UI test runner, which creates and
+removes dedicated synthetic cards with full adult/minor birthdays, photos, and no
+birthday. Native picker tests verify age-gated import and persistence; navigation
+checks also use the simulator’s standard fictional sample card. Missing fixtures
+fail the finalized-result gate. This matches the locally verified invocation while
+avoiding shared simulator/cloned-runner teardown state.
 Release validation runs independently so test cleanup cannot prevent those builds.
 The workflow does not provision, distribute, or upload build products or logs as artifacts.
 

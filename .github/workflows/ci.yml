@@ -56,6 +56,9 @@ jobs:
           echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
           xcrun simctl boot "$KIN_CI_SIMULATOR"
           xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          # Only the UI test runner seeds synthetic Contacts; Kin itself retains
+          # selection-only picker access without an address-book permission.
+          xcrun simctl privacy "$KIN_CI_SIMULATOR" grant contacts com.intriguingideas.KinUITests.xctrunner
           python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
           xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
       - name: Unit, integration, and UI regression suite (iOS 27)

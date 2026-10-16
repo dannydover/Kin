@@ -4,6 +4,17 @@ import Testing
 @testable import Kin
 
 @Suite("Contact import lifecycle") @MainActor struct ContactPickerTests {
+    @Test("Picker exposes birthday and photo fields for the selected card")
+    func pickerFields() {
+        let view = ContactPicker(onSelect: { _ in }, onCancel: {})
+        let picker = ContactPicker.makePicker(delegate: view.makeCoordinator())
+        let keys = Set(picker.displayedPropertyKeys ?? [])
+        #expect(keys.contains(CNContactBirthdayKey))
+        #expect(keys.contains(CNContactNonGregorianBirthdayKey))
+        #expect(keys.contains(CNContactThumbnailImageDataKey))
+        #expect(keys.contains(CNContactImageDataKey))
+    }
+
     private func controllerType<T: UIViewControllerRepresentable>(of view: T) -> UIViewController.Type { T.UIViewControllerType.self }
 
     @Test("System picker does not own the SwiftUI editor sheet")

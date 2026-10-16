@@ -1,6 +1,10 @@
 import Foundation
 import CoreData
+import SQLite3
 import Testing
+#if os(iOS)
+import UIKit
+#endif
 @testable import Kin
 
 @MainActor private final class Availability {
@@ -139,7 +143,79 @@ import Testing
         #expect(store.people == [friend])
     }
 
+    @Test("Compatibility inspection preserves committed identities and links still in the WAL")
+    func committedWAL() throws {
+        let url = try temporaryURL(), directory = url.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = try KinStore(storeURL: url)
+        defer { try? source.close() }
+        let parent = Person(firstName: "Synthetic parent"), child = Person(firstName: "Synthetic child")
+        try source.savePerson(parent)
+        try source.savePerson(child, relationship: .child(of: parent.id, parentage: .adoptive))
+        let expectedPeople = source.people, expectedLinks = source.parentLinks
+        let wal = URL(fileURLWithPath: url.path + "-wal")
+        #expect(try Data(contentsOf: wal).count > 32)
+        // immutable deliberately ignores WAL: prove the committed people cannot
+        // be recovered by inspecting the main file alone.
+        var database: OpaquePointer?
+        let uri = "file:" + url.path + "?immutable=1"
+        try #require(sqlite3_open_v2(uri, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK)
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        let prepared = sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM ZPERSONRECORD", -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        if prepared == SQLITE_OK {
+            try #require(sqlite3_step(statement) == SQLITE_ROW)
+            #expect(sqlite3_column_int64(statement, 0) == 0)
+        } else {
+            #expect(prepared == SQLITE_ERROR)
+            #expect(String(cString: sqlite3_errmsg(database)).contains("no such table"))
+        }
+        // Copy source bytes while its writer remains open, retaining WAL-only commits.
+        let copyDirectory = directory.appendingPathComponent("copy")
+        try NotebookProtection.prepare(directory: copyDirectory)
+        let copy = copyDirectory.appendingPathComponent("test.sqlite")
+        for suffix in ["", "-wal", "-shm"] {
+            let file = URL(fileURLWithPath: url.path + suffix)
+            if FileManager.default.fileExists(atPath: file.path) {
+                let target = URL(fileURLWithPath: copy.path + suffix)
+                #if os(iOS)
+                try Data(contentsOf: file).write(to: target, options: [.atomic, .completeFileProtection])
+                #else
+                try Data(contentsOf: file).write(to: target, options: .atomic)
+                #endif
+            }
+        }
+        let before = try ["", "-wal", "-shm"].map { try Data(contentsOf: URL(fileURLWithPath: url.path + $0)) }
+        let reopened = try KinStore(storeURL: copy)
+        defer { try? reopened.close() }
+        #expect(reopened.people == expectedPeople && reopened.parentLinks == expectedLinks)
+        #expect(try ["", "-wal", "-shm"].map { try Data(contentsOf: URL(fileURLWithPath: url.path + $0)) } == before)
+    }
+
     #if os(iOS) && !targetEnvironment(simulator)
+    @Test("Sampled transient compatibility files have Complete Protection")
+    func inspectionCreationProtection() throws {
+        try #require(UIApplication.shared.isProtectedDataAvailable)
+        let url = try temporaryURL(), directory = url.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store = try KinStore(storeURL:url,protectedDataAvailable:{ UIApplication.shared.isProtectedDataAvailable })
+        defer { try? store.close() }
+        var person = Person(firstName:"Synthetic",birthday:.exact(CivilDate(year:1980,month:1,day:1)),photo:Data(repeating:17,count:2_000_000))
+        try store.savePerson(person); person = try store.person(person.id)
+        let observer = InspectionCreationObserver(); observer.start()
+        defer { observer.stop() }
+        for _ in 0..<8 {
+            store.suspend(); try store.resume()
+            #expect(store.people == [person])
+        }
+        observer.stop()
+        let samples = observer.samples()
+        // A missed race is inconclusive, not a passing protection result.
+        #expect(samples.contains { $0["file"] == "." })
+        #expect(samples.contains { $0["file"] == "inspection.sqlite" })
+        for sample in samples { #expect(sample["complete"] == "true", "Transient inspection file protection: \(sample)") }
+    }
     @Test("Protection upgrade covers existing sidecars and nested files without changing bytes")
     func existingCompanions() throws {
         let url = try temporaryURL()
@@ -206,3 +282,41 @@ import Testing
     }
     #endif
 }
+
+#if os(iOS) && !targetEnvironment(simulator)
+// Poll independent creation-time attributes without changing production code.
+private final class InspectionCreationObserver: @unchecked Sendable {
+    private let lock = NSLock()
+    private var running = false
+    private var rows: [String:[String:String]] = [:]
+    private let finished = DispatchSemaphore(value:0)
+    func start() {
+        lock.lock(); running = true; lock.unlock()
+        DispatchQueue.global(qos:.userInitiated).async { [self] in
+            defer { finished.signal() }
+            while isRunning() {
+                let root = FileManager.default.temporaryDirectory
+                for directory in (try? FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:nil)) ?? [] {
+                    let database = directory.appendingPathComponent("inspection.sqlite")
+                    guard FileManager.default.fileExists(atPath:database.path) else { continue }
+                    for file in [directory] + ((try? FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil)) ?? []) {
+                        guard let attributes = try? FileManager.default.attributesOfItem(atPath:file.path), let protection = attributes[.protectionKey] as? FileProtectionType else { continue }
+                        let name = file == directory ? "." : file.lastPathComponent
+                        let key = directory.lastPathComponent + "/" + name + "/" + protection.rawValue
+                        let row = ["directory":directory.lastPathComponent,"file":name,"complete":String(protection == .complete),"actual":protection.rawValue]
+                        lock.lock(); rows[key] = row; lock.unlock()
+                    }
+                }
+                Thread.sleep(forTimeInterval:0.001)
+            }
+        }
+    }
+    private func isRunning() -> Bool { lock.lock(); defer { lock.unlock() }; return running }
+    func stop() {
+        lock.lock(); let wasRunning = running; running = false; lock.unlock()
+        if wasRunning { _ = finished.wait(timeout:.now() + 2) }
+    }
+    func samples() -> [[String:String]] { lock.lock(); defer { lock.unlock() }; return Array(rows.values) }
+}
+
+#endif

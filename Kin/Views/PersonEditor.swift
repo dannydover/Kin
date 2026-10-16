@@ -201,7 +201,7 @@ private struct BirthInformationFields: View {
                             .presentationDragIndicator(.visible)
                     }
                 DatePicker("As of", selection: $referenceDate, in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
-                Text("~ means the age is an estimate. Starting from the age and date you choose, Kin adds a year on the same date each year without guessing a birthday. School grades are a rough guide and may differ from the child’s actual grade.").font(.footnote)
+                Text("Estimated ages are marked with ~. Starting from the age and date you choose, Kin adds a year on the same date each year without guessing a birthday. School grades are a rough guide and may differ from the child’s actual grade.").font(.footnote)
             }
         }
     }
@@ -270,12 +270,14 @@ private struct ContactBirthInformationView: View {
         Form {
             Group {
                 Section("Review import") {
-                    LabeledContent("Current draft", value: currentDraft.displayName)
+                    if let name = ContactImport.reviewName(for: currentDraft) {
+                        LabeledContent("Current draft", value: name).accessibilityIdentifier("contact-current-draft")
+                    }
                     LabeledContent("Current birth information", value: currentBirthDescription)
                     if currentDraft.photo != nil {
                         LabeledContent("Current photo", value: "Will be replaced or removed")
                     }
-                    LabeledContent("Selected contact", value: (snapshot.firstName + " " + snapshot.lastName).trimmingCharacters(in: .whitespaces))
+                    LabeledContent("Selected contact", value: (snapshot.firstName + " " + snapshot.lastName).trimmingCharacters(in: .whitespaces)).accessibilityIdentifier("contact-selected-contact")
                     Text("Import will replace the name and age information on this screen. It will also replace the photo, or remove it if this contact has no photo Kin can use. Notes, connections, and relationships will stay.")
                 }
                 Section {

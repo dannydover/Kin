@@ -167,11 +167,12 @@ struct RelationshipEditor: View {
     var body: some View {
         Form {
             Group {
-                if isNew {
-                    let ids = parent.map { [$0.parentID, $0.childID] } ?? partner.map { [$0.firstID, $0.secondID] } ?? []
-                    ForEach(ids, id: \.self) { id in
-                        if let person = store.people.first(where: { $0.id == id }) { Text(person.displayName) }
-                    }
+                if let parent {
+                    personRoleRow(parent.parentID, role: "Parent", identifier: "relationship-parent")
+                    personRoleRow(parent.childID, role: "Child", identifier: "relationship-child")
+                } else if let partner {
+                    personRoleRow(partner.firstID, role: "Partner", identifier: "relationship-partner-first")
+                    personRoleRow(partner.secondID, role: "Partner", identifier: "relationship-partner-second")
                 }
                 relationshipPickers(child: parent != nil, parentage: $parentage, status: $status)
                 if isNew {
@@ -197,6 +198,18 @@ struct RelationshipEditor: View {
                 Button("Cancel", role: .cancel) { }
             } message: { Text("Both people remain available in All people.") }
             .kinError($error).notebookAvailability(store)
+    }
+    @ViewBuilder private func personRoleRow(_ id: UUID, role: String, identifier: String) -> some View {
+        if let person = store.people.first(where: { $0.id == id }) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(role).font(.caption).foregroundStyle(KinTheme.secondary)
+                Text(person.displayName).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(role): \(person.displayName)")
+            .accessibilityIdentifier(identifier)
+        }
     }
     private func save() {
         do {

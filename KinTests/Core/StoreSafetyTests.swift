@@ -9,8 +9,8 @@ import Testing
     var corruptAge: Int?
 }
 @Suite("Store preservation and transaction recovery") @MainActor struct StoreSafetyTests {
-    @Test("An earlier model is rejected without touching its bytes or silently resetting")
-    func oldModel() throws {
+    @Test("An earlier model is rejected without touching its bytes or silently resetting", arguments: [false, true])
+    func oldModel(liveWAL: Bool) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -23,11 +23,15 @@ import Testing
         let legacy = try coordinator.addPersistentStore(ofType: NSSQLiteStoreType, configurationName: nil, at: url)
         let context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType); context.persistentStoreCoordinator = coordinator
         let object = NSEntityDescription.insertNewObject(forEntityName: "FriendRecord", into: context)
-        object.setValue(UUID(), forKey: "id"); try context.save(); context.reset(); try coordinator.remove(legacy)
+        object.setValue(UUID(), forKey: "id"); try context.save(); context.reset()
+        if !liveWAL { try coordinator.remove(legacy) }
+        defer { if liveWAL { try? coordinator.remove(legacy) } }
+        if liveWAL { #expect(try Data(contentsOf: URL(fileURLWithPath: url.path + "-wal")).count > 32) }
         let before = try snapshot(directory)
         #expect(throws: KinError.incompatibleStore) { _ = try KinStore(storeURL: url) }
         #expect(try snapshot(directory) == before)
         // Original model still opens and reads its record afterward.
+        if liveWAL { try coordinator.remove(legacy) }
         let reopened = try coordinator.addPersistentStore(ofType: NSSQLiteStoreType, configurationName: nil, at: url)
         #expect(try context.count(for: NSFetchRequest<NSFetchRequestResult>(entityName: "FriendRecord")) == 1)
         context.reset(); try coordinator.remove(reopened)

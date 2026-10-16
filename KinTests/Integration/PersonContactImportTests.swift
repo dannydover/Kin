@@ -5,7 +5,82 @@ import ContactsUI
 import Testing
 @testable import Kin
 
+/// Models a system picker payload with only some of the contact keys fetched.
+private final class PartialContact: CNContact {
+    let keys: Set<String>
+    let savedBirthday: DateComponents?
+    let thumbnail: Data?
+    let fullImage: Data?
+    var photoReads = 0
+    init(keys: Set<String>, birthday: DateComponents? = nil, thumbnail: Data? = nil, fullImage: Data? = nil) {
+        self.keys = keys; savedBirthday = birthday; self.thumbnail = thumbnail; self.fullImage = fullImage
+        super.init()
+    }
+    required init?(coder: NSCoder) { fatalError("Not a serialized test fixture") }
+    override func isKeyAvailable(_ key: String) -> Bool { keys.contains(key) }
+    override var birthday: DateComponents? { savedBirthday }
+    override var nonGregorianBirthday: DateComponents? { nil }
+    override var thumbnailImageData: Data? { photoReads += 1; return thumbnail }
+    override var imageData: Data? { photoReads += 1; return fullImage }
+}
+
 @Suite("Person Contacts photo gate") @MainActor struct PersonContactImportTests {
+    @Test("Unavailable birthday fields are distinguished from a genuinely empty birthday")
+    func unavailableBirthday() {
+        let payloads: [Set<String>] = [[], [CNContactBirthdayKey], [CNContactNonGregorianBirthdayKey]]
+        for keys in payloads {
+            let contact = PartialContact(keys: keys)
+            #expect(ContactSnapshot(contact: contact).birthInformation == .unavailable)
+            #expect(contact.photoReads == 0)
+        }
+        let empty = PartialContact(keys: [CNContactBirthdayKey, CNContactNonGregorianBirthdayKey])
+        #expect(ContactSnapshot(contact: empty).birthInformation == .missing)
+    }
+
+    @Test("Partial picker images import only after adulthood, without requiring an availability flag", arguments: [true, false])
+    func partialPhoto(thumbnail: Bool) {
+        for year in [1980, 2020] {
+            let imageKey = thumbnail ? CNContactThumbnailImageDataKey : CNContactImageDataKey
+            let data = image()
+            let contact = PartialContact(keys: [CNContactBirthdayKey, imageKey],
+                birthday: DateComponents(year: year, month: 1, day: 1),
+                thumbnail: thumbnail ? data : nil, fullImage: thumbnail ? nil : data)
+            let snapshot = ContactSnapshot(contact: contact)
+            #expect(snapshot.birthInformation == .exact(CivilDate(year: year, month: 1, day: 1)))
+            #expect(contact.photoReads == 0)
+            var person = Person()
+            ContactImport.apply(snapshot, to: &person, today: CivilDate(year: 2026, month: 10, day: 15).pickerDate)
+            #expect(contact.photoReads == (year == 1980 ? 1 : 0))
+            #expect((person.photo != nil) == (year == 1980))
+        }
+    }
+
+    @Test("Unnamed unsaved draft contexts never expose a temporary notebook reference", arguments: ["Person","Parent","Child","Partner"])
+    func unnamedDraftReview(role: String) {
+        var draft = Person(); draft.unnamedRole = role
+        let original = draft
+        #expect(ContactImport.reviewName(for: draft) == nil)
+        #expect(draft == original && draft.reference == 0 && draft.revision == 0)
+        #expect(draft.firstName == nil && draft.lastName == nil)
+    }
+    @Test("Named and surname-only unsaved drafts review the entered name without a synthetic identity")
+    func namedDraftReview() {
+        let named = Person(firstName: "  Synthetic ",lastName: " Draft ")
+        let surnameOnly = Person(firstName: " \n",lastName: " Fictional Surname ")
+        #expect(ContactImport.reviewName(for: named) == "Synthetic Draft")
+        #expect(ContactImport.reviewName(for: surnameOnly) == "Fictional Surname")
+        #expect(ContactImport.reviewName(for: Person(firstName: " ",lastName: "\n")) == nil)
+        #expect(named.reference == 0 && surnameOnly.reference == 0)
+    }
+    @Test("Saved unnamed parent review preserves its stable label without changing stored names")
+    func savedUnnamedReview() throws {
+        let store = try KinStore(inMemory: true); defer { try? store.close() }
+        let child = Person(), parent = Person(); try store.savePerson(child)
+        try store.savePerson(parent,relationship: .parent(of: child.id,parentage: .unspecified))
+        let saved = try store.person(parent.id)
+        #expect(ContactImport.reviewName(for: saved) == "Parent 2")
+        #expect(saved.firstName == nil && saved.lastName == nil && store.people.count == 2)
+    }
     private func image() -> Data {
         UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).jpegData(withCompressionQuality: 1) { context in
             UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
@@ -94,7 +169,7 @@ import Testing
         #expect(try reopened.person(person.id) == saved)
         #expect(saved.birthday == .exact(day) && (saved.photo != nil) == (year <= 2008))
     }
-    @Test("A different unresolved contact cannot inherit the prefilled draft age or photo", arguments: [ContactBirthInformation.missing,.yearless,.invalid,.ambiguousCalendar])
+    @Test("A different unresolved contact cannot inherit the prefilled draft age or photo", arguments: [ContactBirthInformation.missing,.unavailable,.yearless,.invalid,.ambiguousCalendar])
     func unresolved(reason: ContactBirthInformation) {
         var reads = 0
         let snapshot = ContactSnapshot(firstName: "Imported",lastName: "Name",birthInformation: reason,loadPhoto: { reads += 1; return image() })
