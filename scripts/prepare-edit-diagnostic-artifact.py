@@ -16,6 +16,17 @@ PROGRESS_STAGES = {'started', 'launch requested', 'launched', 'child navigation 
                    'completed', 'teardown requested', 'evidence write failed',
                    'entry snapshot saved', 'control query requested'}
 
+BUILD_STAGES = {'dependency-graph', 'build-description', 'asset-compile', 'swift-driver',
+                'swift-compile', 'swift-module', 'clang-compile', 'link', 'copy',
+                'metadata', 'validate', 'build-succeeded', 'build-failed'}
+
+def validate_build(record):
+    assert isinstance(record, dict) and set(record) == {'stage', 'count', 'total', 'elapsedSeconds'}
+    assert record['stage'] in BUILD_STAGES
+    assert all(type(record[key]) is int and 0 <= record[key] <= 1000000 for key in ['count', 'total', 'elapsedSeconds'])
+    assert 1 <= record['count'] <= record['total']
+    return record
+
 def validate_observation(record):
     assert isinstance(record, dict)
     if record.get('stage') == 'parent action outcome':
@@ -100,12 +111,13 @@ def safe_file(path, root):
 
 def prepare(raw_log, exported, output, live=None, phase=None):
     output.mkdir(parents=True, exist_ok=False)
-    records, progress, attachments, issues, captures = [], [], [], [], []
+    records, progress, attachments, issues, captures, build = [], [], [], [], [], []
     rejected = 0
     if raw_log.exists():
         for line in raw_log.read_text(errors='replace').splitlines():
             for marker, validator, destination in [('KIN_EDIT_DIAGNOSTIC ', validate_observation, records),
-                                                    ('KIN_EDIT_PROGRESS ', validate_progress, progress)]:
+                                                    ('KIN_EDIT_PROGRESS ', validate_progress, progress),
+                                                    ('KIN_EDIT_BUILD ', validate_build, build)]:
                 if marker in line:
                     try:
                         destination.append(validator(json.loads(line.split(marker, 1)[1])))
@@ -189,12 +201,13 @@ def prepare(raw_log, exported, output, live=None, phase=None):
                     records.append(observation)
             except (AssertionError, ValueError, TypeError, SyntaxError, KeyError, OSError):
                 rejected += 1
+    (output / 'build-progress.json').write_text(json.dumps(build, indent=2) + '\n')
     (output / 'xctest-issues.json').write_text(json.dumps(issues, indent=2) + '\n')
     (output / 'entry-captures.json').write_text(json.dumps(captures, indent=2) + '\n')
     (output / 'control-observations.json').write_text(json.dumps(records, indent=2) + '\n')
     (output / 'progress.json').write_text(json.dumps(progress, indent=2) + '\n')
     (output / 'attachments.json').write_text(json.dumps(attachments, indent=2) + '\n')
-    summary = {'observations': len(records), 'progressEvents': len(progress), 'attachments': len(attachments), 'rejectedItems': rejected, 'xctestIssues': len(issues), 'entryCaptures': len(captures)}
+    summary = {'observations': len(records), 'progressEvents': len(progress), 'attachments': len(attachments), 'rejectedItems': rejected, 'xctestIssues': len(issues), 'entryCaptures': len(captures), 'buildProgressEvents': len(build)}
     (output / 'filter-status.json').write_text(json.dumps(summary, indent=2) + '\n')
     print('KIN_EDIT_FILTER ' + json.dumps(summary), flush=True)
     return summary

@@ -15,6 +15,27 @@ safety = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(safety)
 METHODS = {'baseline': 'testBaselineBroadEditQuery', 'observe': 'testObserveInheritedParentAction'}
 
+# Only fixed task categories and numeric counters leave the private native log.
+BUILD_PREFIXES = {
+    'ComputeTargetDependencyGraph': 'dependency-graph',
+    'CreateBuildDescription': 'build-description',
+    'CompileAssetCatalog': 'asset-compile',
+    'CompileAssetCatalogVariant': 'asset-compile',
+    'SwiftDriver': 'swift-driver',
+    'SwiftDriverJobDiscovery': 'swift-driver',
+    'SwiftDriverCompilation': 'swift-driver',
+    'SwiftDriverCompilationRequirements': 'swift-driver',
+    'SwiftCompile': 'swift-compile',
+    'SwiftEmitModule': 'swift-module',
+    'CompileC': 'clang-compile',
+    'Ld': 'link',
+    'Copy': 'copy',
+    'ExtractAppIntentsMetadata': 'metadata',
+    'Validate': 'validate',
+    '** TEST BUILD SUCCEEDED **': 'build-succeeded',
+    '** TEST BUILD FAILED **': 'build-failed',
+}
+
 def emit(event, **fields):
     print('KIN_EDIT_RUN ' + json.dumps({'event': event, **fields}, sort_keys=True), flush=True)
 
@@ -55,6 +76,9 @@ def supervise(command, raw_log, events_log, phase, deadline, grace=20):
     timed_out, rejected, next_heartbeat, kill_at, term_at = False, 0, started, None, None
     owner_exited_at, drain_truncated = None, False
     body_started, body_completed, last_stage = False, False, None
+    output_bytes, last_output, last_build = 0, None, None
+    build_counts = {}
+    deadline_evidence = None
     def signal_owned(kind):
         try:
             os.killpg(process.pid, kind)
@@ -63,8 +87,21 @@ def supervise(command, raw_log, events_log, phase, deadline, grace=20):
     emit('started', phase=phase, deadlineSeconds=deadline)
     with raw_log.open('wb') as raw, events_log.open('w') as events:
         def line_received(data):
-            nonlocal rejected, body_started, body_completed, last_stage
+            nonlocal rejected, body_started, body_completed, last_stage, last_build
             line = data.decode('utf-8', errors='replace')
+            if phase == 'build':
+                task = line.strip()
+                for prefix, stage in BUILD_PREFIXES.items():
+                    if task.startswith(prefix) and (len(task) == len(prefix) or task[len(prefix)] in ' \\'):
+                        build_counts[stage] = build_counts.get(stage, 0) + 1
+                        record = safety.validate_build({'stage': stage, 'count': build_counts[stage],
+                            'total': sum(build_counts.values()), 'elapsedSeconds': int(time.monotonic() - started)})
+                        # Stage transitions and every 25th task bound console volume.
+                        if stage != last_build or record['total'] % 25 == 0:
+                            safe = 'KIN_EDIT_BUILD ' + json.dumps(record, sort_keys=True)
+                            print(safe, flush=True); events.write(safe + '\n'); events.flush()
+                        last_build = stage
+                        break
             for marker, validator in [('KIN_EDIT_DIAGNOSTIC ', safety.validate_observation),
                                        ('KIN_EDIT_PROGRESS ', safety.validate_progress)]:
                 if marker in line:
@@ -90,11 +127,16 @@ def supervise(command, raw_log, events_log, phase, deadline, grace=20):
         while process.poll() is None or selector.get_map():
             now = time.monotonic()
             if now >= next_heartbeat:
-                emit('heartbeat', phase=phase, elapsedSeconds=int(now - started))
+                emit('heartbeat', phase=phase, elapsedSeconds=int(now - started),
+                     outputBytes=output_bytes, lastOutputAgeSeconds=round(now - last_output, 2) if last_output is not None else None,
+                     lastBuildStage=last_build, buildTaskCount=sum(build_counts.values()))
                 next_heartbeat = now + 15
             if not timed_out and now - started >= deadline and process.poll() is None:
                 timed_out = True; kill_at = now + grace
-                emit('deadline-reached', phase=phase)
+                deadline_evidence = {'outputBytes': output_bytes,
+                    'lastOutputAgeSeconds': round(now - last_output, 2) if last_output is not None else None,
+                    'lastBuildStage': last_build, 'buildTaskCount': sum(build_counts.values())}
+                emit('deadline-reached', phase=phase, **deadline_evidence)
                 signal_owned(signal.SIGINT)
             if kill_at is not None and now >= kill_at and process.poll() is None:
                 emit('terminate-owned-group', phase=phase)
@@ -106,6 +148,7 @@ def supervise(command, raw_log, events_log, phase, deadline, grace=20):
                 chunk = os.read(key.fileobj.fileno(), 65536)
                 if not chunk:
                     selector.unregister(key.fileobj); continue
+                output_bytes += len(chunk); last_output = time.monotonic()
                 raw.write(chunk); raw.flush(); pending += chunk
                 while b'\n' in pending:
                     line, pending = pending.split(b'\n', 1); line_received(line)
@@ -129,7 +172,9 @@ def supervise(command, raw_log, events_log, phase, deadline, grace=20):
               'elapsedSeconds': round(time.monotonic() - started, 2), 'rejectedEvents': rejected,
               'testBodyStarted': body_started, 'testBodyCompleted': body_completed,
               'lastProgressStage': last_stage, 'stdoutDrainTruncated': drain_truncated,
-              'ownedGroupCleanup': group_cleanup}
+              'ownedGroupCleanup': group_cleanup, 'outputBytes': output_bytes,
+              'lastOutputAgeSeconds': round(time.monotonic() - last_output, 2) if last_output is not None else None,
+              'lastBuildStage': last_build, 'buildTaskCounts': build_counts, 'deadlineEvidence': deadline_evidence}
     emit('finished', **status)
     return status
 
