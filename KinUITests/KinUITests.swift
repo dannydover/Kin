@@ -111,6 +111,29 @@ final class KinUITests: XCTestCase {
         app.navigationBars["Add child"].buttons["Cancel"].tap()
         XCTAssertFalse(app.buttons["Edit relationship with " + child].exists)
     }
+    @MainActor private func cancelRelationshipDraft(_ app: XCUIApplication, parent: String, child: String) throws {
+        assertParentRoles(app, parent: parent, child: child)
+        let bar = app.navigationBars["Add relationship"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let matches = bar.buttons.matching(identifier: "Cancel")
+        // Navigation transitions can temporarily expose both cancellation items.
+        // Never choose arbitrarily if more than one remains actionable.
+        let unique = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            matches.allElementsBoundByIndex.filter { $0.isHittable }.count == 1
+        }, object: bar)
+        let result = XCTWaiter.wait(for: [unique], timeout: 10)
+        let actionable = matches.allElementsBoundByIndex.filter { $0.isHittable }
+        guard result == .completed && actionable.count == 1 else {
+            capture(app, "Relationship cancellation did not settle uniquely")
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Ambiguous relationship Cancel hierarchy"
+            hierarchy.lifetime = .keepAlways; add(hierarchy)
+            XCTFail("Expected exactly one hittable Cancel in Add relationship; found \(actionable.count).")
+            throw NSError(domain: "KinUITests.RelationshipCancel", code: 1)
+        }
+        actionable[0].tap()
+        XCTAssertTrue(app.navigationBars["Add parent"].waitForExistence(timeout: 5))
+    }
     @MainActor private func assertParentRoles(_ app: XCUIApplication,parent: String,child: String) {
         let parentRow = app.descendants(matching: .any).matching(identifier: "relationship-parent").firstMatch
         let childRow = app.descendants(matching: .any).matching(identifier: "relationship-child").firstMatch
@@ -126,7 +149,7 @@ final class KinUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "relationship-parent").firstMatch.exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "relationship-child").firstMatch.exists)
     }
-    @MainActor func testAddParentsForYoungPersonReuseCreateNavigateAndUnlink() {
+    @MainActor func testAddParentsForYoungPersonReuseCreateNavigateAndUnlink() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addPerson(app,name: "Synthetic Young"); addPerson(app,name: "Synthetic Existing Parent")
         app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
@@ -138,7 +161,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Parent relationship, Unspecified"].exists)
         XCTAssertFalse(app.buttons["Synthetic Young"].exists)
         app.buttons["Synthetic Existing Parent"].tap()
-        app.navigationBars["Add relationship"].buttons["Cancel"].tap()
+        try cancelRelationshipDraft(app, parent: "Synthetic Existing Parent", child: "Synthetic Young")
         app.navigationBars["Add parent"].buttons["Cancel"].tap()
         XCTAssertFalse(app.buttons["Edit relationship with Synthetic Existing Parent"].exists)
         app.buttons["Add parent"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Biological"].tap()
@@ -147,7 +170,7 @@ final class KinUITests: XCTestCase {
         // Re-selecting a linked person must reject the duplicate without changing either person.
         app.buttons["Add parent"].tap(); app.buttons["Synthetic Existing Parent"].tap(); app.buttons["Save"].tap()
         XCTAssertTrue(app.alerts["Couldn’t finish"].waitForExistence(timeout: 5)); app.alerts.buttons["OK"].tap()
-        app.navigationBars["Add relationship"].buttons["Cancel"].tap(); app.navigationBars["Add parent"].buttons["Cancel"].tap()
+        try cancelRelationshipDraft(app, parent: "Synthetic Existing Parent", child: "Synthetic Young"); app.navigationBars["Add parent"].buttons["Cancel"].tap()
         app.staticTexts["Synthetic Existing Parent"].tap()
         XCTAssertTrue(app.navigationBars["Synthetic Existing Parent"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Synthetic Young"].exists)
@@ -156,7 +179,7 @@ final class KinUITests: XCTestCase {
         app.cells.buttons["Synthetic Young"].tap(); app.buttons["Save"].tap()
         XCTAssertTrue(app.alerts["Couldn’t finish"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.alerts.staticTexts["This would make someone their own ancestor. Check the parent and child you selected."].exists)
-        app.alerts.buttons["OK"].tap(); app.navigationBars["Add relationship"].buttons["Cancel"].tap(); app.navigationBars["Add parent"].buttons["Cancel"].tap()
+        app.alerts.buttons["OK"].tap(); try cancelRelationshipDraft(app, parent: "Synthetic Young", child: "Synthetic Existing Parent"); app.navigationBars["Add parent"].buttons["Cancel"].tap()
         app.navigationBars.buttons["Synthetic Young"].tap()
         app.buttons["Add parent"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Step"].tap()
         app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
