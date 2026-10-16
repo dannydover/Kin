@@ -13,7 +13,8 @@ STAGES = {'baseline teardown', 'baseline editor outcome', 'strict teardown',
           'strict editor outcome', 'observe entry', 'observe settled', 'parent action editor'}
 PROGRESS_STAGES = {'started', 'launch requested', 'launched', 'child navigation requested',
                    'child navigation completed', 'edit requested', 'edit dispatched',
-                   'completed', 'teardown requested', 'evidence write failed'}
+                   'completed', 'teardown requested', 'evidence write failed',
+                   'entry snapshot saved', 'control query requested'}
 
 def validate_observation(record):
     assert isinstance(record, dict)
@@ -46,6 +47,41 @@ def validate_progress(record):
     assert record['stage'] in PROGRESS_STAGES
     return record
 
+def sanitize_issue(item, phase):
+    assert isinstance(item, dict) and set(item) == {'probe', 'source', 'line', 'message', 'detail', 'operation', 'operationLine'}
+    assert item['probe'] in {'baseline', 'strict', 'observe'}
+    if phase and item['probe'] != phase:
+        return None
+    assert type(item['line']) is int and 0 <= item['line'] < 100000
+    assert isinstance(item['source'], str) and len(item['source']) < 256
+    assert item['operation'] in {'setup', 'baseline broad Edit tap', 'observer entry controls',
+                                  'observer settled controls', 'parent action tap', 'entry screenshot',
+                                  'entry hierarchy', 'injected ambiguous query'}
+    assert type(item['operationLine']) is int and 0 <= item['operationLine'] < 100000
+    redactions = 0
+    def sanitize(text):
+        nonlocal redactions
+        assert isinstance(text, str) and len(text) <= 128 * 1024
+        # Exact XCTest wording is retained except host paths, credentials,
+        # email addresses and physical-device identifiers. Synthetic fixture only.
+        for pattern in [r'file://[^\n\'\"]+',
+                        r'/(?:Users|home|Volumes|private|var|tmp)/[^\n\'\"]+',
+                        r'github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{20,}',
+                        r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',
+                        r'\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}\b']:
+            text, count = re.subn(pattern, '<redacted>', text)
+            redactions += count
+        assert 'PRIVATE KEY' not in text
+        assert all(ord(c) >= 32 or c in '\n\t' for c in text)
+        return text
+    message, detail = sanitize(item['message']), sanitize(item['detail'])
+    combined = message + '\n' + detail
+    category = ('multiple-matches' if 'Multiple matching elements' in combined else
+                'injected-query-failure' if 'Synthetic injected query failure' in combined else
+                'snapshot-failure' if 'snapshot' in combined.lower() else 'other-xctest-failure')
+    return {'probe': item['probe'], 'source': item['source'] if item['source'] == 'EditIdentityDiagnosticTests.swift' else 'unknown',
+            'line': item['line'], 'operation': item['operation'], 'operationLine': item['operationLine'], 'category': category, 'message': message, 'detail': detail, 'redactions': redactions}
+
 def safe_file(path, root):
     assert not path.is_symlink() and path.is_file()
     assert path.resolve().parent == root.resolve()
@@ -64,7 +100,7 @@ def safe_file(path, root):
 
 def prepare(raw_log, exported, output, live=None, phase=None):
     output.mkdir(parents=True, exist_ok=False)
-    records, progress, attachments = [], [], []
+    records, progress, attachments, issues, captures = [], [], [], [], []
     rejected = 0
     if raw_log.exists():
         for line in raw_log.read_text(errors='replace').splitlines():
@@ -111,8 +147,33 @@ def prepare(raw_log, exported, output, live=None, phase=None):
         for metadata in live.glob('*.json'):
             try:
                 assert not metadata.is_symlink() and metadata.stat().st_size < 128 * 1024
-                uuid.UUID(metadata.stem)
+                stem = metadata.name.split('.')[0]
+                uuid.UUID(stem)
                 item = json.loads(metadata.read_text())
+                if metadata.name == stem + '.issue.json':
+                    issue = sanitize_issue(item, phase)
+                    if issue is not None:
+                        issues.append(issue)
+                    continue
+                if metadata.name == stem + '.capture.json':
+                    assert set(item) == {'captureStage', 'parentID', 'image', 'hierarchy', 'label'}
+                    assert item['captureStage'] == 'observe entry'
+                    assert isinstance(item['parentID'], str) and item['parentID'].startswith('edit-person-')
+                    uuid.UUID(item['parentID'][len('edit-person-'):])
+                    if phase and phase != 'observe':
+                        continue
+                    assert item['label'] == 'Synthetic Edit diagnostic observe entry snapshot'
+                    assert item['image'] == stem + '.png'
+                    assert item['hierarchy'] in {None, stem + '.txt'}
+                    names = [item['image']] + ([item['hierarchy']] if item['hierarchy'] else [])
+                    validated = [(name, safe_file(live / name, live)) for name in names]
+                    for name, data in validated:
+                        (output / ('live-' + name)).write_bytes(data)
+                        attachments.append({'label': item['label'], 'file': 'live-' + name, 'source': 'pre-query-capture'})
+                    captures.append({'stage': item['captureStage'], 'parentID': item['parentID'], 'image': 'live-' + item['image'],
+                                     'hierarchy': 'live-' + item['hierarchy'] if item['hierarchy'] else None})
+                    continue
+                assert metadata.name == stem + '.json'
                 assert set(item) == {'observation', 'image', 'hierarchy', 'label'}
                 observation = validate_observation(item['observation'])
                 if phase and not (observation['stage'].startswith(phase) or phase == 'observe' and observation['stage'].startswith('parent action')):
@@ -128,10 +189,12 @@ def prepare(raw_log, exported, output, live=None, phase=None):
                     records.append(observation)
             except (AssertionError, ValueError, TypeError, SyntaxError, KeyError, OSError):
                 rejected += 1
+    (output / 'xctest-issues.json').write_text(json.dumps(issues, indent=2) + '\n')
+    (output / 'entry-captures.json').write_text(json.dumps(captures, indent=2) + '\n')
     (output / 'control-observations.json').write_text(json.dumps(records, indent=2) + '\n')
     (output / 'progress.json').write_text(json.dumps(progress, indent=2) + '\n')
     (output / 'attachments.json').write_text(json.dumps(attachments, indent=2) + '\n')
-    summary = {'observations': len(records), 'progressEvents': len(progress), 'attachments': len(attachments), 'rejectedItems': rejected}
+    summary = {'observations': len(records), 'progressEvents': len(progress), 'attachments': len(attachments), 'rejectedItems': rejected, 'xctestIssues': len(issues), 'entryCaptures': len(captures)}
     (output / 'filter-status.json').write_text(json.dumps(summary, indent=2) + '\n')
     print('KIN_EDIT_FILTER ' + json.dumps(summary), flush=True)
     return summary

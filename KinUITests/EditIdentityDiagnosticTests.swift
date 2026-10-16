@@ -3,9 +3,32 @@ import Darwin
 
 // Temporary synthetic-only diagnostic; never part of PR 33 required checks.
 final class EditIdentityDiagnosticTests: XCTestCase {
+    private var diagnosticProbe = "baseline"
+    private var injectQueryFailure = false
+    private var diagnosticOperation = "setup"
+    private var diagnosticOperationLine: UInt = 0
+    override func record(_ issue: XCTIssue) {
+        // Save before XCTest aborts the current operation. Only the privacy filter
+        // may publish this private runner-side record.
+        let location = issue.sourceCodeContext.location
+        let item: [String: Any] = ["probe": diagnosticProbe,
+            "source": location?.fileURL.lastPathComponent ?? "unknown",
+            "line": location?.lineNumber ?? 0,
+            "operation": diagnosticOperation, "operationLine": diagnosticOperationLine,
+            "message": issue.compactDescription,
+            "detail": issue.detailedDescription ?? ""]
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("KinEditDiagnostic", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: item).write(
+                to: directory.appendingPathComponent(UUID().uuidString + ".issue.json"), options: .atomic)
+        } catch { /* The bounded supervisor still reports an unsuccessful probe. */ }
+        super.record(issue)
+    }
     override func setUpWithError() throws { continueAfterFailure = false }
     @MainActor func testBaselineBroadEditQuery() {
         let probe = "baseline"
+        diagnosticProbe = probe
         progress(probe, "started")
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
@@ -40,6 +63,7 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         app.staticTexts["Child 2"].tap()
         progress(probe, "child navigation completed")
         progress(probe, "edit requested")
+        markOperation("baseline broad Edit tap")
         app.navigationBars.buttons["Edit"].tap()
         progress(probe, "edit dispatched")
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
@@ -52,6 +76,7 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.navigationBars["Child 2"].exists)
         progress(probe, "edit requested")
+        markOperation("baseline broad Edit tap")
         app.navigationBars.buttons["Edit"].tap()
         progress(probe, "edit dispatched")
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
@@ -73,6 +98,7 @@ final class EditIdentityDiagnosticTests: XCTestCase {
     }
     @MainActor func testStrictChildIdentityCandidate() {
         let probe = "strict"
+        diagnosticProbe = probe
         progress(probe, "started")
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
@@ -161,6 +187,7 @@ final class EditIdentityDiagnosticTests: XCTestCase {
     }
     @MainActor func testObserveInheritedParentAction() {
         let probe = "observe"
+        diagnosticProbe = probe
         progress(probe, "started")
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
@@ -190,14 +217,30 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         progress(probe, "child navigation requested")
         app.staticTexts["Child 2"].tap()
         progress(probe, "child navigation completed")
+        // Capture independently before any per-control resolution can fail.
+        recordEntrySnapshot(app, parentID: parentEditID)
+        if injectQueryFailure {
+            // Read-only ambiguous resolution exercises XCTest's real query error.
+            let ambiguous = app.buttons.matching(NSPredicate(
+                format: "label == %@ OR label == %@", "Add child", "Add partner"))
+            XCTAssertEqual(ambiguous.count, 2)
+            markOperation("injected ambiguous query")
+            _ = ambiguous.element.identifier
+            XCTFail("Synthetic injected ambiguity unexpectedly resolved")
+            return
+        }
+        progress(probe, "control query requested")
+        markOperation("observer entry controls")
         recordEditState(app, parentID: parentEditID, stage: "observe entry")
         let deadline = Date().addingTimeInterval(5)
         let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in Date() >= deadline }, object: app)
         XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 6), .completed)
+        markOperation("observer settled controls")
         recordEditState(app, parentID: parentEditID, stage: "observe settled")
         let parentAction = app.navigationBars["Child 2"].buttons.matching(identifier: parentEditID)
         XCTAssertLessThanOrEqual(parentAction.count, 1)
         if parentAction.count == 1 && parentAction.element.isHittable {
+            markOperation("parent action tap")
             parentAction.element.tap()
             let field = app.textFields["First name (optional)"]
             XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -209,6 +252,34 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         }
         app.terminate()
         progress(probe, "completed")
+    }
+    // Local failure-path validation only; never selected by the CI workflow.
+    @MainActor func testInjectedQueryFailureRetention() {
+        injectQueryFailure = true
+        testObserveInheritedParentAction()
+    }
+    @MainActor private func recordEntrySnapshot(_ app: XCUIApplication, parentID: String) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("KinEditDiagnostic", isDirectory: true)
+        let stem = UUID().uuidString
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            // Commit the image first; a later hierarchy query must not erase it.
+            markOperation("entry screenshot")
+            try app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent(stem + ".png"), options: .atomic)
+            var capture: [String: Any] = ["captureStage": "observe entry", "parentID": parentID, "image": stem + ".png",
+                "hierarchy": NSNull(), "label": "Synthetic Edit diagnostic observe entry snapshot"]
+            let marker = directory.appendingPathComponent(stem + ".capture.json")
+            try JSONSerialization.data(withJSONObject: capture).write(to: marker, options: .atomic)
+            markOperation("entry hierarchy")
+            try Data(app.debugDescription.utf8).write(to: directory.appendingPathComponent(stem + ".txt"), options: .atomic)
+            capture["hierarchy"] = stem + ".txt"
+            try JSONSerialization.data(withJSONObject: capture).write(to: marker, options: .atomic)
+            progress("observe", "entry snapshot saved")
+        } catch { progress("observe", "evidence write failed") }
+    }
+    @MainActor private func markOperation(_ operation: String, line: UInt = #line) {
+        diagnosticOperation = operation
+        diagnosticOperationLine = line
     }
     @MainActor private func openAllPeople(_ app: XCUIApplication) {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()

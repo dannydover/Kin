@@ -13,8 +13,7 @@ from pathlib import Path
 spec = importlib.util.spec_from_file_location('edit_safety', Path(__file__).with_name('prepare-edit-diagnostic-artifact.py'))
 safety = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(safety)
-METHODS = {'baseline': 'testBaselineBroadEditQuery', 'strict': 'testStrictChildIdentityCandidate',
-           'observe': 'testObserveInheritedParentAction'}
+METHODS = {'baseline': 'testBaselineBroadEditQuery', 'observe': 'testObserveInheritedParentAction'}
 
 def emit(event, **fields):
     print('KIN_EDIT_RUN ' + json.dumps({'event': event, **fields}, sort_keys=True), flush=True)
