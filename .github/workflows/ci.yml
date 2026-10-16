@@ -29,35 +29,51 @@ jobs:
           echo "KIN_EDIT_SIMULATOR=$KIN_EDIT_SIMULATOR" >> "$GITHUB_ENV"
           xcrun simctl boot "$KIN_EDIT_SIMULATOR"
           xcrun simctl bootstatus "$KIN_EDIT_SIMULATOR" -b
-      - name: Compare broad query, strict candidate, and inherited action
-        timeout-minutes: 15
-        run: |
-          xcodebuild -project Kin.xcodeproj -scheme Kin \
-            -destination "platform=iOS Simulator,id=$KIN_EDIT_SIMULATOR" \
-            -derivedDataPath DerivedData \
-            -resultBundlePath "$RUNNER_TEMP/EditIdentity.xcresult" \
-            -only-testing:KinUITests/EditIdentityDiagnosticTests \
-            -test-iterations 3 -parallel-testing-enabled NO \
-            -collect-test-diagnostics never -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 240 \
-            -maximum-test-execution-time-allowance 600 \
-            test CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/EditIdentity-build.log" 2>&1
-      - name: Export and privacy-check explicit synthetic evidence
-        id: synthetic-evidence
+      - name: Bounded build with safe live progress
+        id: build
+        continue-on-error: true
+        timeout-minutes: 6
+        run: python3 scripts/run-edit-diagnostic.py build "$KIN_EDIT_SIMULATOR" "$RUNNER_TEMP/EditIdentity/build"
+      - name: Single bounded baseline probe
+        id: baseline
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 4
+        run: python3 scripts/run-edit-diagnostic.py baseline "$KIN_EDIT_SIMULATOR" "$RUNNER_TEMP/EditIdentity/baseline"
+      - name: Single bounded strict identity probe
+        id: strict
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 4
+        run: python3 scripts/run-edit-diagnostic.py strict "$KIN_EDIT_SIMULATOR" "$RUNNER_TEMP/EditIdentity/strict"
+      - name: Single bounded inherited-action observer
+        id: observe
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 4
+        run: python3 scripts/run-edit-diagnostic.py observe "$KIN_EDIT_SIMULATOR" "$RUNNER_TEMP/EditIdentity/observe"
+      - name: Retain safe partial evidence even after a timeout
+        id: partial
         if: always()
-        run: |
-          if [ -d "$RUNNER_TEMP/EditIdentity.xcresult" ]; then
-            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/EditIdentity.xcresult" --output-path "$RUNNER_TEMP/EditIdentity-export" > "$RUNNER_TEMP/EditIdentity-export.log" 2>&1
-          fi
-          python3 scripts/prepare-edit-diagnostic-artifact.py "$RUNNER_TEMP/EditIdentity-build.log" "$RUNNER_TEMP/EditIdentity-export" "$RUNNER_TEMP/EditIdentity-reviewed"
-      - name: Retain reviewed synthetic screenshots and control observations
-        if: always() && steps.synthetic-evidence.outcome == 'success'
+        run: python3 scripts/run-edit-diagnostic.py collect "${KIN_EDIT_SIMULATOR:-}" "$RUNNER_TEMP/EditIdentity"
+      - name: Upload only filtered synthetic evidence and status
+        if: always() && steps.partial.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: synthetic-edit-identity-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/EditIdentity-reviewed/
+          path: |
+            ${{ runner.temp }}/EditIdentity/*/reviewed/
+            ${{ runner.temp }}/EditIdentity/summary.json
           if-no-files-found: error
           retention-days: 3
+      - name: Require every diagnostic phase to finish normally
+        if: always()
+        run: |
+          test '${{ steps.build.outcome }}' = success
+          test '${{ steps.baseline.outcome }}' = success
+          test '${{ steps.strict.outcome }}' = success
+          test '${{ steps.observe.outcome }}' = success
+          test '${{ steps.partial.outcome }}' = success
       - name: Remove only this diagnostic's simulator
         if: always()
         run: |

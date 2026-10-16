@@ -1,12 +1,17 @@
 import XCTest
+import Darwin
 
 // Temporary synthetic-only diagnostic; never part of PR 33 required checks.
 final class EditIdentityDiagnosticTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     @MainActor func testBaselineBroadEditQuery() {
+        let probe = "baseline"
+        progress(probe, "started")
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        progress(probe, "launch requested")
         app.launch()
+        progress(probe, "launched")
         app.buttons["Add person"].tap()
         XCTAssertFalse(app.buttons["Save"].isEnabled)
         app.textFields["First name (optional)"].tap()
@@ -22,6 +27,7 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         let parentEditID = parentEdits.element.identifier
         XCTAssertNotNil(UUID(uuidString: String(parentEditID.dropFirst("edit-person-".count))))
         addTeardownBlock { @MainActor in
+            self.progress(probe, "teardown requested")
             self.recordEditState(app, parentID: parentEditID, stage: "baseline teardown")
         }
         app.buttons["Add child"].tap()
@@ -30,8 +36,12 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         XCTAssertEqual(app.textFields["First name (optional)"].value as? String, "First name (optional)")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Child 2"].waitForExistence(timeout: 5))
+        progress(probe, "child navigation requested")
         app.staticTexts["Child 2"].tap()
+        progress(probe, "child navigation completed")
+        progress(probe, "edit requested")
         app.navigationBars.buttons["Edit"].tap()
+        progress(probe, "edit dispatched")
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
             XCTFail("Person editor did not open"); return
@@ -41,7 +51,9 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         app.textFields["First name (optional)"].typeText("Canceled Name")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.navigationBars["Child 2"].exists)
+        progress(probe, "edit requested")
         app.navigationBars.buttons["Edit"].tap()
+        progress(probe, "edit dispatched")
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
             XCTFail("Person editor did not open"); return
@@ -57,11 +69,16 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         openAllPeople(app)
         XCTAssertTrue(app.staticTexts["Synthetic Child"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Canceled Name"].exists)
+        progress(probe, "completed")
     }
     @MainActor func testStrictChildIdentityCandidate() {
+        let probe = "strict"
+        progress(probe, "started")
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        progress(probe, "launch requested")
         app.launch()
+        progress(probe, "launched")
         app.buttons["Add person"].tap()
         XCTAssertFalse(app.buttons["Save"].isEnabled)
         app.textFields["First name (optional)"].tap()
@@ -77,6 +94,7 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         let parentEditID = parentEdits.element.identifier
         XCTAssertNotNil(UUID(uuidString: String(parentEditID.dropFirst("edit-person-".count))))
         addTeardownBlock { @MainActor in
+            self.progress(probe, "teardown requested")
             self.recordEditState(app, parentID: parentEditID, stage: "strict teardown")
         }
         app.buttons["Add child"].tap()
@@ -85,7 +103,9 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         XCTAssertEqual(app.textFields["First name (optional)"].value as? String, "First name (optional)")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Child 2"].waitForExistence(timeout: 5))
+        progress(probe, "child navigation requested")
         app.staticTexts["Child 2"].tap()
+        progress(probe, "child navigation completed")
         let childBars = app.navigationBars.matching(identifier: "Child 2")
         XCTAssertEqual(childBars.count, 1)
         let childEdits = childBars.element.buttons.matching(NSPredicate(
@@ -99,7 +119,9 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         // Retained accessibility nodes may be ignored only when not actionable.
         XCTAssertFalse(priorParentEdit.count == 1 && priorParentEdit.element.isHittable)
         XCTAssertTrue(childEdits.element.isHittable)
+        progress(probe, "edit requested")
         childEdits.element.tap()
+        progress(probe, "edit dispatched")
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
             XCTFail("Person editor did not open"); return
@@ -116,7 +138,9 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         XCTAssertLessThanOrEqual(priorParentEdit.count, 1)
         XCTAssertFalse(priorParentEdit.count == 1 && priorParentEdit.element.isHittable)
         XCTAssertTrue(sameChildEdit.element.isHittable)
+        progress(probe, "edit requested")
         sameChildEdit.element.tap()
+        progress(probe, "edit dispatched")
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
             XCTFail("Person editor did not open"); return
@@ -133,11 +157,16 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         openAllPeople(app)
         XCTAssertTrue(app.staticTexts["Synthetic Child"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Canceled Name"].exists)
+        progress(probe, "completed")
     }
     @MainActor func testObserveInheritedParentAction() {
+        let probe = "observe"
+        progress(probe, "started")
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        progress(probe, "launch requested")
         app.launch()
+        progress(probe, "launched")
         app.buttons["Add person"].tap()
         XCTAssertFalse(app.buttons["Save"].isEnabled)
         app.textFields["First name (optional)"].tap()
@@ -158,7 +187,9 @@ final class EditIdentityDiagnosticTests: XCTestCase {
         XCTAssertEqual(app.textFields["First name (optional)"].value as? String, "First name (optional)")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Child 2"].waitForExistence(timeout: 5))
+        progress(probe, "child navigation requested")
         app.staticTexts["Child 2"].tap()
+        progress(probe, "child navigation completed")
         recordEditState(app, parentID: parentEditID, stage: "observe entry")
         let deadline = Date().addingTimeInterval(5)
         let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in Date() >= deadline }, object: app)
@@ -177,9 +208,14 @@ final class EditIdentityDiagnosticTests: XCTestCase {
             app.buttons["Cancel"].tap()
         }
         app.terminate()
+        progress(probe, "completed")
     }
     @MainActor private func openAllPeople(_ app: XCUIApplication) {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
+    }
+    @MainActor private func progress(_ probe: String, _ stage: String) {
+        let data = try! JSONSerialization.data(withJSONObject: ["probe": probe, "stage": stage], options: [.sortedKeys])
+        print("KIN_EDIT_PROGRESS " + String(decoding: data, as: UTF8.self)); fflush(nil)
     }
     @MainActor private func recordEditState(_ app: XCUIApplication, parentID: String, stage: String) {
         let bars = app.navigationBars.matching(identifier: "Child 2")
@@ -195,10 +231,25 @@ final class EditIdentityDiagnosticTests: XCTestCase {
                                   "childBarCount": bars.count, "globalEditCount": global.count,
                                   "controls": controls]
         let data = try! JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
-        print("KIN_EDIT_DIAGNOSTIC " + String(decoding: data, as: UTF8.self))
-        let shot = XCTAttachment(screenshot: app.screenshot())
+        print("KIN_EDIT_DIAGNOSTIC " + String(decoding: data, as: UTF8.self)); fflush(nil)
+        let screenshot = app.screenshot()
+        let hierarchy = app.debugDescription
+        // Atomic sidecars survive an unfinished result bundle. Synthetic simulator only.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("KinEditDiagnostic", isDirectory: true)
+        let stem = UUID().uuidString
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try screenshot.pngRepresentation.write(to: directory.appendingPathComponent(stem + ".png"), options: .atomic)
+            try Data(hierarchy.utf8).write(to: directory.appendingPathComponent(stem + ".txt"), options: .atomic)
+            let metadata: [String: Any] = ["observation": state, "image": stem + ".png",
+                                          "hierarchy": stem + ".txt", "label": "Synthetic Edit diagnostic " + stage]
+            try JSONSerialization.data(withJSONObject: metadata).write(to: directory.appendingPathComponent(stem + ".json"), options: .atomic)
+        } catch {
+            progress(stage.hasPrefix("baseline") ? "baseline" : stage.hasPrefix("strict") ? "strict" : "observe", "evidence write failed")
+        }
+        let shot = XCTAttachment(screenshot: screenshot)
         shot.name = "Synthetic Edit diagnostic " + stage; shot.lifetime = .keepAlways; add(shot)
-        let tree = XCTAttachment(string: app.debugDescription)
+        let tree = XCTAttachment(string: hierarchy)
         tree.name = "Synthetic Edit diagnostic hierarchy " + stage; tree.lifetime = .keepAlways; add(tree)
     }
 }
