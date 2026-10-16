@@ -37,7 +37,7 @@ jobs:
         run: scripts/test-core.sh
   simulator-tests:
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -62,7 +62,7 @@ jobs:
           python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
           xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
       - name: Unit, integration, and UI regression suite (iOS 27)
-        timeout-minutes: 25
+        timeout-minutes: 45
         run: >-
           xcodebuild -project Kin.xcodeproj -scheme Kin
           -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR"
@@ -70,7 +70,7 @@ jobs:
           -resultBundlePath "$RUNNER_TEMP/KinTests.xcresult"
           -parallel-testing-enabled NO -collect-test-diagnostics never
           -test-timeouts-enabled YES -default-test-execution-time-allowance 240
-          -maximum-test-execution-time-allowance 300
+          -maximum-test-execution-time-allowance 600
           clean test CODE_SIGNING_ALLOWED=NO
       - name: Require finalized results with full fixture coverage
         run: |

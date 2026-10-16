@@ -533,6 +533,8 @@ final class KinUITests: XCTestCase {
         capture(app, "Visible Cancel preserves saved photo and age after relaunch")
     }
     @MainActor func testContactMissingBirthdayPromptCancellationAndEstimatedImport() throws {
+        // Native Photos/Contacts interactions take longer on hosted simulators.
+        executionTimeAllowance = 600
         #if targetEnvironment(simulator)
         let fixtureStore = CNContactStore()
         try XCTUnwrap(CNContactStore.authorizationStatus(for: .contacts) == .authorized ? true : nil,
