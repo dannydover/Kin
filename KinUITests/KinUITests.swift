@@ -244,6 +244,11 @@ final class KinUITests: XCTestCase {
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Synthetic Parent"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic Parent"].tap()
+        let parentEdits = app.navigationBars["Synthetic Parent"].buttons.matching(
+            NSPredicate(format: "label == %@ AND identifier BEGINSWITH %@", "Edit", "edit-person-"))
+        XCTAssertEqual(parentEdits.count, 1)
+        let parentEditID = parentEdits.element.identifier
+        XCTAssertNotNil(UUID(uuidString: String(parentEditID.dropFirst("edit-person-".count))))
         app.buttons["Add child"].tap()
         app.buttons["Create new person"].tap()
         XCTAssertFalse(app.staticTexts["Name unknown"].exists)
@@ -251,20 +256,41 @@ final class KinUITests: XCTestCase {
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Child 2"].waitForExistence(timeout: 5))
         app.staticTexts["Child 2"].tap()
-        app.navigationBars.buttons["Edit"].tap()
+        let childBars = app.navigationBars.matching(identifier: "Child 2")
+        XCTAssertEqual(childBars.count, 1)
+        let childEdits = childBars.element.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier BEGINSWITH %@ AND identifier != %@",
+            "Edit", "edit-person-", parentEditID))
+        XCTAssertEqual(childEdits.count, 1)
+        let childEditID = childEdits.element.identifier
+        XCTAssertNotNil(UUID(uuidString: String(childEditID.dropFirst("edit-person-".count))))
+        let priorParentEdit = childBars.element.buttons.matching(identifier: parentEditID)
+        XCTAssertLessThanOrEqual(priorParentEdit.count, 1)
+        // Retained accessibility nodes may be ignored only when not actionable.
+        XCTAssertFalse(priorParentEdit.count == 1 && priorParentEdit.element.isHittable)
+        XCTAssertTrue(childEdits.element.isHittable)
+        childEdits.element.tap()
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
             XCTFail("Person editor did not open"); return
         }
+        XCTAssertEqual(app.textFields["First name (optional)"].value as? String, "First name (optional)")
         app.textFields["First name (optional)"].tap()
         app.textFields["First name (optional)"].typeText("Canceled Name")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.navigationBars["Child 2"].exists)
-        app.navigationBars.buttons["Edit"].tap()
+        XCTAssertEqual(childBars.count, 1)
+        let sameChildEdit = childBars.element.buttons.matching(identifier: childEditID)
+        XCTAssertEqual(sameChildEdit.count, 1)
+        XCTAssertLessThanOrEqual(priorParentEdit.count, 1)
+        XCTAssertFalse(priorParentEdit.count == 1 && priorParentEdit.element.isHittable)
+        XCTAssertTrue(sameChildEdit.element.isHittable)
+        sameChildEdit.element.tap()
         if !app.textFields["First name (optional)"].waitForExistence(timeout: 5) {
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
             XCTFail("Person editor did not open"); return
         }
+        XCTAssertEqual(app.textFields["First name (optional)"].value as? String, "First name (optional)")
         app.textFields["First name (optional)"].tap()
         app.textFields["First name (optional)"].typeText("Synthetic Child")
         app.buttons["Save"].tap()
