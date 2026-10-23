@@ -43,26 +43,21 @@ final class NativeContactsTests: XCTestCase {
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts["This contact has a birthday with a year."].exists)
-            XCTAssertTrue(app.buttons["Birth information, Exact birthday"].exists)
-            app.navigationBars["Contact birth information"].buttons["Import"].tap()
-            XCTAssertEqual(app.textFields["First name (optional)"].value as? String,name)
-            app.switches["Friend"].switches.firstMatch.tap()
-            app.swipeUp()
-            let expectedPhoto = app.buttons[isAdult ? "Change photo" : "Add photo"]
-            if isAdult { XCTAssertTrue(expectedPhoto.waitForExistence(timeout: 5)) }
-            else {
-                XCTAssertFalse(app.buttons["Change photo"].exists)
-                XCTAssertFalse(app.buttons["Add photo"].exists)
-            }
-            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native selected Contact birthday and age-gated photo"; shot.lifetime = .keepAlways; add(shot)
-            app.navigationBars["Add person"].buttons["Save"].tap()
-            XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 5)); app.staticTexts[name].tap()
+            let friend = app.switches["contact-connection-friend"].switches.firstMatch
+            for _ in 0..<6 { if friend.isHittable { break }; app.swipeUp() }
+            friend.tap()
+            let exactBirthday = app.buttons["Birth information, Exact birthday"]
+            for _ in 0..<8 { if exactBirthday.exists { break }; app.swipeUp() }
+            XCTAssertTrue(exactBirthday.exists)
+            app.navigationBars["Contact birth information"].buttons["Import and Save"].tap()
+            XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
             let birthday = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",String(birthYear))).firstMatch
             XCTAssertTrue(birthday.waitForExistence(timeout: 5))
             app.terminate(); app.launch(); app.staticTexts[name].tap()
             XCTAssertTrue(birthday.waitForExistence(timeout: 5))
             app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
             XCTAssertEqual(app.buttons["Change photo"].exists,isAdult)
+            if !isAdult { XCTAssertFalse(app.buttons["Add photo"].exists) }
             app.navigationBars["Edit person"].buttons["Cancel"].tap(); app.navigationBars.buttons["Kin"].tap()
         }
         #else

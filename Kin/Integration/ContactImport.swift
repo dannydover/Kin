@@ -11,16 +11,28 @@ import Foundation
             .filter { !$0.isEmpty }.joined(separator: " ")
         return name.isEmpty ? nil : name
     }
+    static func hasUsableBirthday(_ source: ContactBirthInformation) -> Bool {
+        if case .exact = source { return true }
+        return false
+    }
+    /// Existing editor values may include unsaved corrections; never restore an older saved value.
+    static func initialBirthday(for source: ContactBirthInformation, currentBirthday: Birthday, isNew: Bool) -> Birthday {
+        if case .exact(let date) = source { return .exact(date) }
+        return isNew ? .unknown : currentBirthday
+    }
+    static func needsPhotoConfirmation(for source: ContactBirthInformation, isNew: Bool) -> Bool {
+        !isNew && !hasUsableBirthday(source)
+    }
     static func apply(_ snapshot: ContactSnapshot, to person: inout Person, birthday: Birthday? = nil, importPhoto: Bool = true, today: Date = Date(), calendar: Calendar = .current) {
         person.firstName = snapshot.firstName.isEmpty ? nil : snapshot.firstName
         person.lastName = snapshot.lastName.isEmpty ? nil : snapshot.lastName
-        if let birthday { person.birthday = birthday }
-        else if case .exact(let date) = snapshot.birthInformation { person.birthday = .exact(date) }
-        else { person.birthday = .unknown }
-        // A selected card never inherits another draft's age or image. The import
-        // review explains this replacement; cancel never calls apply.
+        let existing = person.reference > 0 && person.revision > 0
+        person.birthday = birthday ?? initialBirthday(for: snapshot.birthInformation, currentBirthday: person.birthday, isNew: !existing)
+        // Keeping an existing age is not evidence about a newly selected contact.
+        // Only source evidence or a deliberately reviewed age can authorize its photo.
         person.photo = nil
-        guard importPhoto, AgeRules(calendar: calendar).allowsPhoto(person.birthday, on: today) else { return }
+        guard importPhoto, birthday != nil || hasUsableBirthday(snapshot.birthInformation),
+              AgeRules(calendar: calendar).allowsPhoto(person.birthday, on: today) else { return }
         if let data = snapshot.photo(for: person.birthday, today: today, calendar: calendar), let photo = PhotoProcessor.thumbnail(data) { person.photo = photo }
     }
 }

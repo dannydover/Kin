@@ -7,6 +7,13 @@ enum KinTheme {
     static let field = Color("KinField")
     static let text = Color("KinText")
     static let secondary = Color("KinSecondary")
+    // Opaque adaptive secondary ink chosen for the actual warm footer background.
+    static let helperInk = UIColor { traits in
+        // Kin's warm background is dark in both asset appearances. Adapt to
+        // Increase Contrast while retaining readable ink on that actual surface.
+        UIColor(white: traits.accessibilityContrast == .high ? 0.92 : 0.78, alpha: 1)
+    }
+    static let helperText = Color(uiColor: helperInk)
     static let accent = Color("KinAccent")
     static let sage = Color("KinSage")
     static let border = Color("KinBorder")

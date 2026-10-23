@@ -15,6 +15,8 @@ def main():
                           ('CFBundleIdentifier', 'com.intriguingideas.Kin')]:
         if info.get(key) != expected:
             failures.append(f'unexpected {key}')
+    if info.get('CFBundleIcons', {}).get('CFBundlePrimaryIcon', {}).get('CFBundleIconName') != 'Kin':
+        failures.append('unexpected production icon')
     privacy = plistlib.loads((app / 'PrivacyInfo.xcprivacy').read_bytes())
     if privacy.get('NSPrivacyTracking') is not False:
         failures.append('tracking declaration changed')

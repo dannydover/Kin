@@ -1,0 +1,58 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "extended-srgb:0.13725,0.12941,0.12549,1.00000",
+      "extended-srgb:0.08235,0.07843,0.07451,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0.0
+      },
+      "stop": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    }
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "child.svg",
+          "name": "Child"
+        }
+      ],
+      "blur-material": 0,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.45
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "adult.svg",
+          "name": "Adult"
+        }
+      ],
+      "blur-material": 0,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.45
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [],
+    "squares": "shared"
+  }
+}
