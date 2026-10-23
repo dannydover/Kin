@@ -1,0 +1,53 @@
+name: Diagnose Kin 1.1 UI failures
+on:
+  push:
+    branches: [diagnostic/kin-1.1-ui-failures]
+permissions:
+  contents: read
+jobs:
+  unchanged-failing-tests:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Create isolated synthetic simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin Diagnostic ${GITHUB_RUN_ID}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          xcrun simctl privacy "$KIN_CI_SIMULATOR" grant contacts com.intriguingideas.KinUITests.xctrunner
+          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+      - name: Run unchanged failed tests for evidence
+        timeout-minutes: 18
+        run: >-
+          xcodebuild -project Kin.xcodeproj -scheme Kin
+          -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR"
+          -derivedDataPath DerivedData
+          -resultBundlePath "$RUNNER_TEMP/KinDiagnostic.xcresult"
+          -parallel-testing-enabled NO -collect-test-diagnostics never
+          -test-timeouts-enabled YES -default-test-execution-time-allowance 240
+          -maximum-test-execution-time-allowance 600
+          -only-testing:KinUITests/ExistingContactPreservationUITests/testExistingBirthInformationSurvivesMissingAndYearlessContactsReview
+          -only-testing:KinUITests/IndexMembershipUITests/testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch
+          clean test CODE_SIGNING_ALLOWED=NO
+      - name: Retain synthetic diagnostic result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-1.1-unchanged-ui-diagnostic
+          path: ${{ runner.temp }}/KinDiagnostic.xcresult
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove isolated diagnostic simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
+            xcrun simctl shutdown "$KIN_CI_SIMULATOR" || true
+            xcrun simctl delete "$KIN_CI_SIMULATOR"
+          fi
