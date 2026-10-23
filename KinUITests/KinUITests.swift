@@ -948,15 +948,21 @@ final class KinUITests: XCTestCase {
         }
         var resolved: XCUIElement?
         let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            guard let candidate = uniqueHittableCandidate() else { return false }
-            let frame = candidate.frame
-            guard frame.minX.isFinite, frame.minY.isFinite, frame.width > 0, frame.height > 0 else { return false }
-            resolved = candidate
+            // At largest text the native privacy banner puts this row below
+            // the viewport. Locate one finite candidate before scrolling; require
+            // unique hittability only after reveal. Never select an arbitrary row.
+            let finite = candidates.allElementsBoundByIndex.filter { candidate in
+                guard candidate.exists else { return false }
+                let frame = candidate.frame
+                return frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0
+            }
+            guard finite.count == 1 else { return false }
+            resolved = finite[0]
             return true
         },object: nil)
         guard XCTWaiter.wait(for: [rendered],timeout: 10) == .completed, let initialTarget = resolved else {
             recordTestState(app,stage: "Native Contacts target is absent or ambiguous")
-            XCTFail("Expected exactly one hittable native contact target")
+            XCTFail("Expected exactly one finite native contact target before reveal")
             return
         }
         var largeContactName = initialTarget
