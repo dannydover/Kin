@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # Identity regression tests compare the frozen production baseline.
+          fetch-depth: 0
       - name: Verify toolchain and simulator runtime
         run: |
           xcodebuild -version
