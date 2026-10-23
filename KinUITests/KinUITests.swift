@@ -43,7 +43,8 @@ final class KinUITests: XCTestCase {
             }
             app.cells["John Appleseed"].tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
-            XCTAssertTrue(app.buttons["contact-birth-information"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["contact-selected-contact"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["contact-selected-contact"].label.contains("John Appleseed"))
             XCTAssertFalse(currentDraftReviewLabel(app).exists)
             for role in ["Person","Parent","Child","Partner"] { XCTAssertFalse(app.staticTexts[role + " 0"].exists) }
             XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "contact-selected-contact").firstMatch.label.contains("John Appleseed"))
@@ -225,9 +226,9 @@ final class KinUITests: XCTestCase {
     }
     // Avoid an all-descendants snapshot query for an intentionally absent row.
     // The named-draft Contacts test below is a positive control for this same
-    // visible-label selector, so an incapable selector cannot make CI pass.
+    // typed identifier selector, so an incapable selector cannot make CI pass.
     @MainActor private func currentDraftReviewLabel(_ app: XCUIApplication) -> XCUIElement {
-        app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Current draft", "Current draft,")).firstMatch
+        app.staticTexts["contact-current-draft"]
     }
     @MainActor func testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
@@ -244,7 +245,8 @@ final class KinUITests: XCTestCase {
             }
             app.cells["John Appleseed"].tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
-            XCTAssertTrue(app.buttons["contact-birth-information"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["contact-selected-contact"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["contact-selected-contact"].label.contains("John Appleseed"))
             XCTAssertFalse(currentDraftReviewLabel(app).exists)
             XCTAssertFalse(app.staticTexts["Person 0"].exists)
         }
@@ -696,7 +698,8 @@ final class KinUITests: XCTestCase {
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         }
         try selectSample()
-        XCTAssertTrue(app.buttons["contact-birth-information"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["contact-selected-contact"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["contact-selected-contact"].label.contains(contactName))
         XCTAssertTrue(currentDraftReviewLabel(app).waitForExistence(timeout: 10), "Named draft must positively expose the same Current draft label used by absence checks")
         XCTAssertTrue(app.staticTexts["Synthetic Existing Draft"].exists)
         capture(app, "Contact missing birthday asks for birth information")
@@ -935,23 +938,37 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
         // Resolve a fresh query inside the current native picker after relaunch.
         // A cell cached before the text-size change can retain its old geometry.
-        let nativeList = app.otherElements["ContactsListView"]
-        XCTAssertTrue(nativeList.waitForExistence(timeout: 10))
-        let largeContactName = nativeList.cells[name].staticTexts[name]
+        let candidates = app.otherElements.matching(identifier: "ContactsListView")
+            .cells.matching(identifier: name).staticTexts.matching(identifier: name)
+        // The failure hierarchy contains duplicate native picker trees. Resolve
+        // indexed elements before asking for geometry, never pick first/last.
+        func uniqueHittableCandidate() -> XCUIElement? {
+            let visible = candidates.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
+            return visible.count == 1 ? visible[0] : nil
+        }
+        var resolved: XCUIElement?
         let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            guard largeContactName.exists else { return false }
-            let frame = largeContactName.frame
-            return frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0
+            guard let candidate = uniqueHittableCandidate() else { return false }
+            let frame = candidate.frame
+            guard frame.minX.isFinite, frame.minY.isFinite, frame.width > 0, frame.height > 0 else { return false }
+            resolved = candidate
+            return true
         },object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [rendered],timeout: 10),.completed)
+        guard XCTWaiter.wait(for: [rendered],timeout: 10) == .completed, let initialTarget = resolved else {
+            recordTestState(app,stage: "Native Contacts target is absent or ambiguous")
+            XCTFail("Expected exactly one hittable native contact target")
+            return
+        }
+        var largeContactName = initialTarget
         revealPrecisely(largeContactName,in: app)
         // Scrolling the native guidance header can leave the list decelerating.
         // A tap during that motion only stops scrolling; wait after revealing it.
         var previousFrame = CGRect.null
         var stableSince = Date()
         let stable = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            guard largeContactName.exists else { return false }
-            let frame = largeContactName.frame
+            guard let current = uniqueHittableCandidate() else { return false }
+            largeContactName = current
+            let frame = current.frame
             guard frame.minX.isFinite, frame.minY.isFinite, frame.width > 0, frame.height > 0 else { return false }
             if abs(frame.minX - previousFrame.minX) > 0.5 || abs(frame.minY - previousFrame.minY) > 0.5
                 || abs(frame.width - previousFrame.width) > 0.5 || abs(frame.height - previousFrame.height) > 0.5 {
@@ -959,7 +976,11 @@ final class KinUITests: XCTestCase {
             }
             return Date().timeIntervalSince(stableSince) >= 1
         },object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [stable],timeout: 15),.completed)
+        guard XCTWaiter.wait(for: [stable],timeout: 15) == .completed else {
+            recordTestState(app,stage: "Native Contacts target did not become uniquely stable")
+            XCTFail("Expected one stable hittable native contact target before selection")
+            return
+        }
         XCTAssertTrue(largeContactName.isHittable)
         XCTAssertGreaterThanOrEqual(largeContactName.frame.minY,145)
         XCTAssertLessThanOrEqual(largeContactName.frame.maxY,app.frame.maxY - 100)
