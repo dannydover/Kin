@@ -31,6 +31,13 @@ struct Person: Identifiable, Codable, Equatable, Sendable {
     var notes = ""
     var birthday: Birthday = .unknown
     var connections: Set<Connection> = []
+    // Absent in v1 payloads: preserve their category-based visibility on first read.
+    // New drafts and saved edits persist an explicit choice independent of categories.
+    var indexInclusion: Bool?
+    var isListed: Bool {
+        get { indexInclusion ?? !connections.isEmpty }
+        set { indexInclusion = newValue }
+    }
     var photo: Data?
     // Assigned once by the store. A label describes the original entry context,
     // never birth order, legal name, gender, or inferred kinship.
@@ -97,7 +104,7 @@ enum KinError: LocalizedError, Equatable {
 enum PeopleIndex {
     static func results(_ people: [Person], query: String, includeUnlisted: Bool = false) -> [Person] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return people.filter { (includeUnlisted || !$0.connections.isEmpty) && (query.isEmpty || $0.displayName.localizedStandardContains(query)) }
+        return people.filter { (includeUnlisted || $0.isListed) && (query.isEmpty || $0.displayName.localizedStandardContains(query)) }
             .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
     }
 }

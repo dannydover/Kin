@@ -3,9 +3,7 @@
 Kin is a local notebook for remembering your people: names, ages, relationships,
 and the little details worth keeping.
 
-## Development status
-
-Kin is in active development and is not yet a stable public release.
+## Requirements
 
 This checkout contains the family notebook implementation, its shared Xcode
 scheme, and unit/integration tests. It targets **iPhone only, iOS 26 or later**,
@@ -16,21 +14,32 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
 - One authoritative Person with a stable identity, optional names, gender, notes,
   optional protected adult photo, and unknown, exact, or estimated birth information.
 - Independent Friend, Family, and Colleague connections under Your connection.
-  Any selected connection puts a person on the combined index once. All people,
+  Optional connection labels are independent of the explicit Show in Your people choice.
+  Direct additions start listed; relationship-based additions start unlisted. All people,
   available from the navigation menu, provides searchable recovery for unlisted
   entries and disconnected profiles. Your people is the default menu view; About
   is available in the same menu.
 - Explicit parent links (biological, adoptive, step, unspecified) and mutual partner
   links (current, former, unknown), with reuse of existing people or atomic create/link.
   New partner links default to Current; explicit Former/Unknown choices are retained.
-  Selecting an existing person opens an unsaved relationship editor with Save/Cancel.
+  Link an existing person opens a separate searchable list populated immediately.
+  Tapping a person opens an unsaved relationship editor with Save/Cancel; duplicate
+  names include notebook references. Relationship details follow Create and Link.
   Add parent is available in every profile’s Parents section, including children
   under 16 and profiles with no parents yet. Reuse a person or create/import one
   through the shared editor; the selected person is the parent of the open profile.
   Multiple explicit parents are allowed. Removing a relationship keeps both people.
 - Your people index previews explicitly linked children with age and approximate
   school-grade cues; the indexed person’s own age stays on their profile.
+- Exact birthdays show completed calendar months before the first birthday, with
+  “Less than 1 month” for newborns, then years. Estimates retain their precision.
+- A fresh Add child draft suggests the source person's surname once; it can be
+  edited or cleared without changing any saved person.
 - Shared Add/Edit workflows, one-time Contacts imports, and explicit Save/Cancel.
+- Delete all people from the navigation menu, with a scope explanation and separate
+  destructive confirmation. Includes unlisted people and their relationships, notes
+  and managed photos; keeps settings, Contacts and external copies/backups. Cancel
+  or dismiss before confirmation changes nothing. No export or in-app undo is included.
 - Local Core Data SQLite storage with Complete Protection and failure recovery.
 - Adaptive system controls and accessibility labels, including larger text.
 
@@ -38,8 +47,11 @@ Leave an unknown first name blank; whitespace-only first names are also treated
 as unknown. There is no separate unknown-name control. These entries use a permanent
 context label such as “Child 3.” Numbers are notebook references, never birth order.
 Naming later preserves identity and all links. Labels stay stable across profiles.
-Top-level additions require a connection choice; linked additions start unlisted.
-Editing connections later can remove a person from the index without deleting them.
+Top-level additions save without a connection label and open the saved profile.
+Linked additions start unlisted. Show in Your people manages index inclusion on
+linked drafts and saved profiles; changing categories never changes inclusion.
+Legacy payloads without the optional inclusion field retain their previous
+category-based visibility. Opening them does not rewrite records or reset data.
 Profiles with a recorded current age under 16 hide Partners and Children, including
 their add controls; Parents, Add parent, and all stored links remain. Unknown ages are not assumed
 to be under 16. This display rule is separate from the adult-photo requirement.
@@ -66,11 +78,19 @@ use their recorded calendar, era, and leap-month information. Incomplete, ambigu
 invalid, or future dates ask for birth information using the same exact/estimated
 controls. Yearless birthdays remain in Contacts; Kin never fills in a year.
 
-The review identifies the current draft and selected contact. Confirmed import replaces
-names, birth information, and photo while retaining identity, notes, connections,
-and relationships. The prior person's adulthood and photo never carry into another
-contact. Continue without importing photo uses the selected complete birthday or
-Unknown and clears any previous draft photo. Cancel preserves the entire prior draft.
+The review identifies the current draft and selected contact. For a new person,
+Import and Save saves the reviewed name, age, eligible photo and any selected
+relationship together, without requiring a connection label. A direct import opens
+the saved profile. For an existing person, Import applies reviewed information to
+the editor and a separate Save commits it. Confirmed import replaces names and
+applies the reviewed birth information and photo
+while retaining the same Person identity, notes and existing relationships. If an existing
+person’s selected contact has no usable birthday, review keeps the current exact birthday
+or estimated age, including unsaved corrections, unless you explicitly change it.
+New-person review also lets you edit optional connection labels. Keeping an existing age
+does not establish adulthood for the selected contact: including its photo requires
+explicit confirmation and still follows the age gate. Continue without importing photo
+uses the reviewed age and clears any previous draft photo. Cancel preserves the entire prior draft.
 Photo properties are accessed only after the selected or explicitly confirmed birth
 information establishes safe adulthood. No contact photo is read for unresolved or
 minor ages. Imported edits still require Save, and stored adult-photo removal retains
@@ -86,7 +106,7 @@ An issue is a proposal or work item, not a release commitment.
 ## Open, build, and test
 
 Use a Mac with Xcode 27 and an installed iOS 26 or newer iPhone simulator runtime.
-Xcode 27 requires macOS Tahoe 26.6 or later. Select Xcode's developer directory
+Use a macOS version supported by your Xcode installation. Select Xcode's developer directory
 explicitly if Command Line Tools or another Xcode is your system default:
 
 ```sh
@@ -134,6 +154,55 @@ in that isolated simulator:
 Kin itself retains selection-only picker access and does not request address-book
 permission. The runner creates and removes its own adult, minor, and birthday-free
 cards; never grant this fixture access against a personal Contacts store.
+
+## Separate Kin Dev app
+
+The shared **Kin Dev** scheme uses the **Dev** configuration, display name
+**Kin Dev**, bundle identifier `com.intriguingideas.Kin.dev`, and a blue blueprint
+icon. The **Kin** scheme uses `com.intriguingideas.Kin` and the layered production
+icon. Both apps can coexist with separate ordinary app storage. There are no
+shared App Groups, custom Keychain groups, iCloud/CloudKit containers, extensions
+or backend accounts in this project.
+
+| Kin | Kin Dev |
+| --- | --- |
+| <img src="Kin/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="96" alt="Kin two-disc K icon"> | <img src="Kin/Assets.xcassets/AppIconDev.appiconset/AppIcon.png" width="96" alt="Kin Dev blueprint two-disc K icon"> |
+
+The production icon uses [native layered artwork](Kin/Kin.icon/icon.json); the
+Dev icon uses a separate asset catalog. [Artwork sources and preparation](Development/IconDesign/README.md)
+keep the outlined design and licensing reviewable. iOS applies its own icon mask.
+
+```sh
+# Compile Kin Dev without signing, provisioning, or installation.
+xcodebuild -project Kin.xcodeproj -scheme 'Kin Dev' -configuration Dev \
+  -destination 'generic/platform=iOS' -derivedDataPath DerivedData \
+  build CODE_SIGNING_ALLOWED=NO
+python3 scripts/check-dev-app.py DerivedData/Build/Products/Dev-iphoneos/Kin.app
+
+# Run the Dev suite on a fresh synthetic-only simulator with fixtures prepared.
+xcodebuild -project Kin.xcodeproj -scheme 'Kin Dev' -configuration Dev \
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0' \
+  -derivedDataPath DerivedData -parallel-testing-enabled NO \
+  -collect-test-diagnostics never test CODE_SIGNING_ALLOWED=NO
+
+# Repository/configuration guards inspect staged content.
+python3 -m unittest discover -s scripts/tests -v
+python3 scripts/check-repository.py
+```
+
+For Dev fixture setup, the Contacts permission belongs only to the runner
+`com.intriguingideas.Kin.dev.uitests.xctrunner`, not Kin Dev itself. Seed a synthetic
+Photos fixture with `scripts/create-simulator-photo.py` and `xcrun simctl addmedia`
+as shown in the CI workflow, substituting your isolated test simulator.
+
+Signed device work requires an already authorized certificate/profile for the
+specific bundle identifier. Verify the compiled identity before installation;
+never replace the App Store app with a Dev build or use a real notebook for
+synthetic/deletion tests. [Development instructions](Development/README.md) cover
+isolation, signing checks and the installation gate. Simulator tests do not
+establish physical lock/unlock behavior, VoiceOver speech, or final device icon
+appearance; those require separate manual review. Versioned release notes and
+verification results belong outside this README.
 
 ## Continuous integration
 

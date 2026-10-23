@@ -6,13 +6,16 @@ struct ContentView: View {
     @State private var scope = PeopleScope.yours
     @State private var query = ""
     @State private var adding = false
+    @State private var path: [UUID] = []
+    @State private var savedPersonID: UUID?
     @State private var showingAbout = false
+    @State private var deletingAll = false
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
     private var hits: [Person] { PeopleIndex.results(store.people, query: query, includeUnlisted: scope == .all) }
     private var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if hits.isEmpty {
                     if isSearching { noMatches }
@@ -36,6 +39,7 @@ struct ContentView: View {
                         Button("Your people", systemImage: scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
                         Button("All people", systemImage: scope == .all ? "checkmark" : "person.3") { switchScope(.all) }
                         Button("About", systemImage: "info.circle") { showingAbout = true }
+                        Button("Delete all people", systemImage: "trash", role: .destructive) { deletingAll = true }
                     } label: { Image(systemName: "line.3.horizontal") }
                     .accessibilityLabel("Navigation menu")
                     .accessibilityHint(scope == .yours ? "Showing Your people" : "Showing All people")
@@ -44,10 +48,23 @@ struct ContentView: View {
                 ToolbarItem(placement: .primaryAction) { Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add person") }
             }
             .navigationDestination(for: UUID.self) { id in PersonDetail(store: store, personID: id, today: today).id(id) }
-            .sheet(isPresented: $adding) { NavigationStack { PersonEditor(store: store) } }
+            .sheet(isPresented: $adding, onDismiss: {
+                if let id = savedPersonID {
+                    savedPersonID = nil
+                    path.append(id)
+                }
+            }) { NavigationStack { PersonEditor(store: store,onPersonSaved: { savedPersonID = $0 }) } }
             .sheet(isPresented: $showingAbout) { AboutKinView() }
+            .sheet(isPresented: $deletingAll) {
+                NavigationStack {
+                    DeleteAllPeopleView(store: store) {
+                        path = []; query = ""; scope = .yours; deletingAll = false
+                    }
+                }
+            }
             .onChange(of: scenePhase) { _, phase in if phase == .active { today = Date() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in today = Date() }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in today = Date() }
         }.notebookAvailability(store)
     }
     private func switchScope(_ selection: PeopleScope) { scope = selection; query = "" }
@@ -62,7 +79,7 @@ struct ContentView: View {
                         .accessibilityAddTraits(.isHeader)
                     Text(store.people.isEmpty
                          ? "Names, ages, and the little things you want to remember. A small, private notebook for the people in your life."
-                         : "Choose Friend, Family, or Colleague to show someone here. Everyone you’ve saved is in All people in the menu.")
+                         : "Turn on Show in Your people on a profile to include them here. Everyone you’ve saved is in All people in the menu.")
                         .font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
                 }.fixedSize(horizontal: false, vertical: true)
                 if store.people.isEmpty {
@@ -96,6 +113,7 @@ struct FamilyIndexRow: View {
     let today: Date
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var previewAvatarSize = 40.0
+    @ScaledMetric(relativeTo: .subheadline) private var childCellMinimum = 150.0
     private var rules: AgeRules { AgeRules(calendar: .current) }
     private var children: [Person] {
         let ids = Set(store.parentLinks.filter { $0.parentID == person.id }.map(\.childID))
@@ -114,13 +132,17 @@ struct FamilyIndexRow: View {
                     Text(partners.isEmpty ? "No children added yet" : "With " + partners.map(\.displayName).joined(separator: ", "))
                         .font(.subheadline).foregroundStyle(KinTheme.secondary).fixedSize(horizontal: false, vertical: true)
                 } else {
-                    LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible(), alignment: .leading)] : [GridItem(.adaptive(minimum: 125), alignment: .leading)], alignment: .leading, spacing: 12) {
+                    LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible(), alignment: .leading)] : [GridItem(.adaptive(minimum: childCellMinimum), alignment: .leading)], alignment: .leading, spacing: 12) {
                         ForEach(children.prefix(3)) { child in
+                            let unknownAge = rules.age(for: child.birthday, on: today) == nil
                             (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))) {
                                 PersonAvatar(person: child, today: today, size: previewAvatarSize)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(child.displayName).font(.subheadline).foregroundStyle(KinTheme.secondary)
-                                    Text(rules.displayAge(for: child.birthday, on: today)).font(.title3).fontDesign(.serif)
+                                    Text(rules.displayAge(for: child.birthday, on: today)).font(.subheadline).foregroundStyle(KinTheme.secondary)
+                                        .lineLimit(unknownAge && !typeSize.isAccessibilitySize ? 1 : nil)
+                                        .fixedSize(horizontal: unknownAge && !typeSize.isAccessibilitySize, vertical: true)
+                                        .layoutPriority(1)
                                     if let grade = rules.grade(for: child.birthday, on: today) {
                                         Text("Approx. " + grade).font(.caption).foregroundStyle(KinTheme.secondary)
                                     }

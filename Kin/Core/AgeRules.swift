@@ -6,6 +6,11 @@ enum LifeStage: String, CaseIterable, Codable, Sendable {
         switch age { case ..<2: .baby; case 2..<5: .toddler; case 5..<10: .youngKid; case 10..<13: .olderKid; case 13..<18: .teen; default: .adult }
     }
 }
+// Confirmed display policy. Storage, year calculations and photo eligibility stay independent.
+enum BabyAgePresentation {
+    static let monthsBeforeAge = 1
+    static let newbornLabel = "Less than 1 month"
+}
 struct AgeRules: Sendable {
     let calendar: Calendar
     init(calendar: Calendar) { self.calendar = CivilDate.gregorian(in: calendar.timeZone) }
@@ -47,7 +52,18 @@ struct AgeRules: Sendable {
     }
     func displayAge(for birthday: Birthday, on date: Date) -> String {
         guard let age = age(for: birthday, on: date) else { return "Age unknown" }
-        return "\(birthday.isEstimated ? "~" : "")\(age) years"
+        if case .exact(let birth) = birthday, age < BabyAgePresentation.monthsBeforeAge {
+            let today = CivilDate(date, timeZone: calendar.timeZone)
+            var months = (today.year - birth.year) * 12 + today.month - birth.month
+            // Calendar anniversaries clamp month-end births to the last valid day.
+            // Recompute from the original birthday so February never shifts March.
+            if let anniversary = CivilDate.pickerCalendar.date(byAdding: .month, value: months, to: birth.pickerDate),
+               CivilDate(anniversary, timeZone: CivilDate.pickerCalendar.timeZone) > today { months -= 1 }
+            // Keep the existing March-first leap-day year transition authoritative.
+            months = min(months, BabyAgePresentation.monthsBeforeAge * 12 - 1)
+            return months == 0 ? BabyAgePresentation.newbornLabel : "\(months) \(months == 1 ? "month" : "months")"
+        }
+        return "\(birthday.isEstimated ? "~" : "")\(age) \(age == 1 ? "year" : "years")"
     }
     // Profile presentation only; this never changes stored relationship records.
     func showsPartnerAndChildSections(for birthday: Birthday, on date: Date) -> Bool {

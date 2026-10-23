@@ -48,7 +48,10 @@ struct PersonDetail: View {
                     PersonRow(person: person, today: today)
                     if let grade = AgeRules(calendar: .current).grade(for: person.birthday, on: today) { Text("Approximate school grade: \(grade)") }
                     Text("Gender: \(person.gender.rawValue.capitalized)")
-                    Text(person.connections.isEmpty ? "Not in Your people · find in All people" : "Your connection: " + person.connections.map { $0.rawValue.capitalized }.sorted().joined(separator: ", "))
+                    Text(person.isListed ? "In Your people" : "Not in Your people · find in All people")
+                    if !person.connections.isEmpty {
+                        Text("Your connection: " + person.connections.map { $0.rawValue.capitalized }.sorted().joined(separator: ", "))
+                    }
                     if case .exact(let date) = person.birthday { Text("Birthday: \(date.formatted())") }
                     if case .estimated(let age, let reference) = person.birthday {
                         Text("Estimated \(age) as of \(reference.formatted())")
@@ -60,20 +63,20 @@ struct PersonDetail: View {
                         ForEach(store.partnerLinks.filter { $0.firstID == personID || $0.secondID == personID }) { link in
                             relationshipRow(link.other(than: personID), subtitle: "\(link.status.rawValue.capitalized) partner") { partnerEdit = link }
                         }
-                        Button("Add partner") { sheet = .partner }
+                        RelationshipProfileAction(title: "Add partner", systemImage: "plus") { sheet = .partner }
                     }
                     Section("Children") {
                         ForEach(store.parentLinks.filter { $0.parentID == personID }) { link in
                             relationshipRow(link.childID, subtitle: "\(link.parentage.rawValue.capitalized) parentage") { parentEdit = link }
                         }
-                        Button("Add child") { sheet = .child }
+                        RelationshipProfileAction(title: "Add child", systemImage: "plus") { sheet = .child }
                     }
                 }
                 Section("Parents") {
                     ForEach(store.parentLinks.filter { $0.childID == personID }) { link in
                         relationshipRow(link.parentID, subtitle: "\(link.parentage.rawValue.capitalized) parent") { parentEdit = link }
                     }
-                    Button("Add parent") { sheet = .parent }
+                    RelationshipProfileAction(title: "Add parent", systemImage: "plus") { sheet = .parent }
                 }
                 Section {
                     Button("Delete person", role: .destructive) { deleting = true }.kinDestructiveText()
@@ -92,9 +95,33 @@ struct PersonDetail: View {
             VStack(alignment: .leading, spacing: 8) {
                 NavigationLink(value: id) { PersonRow(person: person, today: today) }.buttonStyle(.plain)
                 Text(subtitle).font(.caption).foregroundStyle(KinTheme.secondary)
-                Button("Edit relationship", action: edit).buttonStyle(.borderless).font(.subheadline).frame(minHeight: 44, alignment: .leading).accessibilityLabel("Edit relationship with \(person.displayName)")
+                RelationshipEditAction(personName: person.displayName, action: edit)
             }
         }
+    }
+}
+/// Profile actions share native tint, inset spacing and a restrained background.
+struct RelationshipProfileAction: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            (Text(Image(systemName: systemImage)) + Text("  " + title))
+                .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+        }.accessibilityLabel(title)
+            .buttonStyle(.bordered).buttonBorderShape(.roundedRectangle(radius: 10))
+            .controlSize(.large)
+            .tint(KinTheme.accent.opacity(0.25)).foregroundStyle(KinTheme.accent)
+    }
+}
+struct RelationshipEditAction: View {
+    let personName: String
+    let action: () -> Void
+    var body: some View {
+        RelationshipProfileAction(title: "Edit relationship", systemImage: "pencil", action: action)
+            .accessibilityLabel("Edit relationship with \(personName)")
+            .accessibilityHint("Opens relationship details.")
     }
 }
 enum AddRelationshipKind {
@@ -111,7 +138,6 @@ struct AddRelationshipView: View {
     let store: KinStore
     let sourceID: UUID
     let kind: AddRelationshipKind
-    @State private var query = ""
     @State private var parentage: Parentage = .unspecified
     @State private var status: PartnerStatus = .current
     @Environment(\.dismiss) private var dismiss
@@ -125,24 +151,73 @@ struct AddRelationshipView: View {
     var body: some View {
         List {
             Group {
-                Section { relationshipPickers(child: kind != .partner, parentage: $parentage, status: $status) }
                 Section {
                     NavigationLink("Create new person") { PersonEditor(store: store, relationship: relationship, onSaved: { dismiss() }) }
-                } footer: { Text("New people added here don’t appear in Your people until you choose Friend, Family, or Colleague on their profile.") }
-                Section("Link an existing person") {
-                    ForEach(PeopleIndex.results(store.people, query: query, includeUnlisted: true).filter { $0.id != sourceID }) { person in
-                        NavigationLink {
-                            if kind != .partner {
-                                RelationshipEditor(store: store, parent: ParentLink(parentID: kind == .parent ? person.id : sourceID, childID: kind == .parent ? sourceID : person.id, parentage: parentage), isNew: true, onSaved: { dismiss() })
-                            } else {
-                                RelationshipEditor(store: store, partner: PartnerLink(firstID: sourceID, secondID: person.id, status: status), isNew: true, onSaved: { dismiss() })
-                            }
-                        } label: { Text(person.displayName).frame(minHeight: 44) }
+                } footer: { Text("New people added here stay in linked profiles and All people. Turn on Show in Your people to include them in your list.") }
+                Section {
+                    NavigationLink("Link an existing person") {
+                        ExistingPersonPicker(store: store,sourceID: sourceID,relationship: relationship,onSaved: { dismiss() })
                     }
-                }
+                } footer: { Text("Choose someone already in your notebook. Nothing is linked until you save.") }
+                Section { relationshipPickers(child: kind != .partner, parentage: $parentage, status: $status) }
             }.listRowBackground(KinTheme.editableFormRow)
-        }.kinForm().navigationTitle(kind.title).searchable(text: $query, prompt: "Find an existing person")
+        }.kinForm().navigationTitle(kind.title)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .notebookAvailability(store)
+    }
+}
+
+/// The source screen retains its optional details while this chooser owns search
+/// and navigation only. Selecting never writes a person or relationship.
+struct ExistingPersonPicker: View {
+    let store: KinStore
+    let sourceID: UUID
+    let relationship: NewRelationship
+    let onSaved: () -> Void
+    @State private var query = ""
+    @State private var searching = false
+    @State private var selectedID: UUID?
+    private var choices: [Person] { ExistingPersonChoices.results(store.people,sourceID: sourceID,query: query) }
+    var body: some View {
+        List {
+            if choices.isEmpty {
+                ContentUnavailableView(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No other people yet" : "No matches",
+                    systemImage: "person.crop.circle.badge.questionmark",
+                    description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? "Go back to create a new person." : "Try another name. Searching doesn’t add anyone or change relationships."))
+                    .listRowBackground(KinTheme.background)
+            } else {
+                ForEach(choices) { person in
+                    Button {
+                        guard selectedID == nil else { return }
+                        searching = false
+                        selectedID = person.id
+                    } label: {
+                        VStack(alignment: .leading,spacing: 5) {
+                            Text(person.displayName).foregroundStyle(KinTheme.text)
+                            if ExistingPersonChoices.needsReference(for: person,in: choices) {
+                                Text("Notebook reference \(person.reference) · " + AgeRules(calendar: .current).displayAge(for: person.birthday,on: Date()))
+                                    .font(.caption).foregroundStyle(KinTheme.secondary)
+                            }
+                        }.fixedSize(horizontal: false,vertical: true)
+                            .frame(maxWidth: .infinity,minHeight: 44,alignment: .leading)
+                    }.disabled(selectedID != nil)
+                        .accessibilityIdentifier("existing-person-" + person.id.uuidString)
+                        .listRowBackground(KinTheme.editableFormRow)
+                }
+            }
+        }.kinForm().navigationTitle("Choose a person").navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query,isPresented: $searching,placement: .navigationBarDrawer(displayMode: .always),prompt: "Find an existing person")
+            .navigationDestination(item: $selectedID) { id in
+                switch relationship {
+                case .parent(let childID,let parentage):
+                    RelationshipEditor(store: store,parent: ParentLink(parentID: id,childID: childID,parentage: parentage),isNew: true,onSaved: onSaved).id(id)
+                case .child(let parentID,let parentage):
+                    RelationshipEditor(store: store,parent: ParentLink(parentID: parentID,childID: id,parentage: parentage),isNew: true,onSaved: onSaved).id(id)
+                case .partner(let otherID,let status):
+                    RelationshipEditor(store: store,partner: PartnerLink(firstID: otherID,secondID: id,status: status),isNew: true,onSaved: onSaved).id(id)
+                }
+            }
             .notebookAvailability(store)
     }
 }
@@ -156,6 +231,7 @@ struct RelationshipEditor: View {
     @State private var parentage: Parentage
     @State private var status: PartnerStatus
     @State private var removing = false
+    @State private var saved = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
     init(store: KinStore, parent: ParentLink? = nil, partner: PartnerLink? = nil, isNew: Bool = false, onSaved: (() -> Void)? = nil) {
@@ -185,7 +261,7 @@ struct RelationshipEditor: View {
         }.kinForm().navigationTitle(isNew ? "Add relationship" : "Edit relationship")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(saved) }
             }
             .alert("Remove relationship?", isPresented: $removing) {
                 Button("Remove relationship", role: .destructive) {
@@ -204,14 +280,18 @@ struct RelationshipEditor: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(role).font(.caption).foregroundStyle(KinTheme.secondary)
                 Text(person.displayName).fixedSize(horizontal: false, vertical: true)
+                if ExistingPersonChoices.needsReference(for: person,in: store.people) {
+                    Text("Notebook reference \(person.reference)").font(.caption).foregroundStyle(KinTheme.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(role): \(person.displayName)")
+            .accessibilityLabel("\(role): \(person.displayName)" + (ExistingPersonChoices.needsReference(for: person,in: store.people) ? ", Notebook reference \(person.reference)" : ""))
             .accessibilityIdentifier(identifier)
         }
     }
     private func save() {
+        guard !saved else { return }
         do {
             if var parent {
                 guard isNew || store.parentLinks.contains(parent) else { throw KinError.staleEdit }
@@ -221,13 +301,21 @@ struct RelationshipEditor: View {
                 guard isNew || store.partnerLinks.contains(partner) else { throw KinError.staleEdit }
                 partner.status = status; try store.savePartnerLink(partner)
             }
+            saved = true
             if let onSaved { onSaved() } else { dismiss() }
         } catch { self.error = UserFacingError.message(error) }
     }
 }
 @ViewBuilder private func relationshipPickers(child: Bool, parentage: Binding<Parentage>, status: Binding<PartnerStatus>) -> some View {
     if child {
-        Picker("Parent relationship", selection: parentage) { ForEach(Parentage.allCases) { Text($0.rawValue.capitalized).tag($0) } }
+        DisclosureGroup {
+            Picker("Parent relationship", selection: parentage) { ForEach(Parentage.allCases) { Text($0.rawValue.capitalized).tag($0) } }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Relationship details (optional)")
+                Text(parentage.wrappedValue.rawValue.capitalized).font(.subheadline).foregroundStyle(KinTheme.secondary)
+            }.accessibilityElement(children: .combine)
+        }.accessibilityIdentifier("relationship-details")
     } else {
         Picker("Partner status", selection: status) { ForEach(PartnerStatus.allCases) { Text($0.rawValue.capitalized).tag($0) } }
     }

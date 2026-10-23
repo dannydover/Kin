@@ -19,7 +19,13 @@ private struct NotebookRoot: View {
     var body: some View {
         Group {
             if let store {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--kin-preview") && ProcessInfo.processInfo.arguments.contains("relationship-action-control") {
+                    RelationshipActionAuditPreview()
+                } else { ContentView(store: store) }
+                #else
                 ContentView(store: store)
+                #endif
             }
             else if !lifecycle.isAvailable {
                 ContentUnavailableView("Notebook locked", systemImage: "lock", description: Text("Unlock your iPhone to open Kin."))
@@ -53,7 +59,20 @@ private struct NotebookRoot: View {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--kin-preview") {
-            do { store = try KinStore(inMemory: true); loadError = nil } catch { loadError = UserFacingError.message(error, opening: true) }
+            do {
+                if let index = arguments.firstIndex(of: "--kin-preview"), arguments.indices.contains(index + 1) {
+                    switch arguments[index + 1] {
+                    case "babies": store = try DevelopmentPreview.babyNotebook()
+                    case "relationships": store = try DevelopmentPreview.relationshipNotebook()
+                    case "import-preservation": store = try DevelopmentPreview.importPreservationNotebook()
+                    case "relationship-actions": store = try DevelopmentPreview.relationshipActionsNotebook()
+                    case "relationships-empty": store = try DevelopmentPreview.relationshipNotebook(onlySource: true)
+                    case "delete-failure": store = try DevelopmentPreview.relationshipNotebook(failDeletion: true)
+                    default: store = try KinStore(inMemory: true)
+                    }
+                } else { store = try KinStore(inMemory: true) }
+                loadError = nil
+            } catch { loadError = UserFacingError.message(error, opening: true) }
             return
         }
         if let index = arguments.firstIndex(of: "--kin-test-notebook") {

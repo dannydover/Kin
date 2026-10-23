@@ -29,11 +29,10 @@ privately without copying or sharing that data.
 
 ## Support scope
 
-Kin is in active development and does not yet have a stable public release or a
-maintained historical release series. Reports about the current development code
-and builds are welcome; identify the exact commit or build tested because the
-public repository may differ from a development build. Older development snapshots
-are not maintained separately, and fixes may require moving to a newer build.
+Reports about the current App Store app and development builds are welcome.
+Identify the exact app version/build or commit tested because the public repository
+may differ from an installed build. Older development snapshots are not maintained
+separately, and fixes may require moving to a newer build.
 
 Kin is maintained by an independent developer. Reports are reviewed as capacity
 allows; there is no guaranteed response or fix deadline and no bug bounty program.

@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # Identity regression tests compare the frozen production baseline.
+          fetch-depth: 0
       - name: Verify toolchain and simulator runtime
         run: |
           xcodebuild -version
@@ -36,6 +38,10 @@ jobs:
       - name: Core tests
         run: scripts/test-core.sh
   simulator-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [unit, ui-0, ui-1, ui-2]
     runs-on: xcode-27
     timeout-minutes: 50
     env:
@@ -71,11 +77,23 @@ jobs:
           -parallel-testing-enabled NO -collect-test-diagnostics never
           -test-timeouts-enabled YES -default-test-execution-time-allowance 240
           -maximum-test-execution-time-allowance 600
+          $(python3 scripts/ci-test-shards.py "${{ matrix.shard }}")
           clean test CODE_SIGNING_ALLOWED=NO
       - name: Require finalized results with full fixture coverage
         run: |
           xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
           python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
+          python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json"
+      - name: Retain synthetic finalized shard results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-tests-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/KinTests.xcresult
+            ${{ runner.temp }}/KinTests-summary.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Remove this run's isolated simulator
         if: always()
         run: |
@@ -124,3 +142,4 @@ jobs:
           test "${{ needs.core-validation.result }}" = success
           test "${{ needs.simulator-tests.result }}" = success
           test "${{ needs.release-validation.result }}" = success
+

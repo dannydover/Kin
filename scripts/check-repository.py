@@ -13,13 +13,15 @@ import subprocess
 import sys
 
 APPROVED_PNG = {
-    # Approved parent-child K artwork; no contact photos or screenshots.
-    'Kin/Assets.xcassets/AppIcon.appiconset/AppIcon.png': '0ddf69cc402573ea9abd38f78c76bac5fbdf47732707679bce4347c91e00fa52',
+    # Reviewed SVG-derived blueprint Kin Dev artwork.
+    'Kin/Assets.xcassets/AppIconDev.appiconset/AppIcon.png': '0b3fbe542ed96d40a4126fd46f480ed003bf5506351f57732ab12b5dbaaa2bfa',
+    # Approved outlined G-2 two-disc production artwork; no contact photos or screenshots.
+    'Kin/Assets.xcassets/AppIcon.appiconset/AppIcon.png': '9d5da6510dcb2ce50990f852e3879efe97f041ebf235dfc3a2d480baf9a931c5',
     'Kin/Assets.xcassets/KinLogo.imageset/KinLogo.png': '0ddf69cc402573ea9abd38f78c76bac5fbdf47732707679bce4347c91e00fa52',
 }
 ROOT_FILES = {'.gitignore', 'LICENSE', 'README.md', 'SECURITY.md', 'Package.swift'}
-TEXT_SUFFIXES = {'.swift', '.json', '.svg', '.py', '.sh', '.pbxproj', '.xcscheme', '.xcworkspacedata', '.xcprivacy', '.md', '.yml'}
-PREFIXES = ('Kin/', 'KinTests/', 'KinUITests/', 'Kin.xcodeproj/', 'scripts/', '.github/workflows/')
+TEXT_SUFFIXES = {'.entitlements', '.swift', '.json', '.svg', '.py', '.sh', '.pbxproj', '.xcscheme', '.xcworkspacedata', '.xcprivacy', '.md', '.yml'}
+PREFIXES = ('Development/', 'Kin/', 'KinTests/', 'KinUITests/', 'Kin.xcodeproj/', 'scripts/', '.github/workflows/')
 BLOCKED_PARTS = {'xcuserdata', '__pycache__', '.build', 'DerivedData', 'evidence', '.swiftpm'}
 PATTERNS = {
     'personal filesystem path': rb'/(?:Users|home)/[^/\s]+|/(?:Volumes)/|/var/(?:folders)/',

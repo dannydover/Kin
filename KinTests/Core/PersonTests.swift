@@ -153,7 +153,7 @@ private func adult(_ name: String = "Synthetic") -> Person {
         lastOnly = try store.person(lastOnly.id)
         #expect(lastOnly.nameUnknown && lastOnly.displayName == "Person 5 · Only surname")
     }
-    @Test("Connections select the combined index once and All people recovers unlisted entries")
+    @Test("Explicit membership is independent of connections and All people recovers unlisted entries")
     func connections() throws {
         let store = try KinStore(inMemory: true); defer { try? store.close() }
         var a = adult(); a.connections = [.friend, .family, .colleague]
@@ -161,6 +161,9 @@ private func adult(_ name: String = "Synthetic") -> Person {
         #expect(PeopleIndex.results(store.people, query: "").map(\.id) == [a.id])
         #expect(PeopleIndex.results(store.people, query: "Person", includeUnlisted: true).map(\.id) == [b.id])
         var edit = try store.person(a.id); edit.connections = []
+        try store.savePerson(edit)
+        #expect(PeopleIndex.results(store.people, query: "").map(\.id) == [a.id])
+        edit = try store.person(a.id); edit.isListed = false
         try store.savePerson(edit)
         #expect(PeopleIndex.results(store.people, query: "").isEmpty)
         #expect(PeopleIndex.results(store.people, query: "", includeUnlisted: true).count == 2)

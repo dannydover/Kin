@@ -210,6 +210,8 @@ enum NewRelationship: Equatable {
         let personRecords = try records("PersonRecord")
         let decoded = try personRecords.map { object -> Person in
             var person: Person = try decode(object)
+            // Resolve legacy visibility in memory without rewriting any records on open.
+            person.isListed = person.isListed
             guard object.value(forKey: "id") as? UUID == person.id, person.reference > 0, person.revision > 0, person.revision < Int.max,
                   ["Person", "Parent", "Child", "Partner"].contains(person.unnamedRole), person.birthday.isStructurallyValid else { throw KinError.invalidData }
             person.photo = includePhotos ? object.value(forKey: "photo") as? Data : nil
@@ -255,10 +257,11 @@ enum NewRelationship: Equatable {
         try requireAccess()
         var value = draft
         let old = people.first { $0.id == draft.id }
+        value.isListed = draft.indexInclusion ?? old?.isListed ?? draft.isListed
         guard old != nil || draft.revision == 0 else { throw KinError.missingPerson }
         if let old {
             if old.revision != draft.revision {
-                var retry = draft
+                var retry = value
                 retry.revision = old.revision; retry.reference = old.reference; retry.unnamedRole = old.unnamedRole
                 // An explicit retry after a post-commit failure is idempotent.
                 // Different newer edits are never overwritten by an old draft.
@@ -347,6 +350,16 @@ enum NewRelationship: Equatable {
     func unlinkParent(_ id: UUID) throws { try deleteRecord(id, "ParentLinkRecord") }
     func unlinkPartner(_ id: UUID) throws { try deleteRecord(id, "PartnerLinkRecord") }
     func deletePerson(_ id: UUID) throws { try deleteRecord(id, "PersonRecord") }
+    /// Delete records through Core Data so relationships and managed photo blobs
+    /// participate in the same transaction. Keep notebook state and unrelated settings.
+    func deleteAllPeople() throws {
+        try requireAccess()
+        let people = try records("PersonRecord")
+        guard !people.isEmpty else { return }
+        try transaction {
+            for person in people { context.delete(person) }
+        }
+    }
     private func deleteRecord(_ id: UUID, _ entity: String) throws {
         guard let object = try record(id, entity) else { throw KinError.missingPerson }
         try transaction { context.delete(object) }
