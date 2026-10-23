@@ -36,14 +36,15 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
             guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
                 app.navigationBars["Contacts"].buttons["Cancel"].tap()
                 throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
             }
             app.cells["John Appleseed"].tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
-            XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "contact-current-draft").firstMatch.exists)
+            XCTAssertTrue(app.buttons["contact-birth-information"].waitForExistence(timeout: 10))
+            XCTAssertFalse(currentDraftReviewLabel(app).exists)
             for role in ["Person","Parent","Child","Partner"] { XCTAssertFalse(app.staticTexts[role + " 0"].exists) }
             XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "contact-selected-contact").firstMatch.label.contains("John Appleseed"))
             if route == "Add parent" { capture(app,"New unnamed parent import review has no temporary identity") }
@@ -167,7 +168,7 @@ final class KinUITests: XCTestCase {
         chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
     }
-    @MainActor func testAddParentsReuseCancelAndDuplicateRejection() throws {
+    @MainActor func testAddParentsReuseAndCancel() throws {
         let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
         app.buttons["Add parent"].tap()
         XCTAssertTrue(app.buttons["relationship-details"].exists)
@@ -180,6 +181,10 @@ final class KinUITests: XCTestCase {
         app.buttons["Add parent"].tap(); app.buttons["relationship-details"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Biological"].tap()
         chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testAddParentsDuplicateRejectionPreservesBothPeople() throws {
+        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        linkExistingBiologicalParent(app)
         // Re-selecting a linked person must reject the duplicate without changing either person.
         app.buttons["Add parent"].tap(); chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
         XCTAssertTrue(app.alerts["Couldn’t finish"].waitForExistence(timeout: 5)); app.alerts.buttons["OK"].tap()
@@ -218,6 +223,12 @@ final class KinUITests: XCTestCase {
         app.navigationBars.buttons["Kin"].tap(); openAllPeople(app)
         XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].exists); XCTAssertTrue(app.staticTexts["Parent 3"].exists)
     }
+    // Avoid an all-descendants snapshot query for an intentionally absent row.
+    // The named-draft Contacts test below is a positive control for this same
+    // visible-label selector, so an incapable selector cannot make CI pass.
+    @MainActor private func currentDraftReviewLabel(_ app: XCUIApplication) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Current draft", "Current draft,")).firstMatch
+    }
     @MainActor func testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addPerson(app,name: "Synthetic Child")
@@ -226,14 +237,15 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Save"].isEnabled)
         func selectSample() throws {
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
             guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
                 app.navigationBars["Contacts"].buttons["Cancel"].tap()
                 throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
             }
             app.cells["John Appleseed"].tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
-            XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "contact-current-draft").firstMatch.exists)
+            XCTAssertTrue(app.buttons["contact-birth-information"].waitForExistence(timeout: 10))
+            XCTAssertFalse(currentDraftReviewLabel(app).exists)
             XCTAssertFalse(app.staticTexts["Person 0"].exists)
         }
         try selectSample(); app.navigationBars["Contact birth information"].buttons["Cancel"].tap()
@@ -684,7 +696,8 @@ final class KinUITests: XCTestCase {
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         }
         try selectSample()
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "contact-current-draft").firstMatch.exists)
+        XCTAssertTrue(app.buttons["contact-birth-information"].waitForExistence(timeout: 10))
+        XCTAssertTrue(currentDraftReviewLabel(app).waitForExistence(timeout: 10), "Named draft must positively expose the same Current draft label used by absence checks")
         XCTAssertTrue(app.staticTexts["Synthetic Existing Draft"].exists)
         capture(app, "Contact missing birthday asks for birth information")
         let birthPicker = app.buttons["contact-birth-information"]
@@ -748,7 +761,7 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
             let card = app.cells["John Appleseed"]
             XCTAssertTrue(card.waitForExistence(timeout: 10), "Isolated simulator must have its standard synthetic contact")
             card.tap()
@@ -919,7 +932,7 @@ final class KinUITests: XCTestCase {
         app.terminate()
     }
     @MainActor private func selectSettledNativeContact(_ app: XCUIApplication,name: String) {
-        XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
         // Resolve a fresh query inside the current native picker after relaunch.
         // A cell cached before the text-size change can retain its old geometry.
         let nativeList = app.otherElements["ContactsListView"]

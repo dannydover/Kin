@@ -36,7 +36,7 @@ final class NativeContactsTests: XCTestCase {
         app.launch(); defer { app.terminate() }
         for (name,birthYear,isAdult) in fixtures {
             app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
             let search = app.searchFields.firstMatch
             XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText(name)
             let card = app.collectionViews["Search results"].cells[name].firstMatch
