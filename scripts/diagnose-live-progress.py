@@ -59,6 +59,9 @@ def main():
         subprocess.run(['xcrun','simctl','boot',device],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=120)
         subprocess.run(['xcrun','simctl','bootstatus',device,'-b'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=300)
         if mode=='ui2':
+            # Match CI's ephemeral test-runner-only grant on this owned synthetic simulator.
+            subprocess.run(['xcrun','simctl','privacy',device,'grant','contacts','com.intriguingideas.KinUITests.xctrunner'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+            manifest['runner_contacts_grant']=True
             subprocess.run(['python3','scripts/create-simulator-photo.py',str(ROOT/'synthetic.png')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             subprocess.run(['xcrun','simctl','addmedia',device,str(ROOT/'synthetic.png')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         cmd=['xcodebuild','-project','Kin.xcodeproj','-scheme','Kin','-destination','platform=iOS Simulator,id='+device,'-derivedDataPath',str(ROOT/'DerivedData'),'-resultBundlePath',str(result),'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES','-default-test-execution-time-allowance','240','-maximum-test-execution-time-allowance','600']+['-only-testing:'+i for i in ids]+['clean','test','CODE_SIGNING_ALLOWED=NO']
@@ -89,7 +92,7 @@ def main():
                     elif proc.poll() is not None:break
                 if elapsed-last>=15:save_record(out,{'kind':'heartbeat','elapsed':elapsed,'test':current});last=elapsed
                 if proc.poll() is not None and not ready:break
-        manifest['exit']=proc.returncode;manifest['result_sha256']=retain(result,OUT/(mode+'-xcresult.zip'))
+        manifest['exit']=proc.returncode;manifest['result_sha256']=retain(result,OUT/(mode+'-xcresult.zip'));manifest['retention']='complete' if manifest['result_sha256'] else 'incomplete'
         if manifest['result_sha256']:
             s=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(result)],text=True,env=ENV,timeout=60));manifest['summary']={k:s.get(k) for k in ('totalTestCount','passedTests','failedTests','skippedTests','result')};manifest['status']='finalized'
         else:manifest['status']='incomplete'

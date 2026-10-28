@@ -1,7 +1,7 @@
 name: Synthetic live progress diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/live-progress]
+    branches: [diagnostic/live-progress-ci-grant]
 permissions:
   contents: read
 jobs:
