@@ -1,0 +1,26 @@
+name: Synthetic Friend switch comparison (not release validation)
+on:
+  push:
+    branches: [diagnostic/friend-switch-comparison]
+permissions:
+  contents: read
+jobs:
+  comparison:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: One control and one keyboard dismissal comparison
+        run: python3 scripts/diagnose-friend-switch.py
+      - name: Retain complete synthetic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: friend-switch-comparison
+          path: ${{ runner.temp }}/FriendSwitchComparison/public/
+          retention-days: 7
+          if-no-files-found: error
