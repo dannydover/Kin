@@ -84,7 +84,7 @@ final class RelationshipChooserTests: XCTestCase {
         XCTAssertTrue(app.buttons["Edit relationship with Synthetic Alex Example"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons.matching(identifier: "Edit relationship with Synthetic Alex Example").count,1)
         app.staticTexts["Synthetic Alex Example"].tap()
-        XCTAssertTrue(app.buttons["edit-person-" + String(identity.dropFirst("existing-person-".count))].exists)
+        XCTAssertTrue(app.buttons["edit-person-" + String(identity.dropFirst("existing-person-".count))].waitForExistence(timeout: 5))
         app.navigationBars.buttons["Synthetic Source"].tap(); app.navigationBars.buttons["People"].tap()
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
         XCTAssertEqual(app.cells.count,5)
