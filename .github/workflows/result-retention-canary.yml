@@ -1,0 +1,36 @@
+name: Synthetic result retention preflight
+on:
+  push:
+    branches: [diagnostic/kin-result-retention-canary]
+permissions:
+  contents: read
+jobs:
+  canary:
+    if: github.repository == 'dannydover/Kin'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Verify toolchain and create synthetic bundle
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,zipfile
+          p=Path(os.environ['RUNNER_TEMP'])/'KinRetentionCanary';p.mkdir()
+          z=p/'result-bundle.zip'
+          with zipfile.ZipFile(z,'w',zipfile.ZIP_DEFLATED) as f:
+              f.writestr('Synthetic.xcresult/Info.plist','synthetic-only')
+              f.writestr('Synthetic.xcresult/Data/.hidden-canary','preserve-hidden-binary\x00\x01')
+              f.writestr('Synthetic.xcresult/Data/failure.json',json.dumps({'status':'failed','stage':'synthetic-canary','assertions':2}))
+          (p/'manifest.json').write_text(json.dumps({'purpose':'retention canary only','zip_sha256':hashlib.sha256(z.read_bytes()).hexdigest()}))
+          PY
+      - name: Retain synthetic result bundle canary
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-result-retention-canary
+          path: ${{ runner.temp }}/KinRetentionCanary/
+          retention-days: 7
+          if-no-files-found: error
