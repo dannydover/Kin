@@ -136,6 +136,7 @@ def main():
     device = None
     stream = None
     collector = None
+    observer = None
     build_code = 1
     def write_manifest():
         (public / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
@@ -160,6 +161,10 @@ def main():
             run(['xcrun', 'simctl', 'addmedia', device, str(photo)], stdout=boot, stderr=boot)
         # A newly created simulator contains only its standard fictional cards.
         # Do not warm the store, add cards, grant Contacts access, or open a UI app.
+        spec = importlib.util.spec_from_file_location('picker_observer', 'scripts/picker-process-observer.py')
+        observer_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(observer_module)
+        observer = observer_module.Observer(device, public)
         predicate = 'process == "Kin" OR process CONTAINS[c] "Contacts" OR subsystem BEGINSWITH "com.apple.Contacts"'
         stream_error = (root / 'stream-error.log').open('w')
         stream = subprocess.Popen(['xcrun', 'simctl', 'spawn', device, 'log', 'stream',
@@ -169,7 +174,9 @@ def main():
             with (public / 'native-events.jsonl').open('w') as target:
                 for line in stream.stdout:
                     try:
-                        event = sanitized_event(json.loads(line))
+                        record = json.loads(line)
+                        event = sanitized_event(record)
+                        observer.on_event(record, event)
                     except (ValueError, TypeError):
                         continue
                     if event:
@@ -234,6 +241,8 @@ def main():
             manifest['controller_event_count'] = sum('controllers' in json.loads(row) for row in events)
             manifest['direct_event_count'] = sum('direct' in json.loads(row) for row in events)
             manifest['probe_observed'] = manifest['direct_event_count'] > 0
+        if observer is not None:
+            manifest['process_observer'] = observer.finish()
         if device is not None:
             subprocess.run(['xcrun', 'simctl', 'shutdown', device], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             cleanup = subprocess.run(['xcrun', 'simctl', 'delete', device], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

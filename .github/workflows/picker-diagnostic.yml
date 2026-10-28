@@ -1,11 +1,11 @@
-name: Direct picker lifecycle diagnostic (not release validation)
+name: Scoped picker process metadata diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/kin-picker-direct-lifecycle]
+    branches: [diagnostic/kin-picker-native-metadata]
 permissions:
   contents: read
 concurrency:
-  group: kin-picker-direct-lifecycle
+  group: kin-picker-native-metadata
   cancel-in-progress: false
 jobs:
   picker-diagnostic:
@@ -18,14 +18,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Original UI-2 prefix with filtered native-service events
+      - name: Original control UI-2 prefix with bounded process metadata
         timeout-minutes: 45
         run: python3 scripts/diagnose-picker.py
       - name: Retain only sanitized diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: picker-direct-lifecycle-diagnostic
+          name: picker-native-metadata-diagnostic
           path: ${{ runner.temp }}/KinPickerDiagnostic/public/
           retention-days: 7
           if-no-files-found: error
