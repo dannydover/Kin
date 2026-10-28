@@ -58,10 +58,13 @@ final class NativeContactsTests: XCTestCase {
                 finishEntry.tap()
                 XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
             }
-            let friend = editorToggle("contact-connection-friend", in: app)
+            // Full-screen swipes overshot this review row in both directions:
+            // below the fixed import toolbar, then beneath the navigation bar.
+            // Keep the same reveal bound and usable-frame check with shorter drags.
+            let friend = editorToggle("contact-connection-friend", in: app, scrollStep: 120)
             XCTAssertTrue(friend.exists && friend.isHittable)
             friend.tap()
-            XCTAssertEqual(editorSwitchWrapper("contact-connection-friend", in: app).value as? String,"1")
+            XCTAssertEqual(editorSwitchWrapper("contact-connection-friend", in: app, scrollStep: 120).value as? String,"1")
             let preview = app.images["contact-photo-preview"]
             let emptyPreview = app.staticTexts["contact-photo-preview-empty"]
             let target = isAdult ? preview : emptyPreview
