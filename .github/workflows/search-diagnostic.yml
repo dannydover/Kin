@@ -1,0 +1,28 @@
+name: Isolated search stability diagnostic (not release validation)
+on:
+  push:
+    branches: [diagnostic/kin-search-stability]
+permissions:
+  contents: read
+jobs:
+  search-diagnostic:
+    if: github.repository == 'dannydover/Kin'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Two search scenarios with failure-only diagnostics
+        timeout-minutes: 45
+        run: python3 scripts/diagnose-search.py
+      - name: Retain sanitized diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-search-stability-diagnostic
+          path: ${{ runner.temp }}/KinSearchDiagnostic/public/
+          retention-days: 7
+          if-no-files-found: error
