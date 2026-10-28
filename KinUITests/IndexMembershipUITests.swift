@@ -93,8 +93,8 @@ final class IndexMembershipUITests: XCTestCase {
         app.terminate()
     }
 
-    @MainActor func testClearSearchAndFiltersRestoresPeopleWithoutChangingRecords() {
-        let app = XCUIApplication(); launch(app); defer { app.terminate() }
+    @MainActor private func clearSearchFixture() -> XCUIApplication {
+        let app = XCUIApplication(); launch(app)
         for (name, category) in [("Alex Morgan", ""), ("Jamie Patel", "Friend"), ("Robin Chen", "Family")] {
             app.buttons["Add person"].tap()
             let first = app.textFields["First name (optional)"]
@@ -103,39 +103,94 @@ final class IndexMembershipUITests: XCTestCase {
             app.buttons["Save"].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
             app.navigationBars.buttons["People"].tap()
+            XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
         }
+        return app
+    }
+
+    @MainActor private func assertClearSearchRestored(_ app: XCUIApplication) {
+        let clear = app.buttons["clear-search-and-filters"]
+        // The failing trace had already restored these values before XCTest
+        // waited on animation notifications at the next menu transition.
+        // Require that outcome and a settled list position before the next
+        // transition, still within the existing five-second readiness bound.
+        var previousRowFrame = CGRect.null
+        var stableSince: Date?
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let ready = app.navigationBars["People"].exists
+                && app.buttons["category-filter"].value as? String == "All"
+                && app.cells.count == 3 && app.staticTexts["Alex Morgan"].exists
+                && !clear.exists && !app.keyboards.firstMatch.exists
+            guard ready else { stableSince = nil; return false }
+            let rowFrame = app.cells.firstMatch.frame
+            guard rowFrame.width > 0 && rowFrame.height > 0 else { stableSince = nil; return false }
+            if stableSince == nil || rowFrame != previousRowFrame {
+                previousRowFrame = rowFrame; stableSince = Date(); return false
+            }
+            return Date().timeIntervalSince(stableSince!) >= 1
+        },object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored],timeout: 5),.completed)
+        XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["category-filter"].value as? String,"All")
+        XCTAssertEqual(app.cells.count,3)
+        XCTAssertTrue(app.staticTexts["Alex Morgan"].exists,"Uncategorized listed person must remain visible")
+        XCTAssertFalse(clear.exists)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor private func assertClearSearchPreservedCategory(_ app: XCUIApplication) {
+        app.staticTexts["Jamie Patel"].tap()
+        XCTAssertTrue(app.navigationBars["Jamie Patel"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons["Edit"].tap()
+        XCTAssertEqual(editorSwitchWrapper("Friend",in: app).value as? String,"1")
+        app.buttons["Cancel"].tap()
+    }
+
+    @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() {
+        let app = clearSearchFixture(); defer { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
-        func checkRestored() {
-            XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
-            XCTAssertEqual(app.buttons["category-filter"].value as? String,"All")
-            XCTAssertEqual(app.cells.count,3)
-            XCTAssertTrue(app.staticTexts["Alex Morgan"].exists,"Uncategorized listed person must remain visible")
-            XCTAssertFalse(clear.exists)
-            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-        }
         search.tap(); search.typeText("NoSuchFictionalPerson")
         XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Try another name, such as Alex Morgan. Tap Clear search and filters to return to the People screen."].exists)
-        XCTAssertTrue(clear.isHittable); clear.tap(); checkRestored()
+        XCTAssertTrue(clear.isHittable); clear.tap(); assertClearSearchRestored(app)
+        assertClearSearchPreservedCategory(app)
+    }
+
+    @MainActor func testClearEmptyCategoryRestoresPeopleWithoutChangingRecords() {
+        let app = clearSearchFixture(); defer { app.terminate() }
+        let clear = app.buttons["clear-search-and-filters"]
         app.buttons["category-filter"].tap(); app.buttons["Colleague"].tap()
         XCTAssertTrue(app.staticTexts["No people in this category"].exists)
-        clear.tap(); checkRestored()
+        clear.tap(); assertClearSearchRestored(app)
+        assertClearSearchPreservedCategory(app)
+    }
+
+    @MainActor func testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() {
+        let app = clearSearchFixture(); defer { app.terminate() }
+        let clear = app.buttons["clear-search-and-filters"]
+        let search = app.searchFields.firstMatch
         for _ in 0..<2 {
             app.buttons["category-filter"].tap(); app.buttons["Friend"].tap()
             search.tap(); search.typeText("Alex Morgan")
             XCTAssertTrue(app.staticTexts["No matches"].exists)
             let image = XCTAttachment(screenshot: app.screenshot())
             image.name = "Clear search and filters - fictional people"; image.lifetime = .keepAlways; add(image)
-            XCTAssertTrue(clear.isHittable); clear.tap(); checkRestored()
+            XCTAssertTrue(clear.isHittable); clear.tap(); assertClearSearchRestored(app)
         }
+        assertClearSearchPreservedCategory(app)
+    }
+
+    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() {
+        let app = clearSearchFixture(); defer { app.terminate() }
+        let clear = app.buttons["clear-search-and-filters"]
+        let search = app.searchFields.firstMatch
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
+        XCTAssertTrue(app.navigationBars["All people"].waitForExistence(timeout: 5))
         search.tap(); search.typeText("NoSuchFictionalPerson")
-        clear.tap(); checkRestored()
+        clear.tap(); assertClearSearchRestored(app)
         // Clearing display controls must not change a stored category.
-        app.staticTexts["Jamie Patel"].tap(); app.navigationBars.buttons["Edit"].tap()
-        XCTAssertEqual(editorSwitchWrapper("Friend",in: app).value as? String,"1")
-        app.buttons["Cancel"].tap()
+        assertClearSearchPreservedCategory(app)
     }
 
     @MainActor func testClearSearchAndFiltersOnEmptyNotebookAtLargestText() throws {
