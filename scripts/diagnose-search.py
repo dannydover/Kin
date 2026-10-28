@@ -1,11 +1,31 @@
 #!/usr/bin/env python3
 """Single bounded synthetic diagnostic. Raw test logs/results never uploaded."""
-import json, os, re, subprocess
+import hashlib, json, os, re, subprocess, zipfile
 from pathlib import Path
 
 SOURCE = '208cb6a1500ccc8f5d0bd4f6be254b36ab9e5f92'
 APP_TREE = 'b9bd5e8ae1b14556d19a1f992a746fc0a529c684'
 TEST_BLOB = '12c13e5fe35b59830aacc9a5415d3efc4fbe983e'
+
+def clean_env(root):
+    # Synthetic hosted runner only: do not pass Actions/GitHub token variables
+    # to the test process or its retained result bundle.
+    return {'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','HOME':os.environ['HOME'],
+            'TMPDIR':str(root),'DEVELOPER_DIR':'/Applications/Xcode_27.app/Contents/Developer',
+            'LANG':'en_US.UTF-8','LC_ALL':'en_US.UTF-8','NSUnbufferedIO':'YES'}
+
+
+def retain_result(result, destination):
+    assert (result/'Info.plist').is_file()
+    with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED,allowZip64=True) as out:
+        for path in sorted(result.rglob('*')):
+            if path.is_symlink(): raise RuntimeError('result_contains_symlink')
+            if path.is_file(): out.write(path,Path(result.name)/path.relative_to(result))
+    with zipfile.ZipFile(destination) as check:
+        if check.testzip() is not None: raise RuntimeError('result_zip_corrupt')
+        assert result.name+'/Info.plist' in check.namelist()
+    return hashlib.sha256(destination.read_bytes()).hexdigest()
+
 TESTS = ['KinUITests/IndexMembershipUITests/testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords',
          ]
 
@@ -53,8 +73,8 @@ def instrument():
 
 def main():
     root=Path(os.environ['RUNNER_TEMP'])/'KinSearchDiagnostic'; public=root/'public'; public.mkdir(parents=True)
-    m={'status':'preflight','purpose':'single-test stage diagnostic, not release validation','source':SOURCE,'application_tree':APP_TREE,'tests':TESTS,'raw_logs_uploaded':False,'permission_grants':[]}
-    device=None
+    m={'status':'preflight','purpose':'single-test stage diagnostic, not release validation','source':SOURCE,'application_tree':APP_TREE,'tests':TESTS,'raw_user_logs_uploaded':False,'full_synthetic_xcresult_bundle':True,'permission_grants':[]}
+    device=None; result=root/'result.xcresult'
     try:
         version=subprocess.check_output(['xcodebuild','-version'],text=True).strip()
         assert version == 'Xcode 27.0\nBuild version 27A266a'
@@ -67,14 +87,14 @@ def main():
                 subprocess.run(args,stdout=log,stderr=log,check=True)
             subprocess.run(['python3','scripts/create-simulator-photo.py',str(root/'SyntheticPhoto.png')],stdout=log,stderr=log,check=True)
             subprocess.run(['xcrun','simctl','addmedia',device,str(root/'SyntheticPhoto.png')],stdout=log,stderr=log,check=True)
-        cmd=['xcodebuild','-project','Kin.xcodeproj','-scheme','Kin','-configuration','Debug','-destination','platform=iOS Simulator,id='+device,'-derivedDataPath',str(root/'DerivedData'),'-resultBundlePath',str(root/'result.xcresult'),'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES','-default-test-execution-time-allowance','240','-maximum-test-execution-time-allowance','600']
+        cmd=['xcodebuild','-project','Kin.xcodeproj','-scheme','Kin','-configuration','Debug','-destination','platform=iOS Simulator,id='+device,'-derivedDataPath',str(root/'DerivedData'),'-resultBundlePath',str(result),'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES','-default-test-execution-time-allowance','240','-maximum-test-execution-time-allowance','600']
         cmd += ['-only-testing:'+test for test in TESTS]
         cmd += ['test','CODE_SIGNING_ALLOWED=NO']
-        with (root/'test.log').open('w') as log: code=subprocess.run(cmd,stdout=log,stderr=log).returncode
+        with (root/'test.log').open('w') as log: code=subprocess.run(cmd,stdout=log,stderr=log,env=clean_env(root)).returncode
         raw=(root/'test.log').read_text(errors='replace')
         pattern=r'KIN_SEARCH_DIAGNOSTIC stage=(?:before_largest_launch|after_largest_launch|fixture_launch_start|fixture_launch_end|fixture_person_start index=[0-3]|fixture_person_end index=[0-3]|allpeople_start|search_start|search_end|clear_start|clear_end|recovery nav=(?:true|false) categoryAll=(?:true|false) count=[0-9]{1,4} alex=(?:true|false) clear=(?:true|false) keyboard=(?:true|false))'
         (public/'markers.txt').write_text('\n'.join(re.findall(pattern,raw))+'\n')
-        summary=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(root/'result.xcresult')],text=True))
+        summary=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(result)],text=True,env=clean_env(root)))
         m['summary']={k:summary.get(k) for k in ['totalTestCount','passedTests','failedTests','skippedTests','result']};m['xcodebuild_exit']=code
         allowed={t.removeprefix('KinUITests/') for t in TESTS}; failures=[]
         for f in summary.get('testFailures',[]):
@@ -87,6 +107,16 @@ def main():
     except Exception as e:
         m['status']='diagnostic_error';m['error_type']=type(e).__name__
     finally:
+        if result.is_dir() and (result/'Info.plist').is_file():
+            try:
+                m['result_zip_sha256']=retain_result(result,public/'synthetic-xcresult.zip')
+                m['result_bundle_retained']=True
+            except Exception as error:
+                m['result_bundle_retained']=False;m['result_retention_error_type']=type(error).__name__
+        else:
+            m['result_bundle_retained']=False
+        if m['status'] == 'completed' and not m['result_bundle_retained']:
+            m['status'] = 'result_retention_failed'
         if device:
             subprocess.run(['xcrun','simctl','shutdown',device],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             m['owned_simulator_removed']=subprocess.run(['xcrun','simctl','delete',device],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
