@@ -52,9 +52,16 @@ final class NativeContactsTests: XCTestCase {
                 first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: 7) + name)
                 XCTAssertEqual(gender.value as? String,"Female")
             }
-            let friend = app.switches["contact-connection-friend"].switches.firstMatch
-            for _ in 0..<6 { if friend.isHittable { break }; app.swipeUp() }
+            if app.keyboards.firstMatch.exists {
+                let finishEntry = app.keyboards.firstMatch.buttons["Return"]
+                XCTAssertTrue(finishEntry.exists && finishEntry.isHittable)
+                finishEntry.tap()
+                XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            }
+            let friend = editorToggle("contact-connection-friend", in: app)
+            XCTAssertTrue(friend.exists && friend.isHittable)
             friend.tap()
+            XCTAssertEqual(editorSwitchWrapper("contact-connection-friend", in: app).value as? String,"1")
             let preview = app.images["contact-photo-preview"]
             let emptyPreview = app.staticTexts["contact-photo-preview-empty"]
             let target = isAdult ? preview : emptyPreview
