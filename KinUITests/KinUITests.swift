@@ -3,7 +3,20 @@ import Contacts
 import UIKit
 
 final class KinUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        let label: String
+        switch status {
+        case .notDetermined: label = "notDetermined"
+        case .restricted: label = "restricted"
+        case .denied: label = "denied"
+        case .authorized: label = "authorized"
+        case .limited: label = "limited"
+        @unknown default: label = "unknown"
+        }
+        print("KIN_CI_AUTH \(label)")
+    }
     @MainActor func testNormalColdLaunchOpensNotebookAndPreservesSavedPerson() throws {
         #if targetEnvironment(simulator)
         // Run only in a fresh isolated simulator: exercise the normal notebook,
@@ -1215,7 +1228,13 @@ final class KinUITests: XCTestCase {
         }) else { return }
         // The labeled accessibility wrapper spans the row; its nested switch
         // is the demonstrated action target. Let XCTest scroll it into view.
+        func recordFriendStage(_ stage: String) {
+            func state(_ value: String?) -> String { value == "0" ? "off" : value == "1" ? "on" : "unknown" }
+            print("KIN_CI_FRIEND \(stage) keyboard=\(app.keyboards.firstMatch.exists) wrapper=\(state(friends.element.value as? String)) control=\(state(controls.element.value as? String)) hittable=\(controls.element.isHittable)")
+        }
+        recordFriendStage("before")
         controls.element.tap()
+        recordFriendStage("after")
         let save = editor.buttons.matching(identifier: "Save")
         guard requireTestState(app, "Friend on and Save enabled", {
             friends.count == 1 && controls.count == 1

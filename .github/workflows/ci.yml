@@ -60,47 +60,50 @@ jobs:
         run: |
           KIN_CI_SIMULATOR=$(xcrun simctl create "Kin CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
           echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          export KIN_CI_SIMULATOR
           xcrun simctl boot "$KIN_CI_SIMULATOR"
           xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
           # Only the UI test runner seeds synthetic Contacts; Kin itself retains
           # selection-only picker access without an address-book permission.
-          xcrun simctl privacy "$KIN_CI_SIMULATOR" grant contacts com.intriguingideas.KinUITests.xctrunner
+          if [ "${{ matrix.shard }}" != "unit" ]; then
+            python3 scripts/ci-simulator.py grant
+          fi
           python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
           xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
       - name: Unit, integration, and UI regression suite (iOS 27)
         timeout-minutes: 45
-        run: >-
-          xcodebuild -project Kin.xcodeproj -scheme Kin
-          -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR"
-          -derivedDataPath DerivedData
-          -resultBundlePath "$RUNNER_TEMP/KinTests.xcresult"
-          -parallel-testing-enabled NO -collect-test-diagnostics never
-          -test-timeouts-enabled YES -default-test-execution-time-allowance 240
-          -maximum-test-execution-time-allowance 600
-          $(python3 scripts/ci-test-shards.py "${{ matrix.shard }}")
-          clean test CODE_SIGNING_ALLOWED=NO
+        run: python3 scripts/ci-observe.py "${{ matrix.shard }}"
       - name: Require finalized results with full fixture coverage
+        if: always()
         run: |
           xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
           python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
           python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json"
-      - name: Retain synthetic finalized shard results
+      - name: Package synthetic progress and finalized result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - name: Retain synthetic progress and finalized result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kin-tests-${{ matrix.shard }}
-          path: |
-            ${{ runner.temp }}/KinTests.xcresult
-            ${{ runner.temp }}/KinTests-summary.json
+          path: ${{ runner.temp }}/KinCI-retained/
           retention-days: 7
           if-no-files-found: error
       - name: Remove this run's isolated simulator
         if: always()
         run: |
           if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
-            xcrun simctl shutdown "$KIN_CI_SIMULATOR" || true
-            xcrun simctl delete "$KIN_CI_SIMULATOR"
+            python3 scripts/ci-simulator.py cleanup
           fi
+      - name: Retain synthetic cleanup outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-cleanup-${{ matrix.shard }}
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: warn
   release-validation:
     runs-on: xcode-27
     timeout-minutes: 30
