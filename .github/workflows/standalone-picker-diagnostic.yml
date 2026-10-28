@@ -1,7 +1,7 @@
 name: Standalone UIKit picker diagnostic
 on:
   push:
-    branches: [diagnostic/standalone-uikit-picker]
+    branches: [diagnostic/standalone-uikit-picker-scene]
 permissions:
   contents: read
 jobs:
