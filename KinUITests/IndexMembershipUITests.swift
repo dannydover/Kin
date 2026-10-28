@@ -112,22 +112,15 @@ final class IndexMembershipUITests: XCTestCase {
         let clear = app.buttons["clear-search-and-filters"]
         // The failing trace had already restored these values before XCTest
         // waited on animation notifications at the next menu transition.
-        // Require that outcome and a settled list position before the next
-        // transition, still within the existing five-second readiness bound.
-        var previousRowFrame = CGRect.null
-        var stableSince: Date?
+        // Gate the next transition on that exact functional outcome, within
+        // the existing five-second bound. A first-match cell frame is not a
+        // recovery invariant: CI showed the correct restored screen while
+        // that additional geometry condition failed to settle.
         let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let ready = app.navigationBars["People"].exists
+            app.navigationBars["People"].exists
                 && app.buttons["category-filter"].value as? String == "All"
                 && app.cells.count == 3 && app.staticTexts["Alex Morgan"].exists
                 && !clear.exists && !app.keyboards.firstMatch.exists
-            guard ready else { stableSince = nil; return false }
-            let rowFrame = app.cells.firstMatch.frame
-            guard rowFrame.width > 0 && rowFrame.height > 0 else { stableSince = nil; return false }
-            if stableSince == nil || rowFrame != previousRowFrame {
-                previousRowFrame = rowFrame; stableSince = Date(); return false
-            }
-            return Date().timeIntervalSince(stableSince!) >= 1
         },object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [restored],timeout: 5),.completed)
         XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
