@@ -3,7 +3,29 @@ import XCTest
 final class DeleteAllPeopleUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     @MainActor private func open(_ app: XCUIApplication) {
-        app.buttons["people-menu"].tap(); app.buttons["Delete all people"].tap()
+        app.buttons["people-menu"].tap()
+        let action = app.buttons["Delete all people"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        // Native menus can clip their final row at accessibility sizes while
+        // XCTest still reports the entire row as hittable. Reveal it before tapping.
+        let menu = app.collectionViews.containing(.button, identifier: "Delete all people")
+        if action.frame.height > 100 {
+            XCTAssertEqual(menu.count, 1)
+            let bounds = app.otherElements.containing(.button, identifier: "Delete all people")
+                .allElementsBoundByIndex.map(\.frame)
+                .filter { $0.width >= action.frame.width && $0.width < app.frame.width && $0.height > 100 }
+                .min { $0.height < $1.height }
+            XCTAssertNotNil(bounds)
+            guard let bounds else { return }
+            for _ in 0..<4 {
+                if bounds.contains(action.frame) { break }
+                menu.element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                    .press(forDuration: 0.1, thenDragTo: menu.element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+            }
+            XCTAssertTrue(bounds.contains(action.frame), "The entire menu action must be visible before tapping")
+        }
+        XCTAssertTrue(action.isHittable)
+        action.tap()
         XCTAssertTrue(app.navigationBars["Delete all people"].waitForExistence(timeout: 5))
     }
     @MainActor private func review(_ app: XCUIApplication) {
@@ -20,7 +42,7 @@ final class DeleteAllPeopleUITests: XCTestCase {
         app.buttons["Add child"].tap(); app.buttons["Create new person"].tap()
         app.textFields["First name (optional)"].tap(); app.textFields["First name (optional)"].typeText("Synthetic Hidden Child")
         app.buttons["Save"].tap(); XCTAssertTrue(app.buttons["Edit relationship with Synthetic Hidden Child"].waitForExistence(timeout: 5))
-        app.navigationBars.buttons["Kin"].tap(); XCTAssertEqual(app.cells.count,1)
+        app.navigationBars.buttons["People"].tap(); XCTAssertEqual(app.cells.count,1)
         open(app); XCTAssertTrue(app.staticTexts["2 people saved in this notebook."].exists)
         #if targetEnvironment(simulator)
         XCTAssertTrue(app.launchArguments.contains("--kin-test-notebook"))

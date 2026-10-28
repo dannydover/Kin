@@ -47,8 +47,9 @@ struct PersonDetail: View {
                 Section {
                     PersonRow(person: person, today: today)
                     if let grade = AgeRules(calendar: .current).grade(for: person.birthday, on: today) { Text("Approximate school grade: \(grade)") }
-                    Text("Gender: \(person.gender.rawValue.capitalized)")
-                    Text(person.isListed ? "In Your people" : "Not in Your people · find in All people")
+                    Text("Gender: \(person.gender.title)")
+                    if person.isListed { Text("On main list") }
+                    else { Text("Not on main list · available on the \(FeatureReference.allPeople) screen") }
                     if !person.connections.isEmpty {
                         Text("Your connection: " + person.connections.map { $0.rawValue.capitalized }.sorted().joined(separator: ", "))
                     }
@@ -88,7 +89,7 @@ struct PersonDetail: View {
                     do { try store.deletePerson(personID); dismiss() } catch { self.error = UserFacingError.message(error) }
                 }.kinDestructiveText().accessibilityIdentifier("confirm-delete-person")
                 Button("Cancel", role: .cancel) { }
-            } message: { Text("Deletes this person’s details, photo, and relationships. Other people won’t be deleted. You can still find them in All people.") }
+            } message: { Text("Deletes this person’s details, photo, and relationships. Other people won’t be deleted. Find them on the \(FeatureReference.allPeople) screen.") }
     }
     @ViewBuilder private func relationshipRow(_ id: UUID, subtitle: String, edit: @escaping () -> Void) -> some View {
         if let person = store.people.first(where: { $0.id == id }) {
@@ -153,7 +154,7 @@ struct AddRelationshipView: View {
             Group {
                 Section {
                     NavigationLink("Create new person") { PersonEditor(store: store, relationship: relationship, onSaved: { dismiss() }) }
-                } footer: { Text("New people added here stay in linked profiles and All people. Turn on Show in Your people to include them in your list.") }
+                } footer: { FeatureHelp.newLinkedPerson.accessibilityIdentifier("linked-person-guidance") }
                 Section {
                     NavigationLink("Link an existing person") {
                         ExistingPersonPicker(store: store,sourceID: sourceID,relationship: relationship,onSaved: { dismiss() })
@@ -252,7 +253,7 @@ struct RelationshipEditor: View {
                 }
                 relationshipPickers(child: parent != nil, parentage: $parentage, status: $status)
                 if isNew {
-                    Text("Save to add this relationship.").font(.footnote)
+                    Text("Tap \(FeatureReference.save) to add this relationship.").font(.footnote)
                 } else {
                     Button("Remove relationship", role: .destructive) { removing = true }.kinDestructiveText()
                     Text("Removes only this relationship. Both people and their details stay.").font(.footnote)
@@ -272,7 +273,7 @@ struct RelationshipEditor: View {
                     } catch { self.error = UserFacingError.message(error) }
                 }.kinDestructiveText().accessibilityIdentifier("confirm-unlink")
                 Button("Cancel", role: .cancel) { }
-            } message: { Text("Both people remain available in All people.") }
+            } message: { Text("Both people remain available on the \(FeatureReference.allPeople) screen.") }
             .kinError($error).notebookAvailability(store)
     }
     @ViewBuilder private func personRoleRow(_ id: UUID, role: String, identifier: String) -> some View {

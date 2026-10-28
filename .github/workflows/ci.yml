@@ -142,4 +142,3 @@ jobs:
           test "${{ needs.core-validation.result }}" = success
           test "${{ needs.simulator-tests.result }}" = success
           test "${{ needs.release-validation.result }}" = success
-

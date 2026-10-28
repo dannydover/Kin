@@ -5,7 +5,7 @@ let package = Package(
     platforms: [.macOS(.v14), .iOS("26.0")],
     products: [.library(name: "Kin", targets: ["Kin"])],
     targets: [
-        .target(name: "Kin", path: "Kin/Core"),
+        .target(name: "Kin", path: "Kin/Core", resources: [.process("Resources")]),
         .testTarget(name: "KinTests", dependencies: ["Kin"], path: "KinTests/Core")
     ],
     swiftLanguageModes: [.v6]

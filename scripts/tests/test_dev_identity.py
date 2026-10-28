@@ -25,8 +25,8 @@ class DevIdentityTests(unittest.TestCase):
                 expected = json.loads(json.dumps(value))
                 expected['buildSettings']['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'Kin'
                 # Deliberate next-release metadata; all other production settings stay frozen.
-                expected['buildSettings']['MARKETING_VERSION'] = '1.1.0'
-                expected['buildSettings']['CURRENT_PROJECT_VERSION'] = '5'
+                expected['buildSettings']['MARKETING_VERSION'] = '1.2.0'
+                expected['buildSettings']['CURRENT_PROJECT_VERSION'] = '6'
                 self.assertEqual(current[key], expected, key)
             else:
                 self.assertEqual(current[key], value, key)
@@ -49,8 +49,8 @@ class DevIdentityTests(unittest.TestCase):
         self.assertEqual(ids, {'com.intriguingideas.Kin.dev', 'com.intriguingideas.Kin.dev.tests', 'com.intriguingideas.Kin.dev.uitests'})
         app = next(c for c in configs if c.get('PRODUCT_BUNDLE_IDENTIFIER') == 'com.intriguingideas.Kin.dev')
         self.assertEqual(app['INFOPLIST_KEY_CFBundleDisplayName'], 'Kin Dev')
-        self.assertEqual(app['MARKETING_VERSION'], '1.1.0')
-        self.assertEqual(app['CURRENT_PROJECT_VERSION'], '5')
+        self.assertEqual(app['MARKETING_VERSION'], '1.2.0')
+        self.assertEqual(app['CURRENT_PROJECT_VERSION'], '6')
         self.assertEqual(app['ASSETCATALOG_COMPILER_APPICON_NAME'], 'AppIconDev')
         self.assertEqual(app['CODE_SIGN_ENTITLEMENTS'], 'Development/KinDev.entitlements')
         import plistlib

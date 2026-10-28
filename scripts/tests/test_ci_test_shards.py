@@ -1,12 +1,22 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
 
 spec = importlib.util.spec_from_file_location('shards', Path(__file__).resolve().parents[1] / 'ci-test-shards.py')
 shards = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(shards)
 
 class CoverageTests(unittest.TestCase):
+    def test_shared_helper_cannot_hide_a_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'KinUITests').mkdir()
+            helper = root / 'KinUITests/EditorTestSupport.swift'
+            helper.write_text('func testAccidentallyAdded() {}')
+            with self.assertRaisesRegex(ValueError, 'EditorTestSupport'):
+                shards.discover(root)
+
     def test_all_ui_methods_appear_exactly_once(self):
         expected = shards.discover()
         selected = [item for group in shards.GROUPS[1:] for item in shards.selections(group)]

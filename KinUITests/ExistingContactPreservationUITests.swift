@@ -35,7 +35,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
         app.launch(); defer { app.terminate() }
         func select(_ name: String) {
             let action = app.buttons["Import from Contacts"]; reveal(action,in: app); action.tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
             let search = app.searchFields.firstMatch; XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
             if search.buttons["Clear text"].exists { search.buttons["Clear text"].tap() }
             search.typeText(name)
@@ -58,27 +58,27 @@ final class ExistingContactPreservationUITests: XCTestCase {
                 reveal(photo,in: app); XCTAssertEqual(photo.value as? String,"0")
             }
             if index == 0 {
-                app.navigationBars["Contact birth information"].buttons["Cancel"].tap()
+                app.buttons["contact-cancel"].tap()
                 XCTAssertEqual(app.textFields["First name (optional)"].value as? String,originals[index])
                 select(fixtures[index].givenName)
                 let noPhoto = app.buttons["Continue without importing photo"]; reveal(noPhoto,in: app); noPhoto.tap()
-            } else { app.navigationBars["Contact birth information"].buttons["Import"].tap() }
+            } else { app.buttons["contact-import"].tap() }
             XCTAssertTrue(app.navigationBars["Edit person"].waitForExistence(timeout: 5))
             let kept = app.buttons["birth-information"]; reveal(kept,in: app); XCTAssertTrue(kept.label.contains(kinds[index]))
             app.navigationBars["Edit person"].buttons["Save"].tap()
             XCTAssertTrue(app.navigationBars[fixtures[index].givenName].waitForExistence(timeout: 5))
             XCTAssertTrue(app.buttons[identities[index]].exists)
-            app.navigationBars.buttons["Kin"].tap()
+            app.navigationBars.buttons["People"].tap()
         }
         app.staticTexts[fixtures[0].givenName].tap(); app.navigationBars.buttons["Edit"].tap()
         select(fixtures[3].givenName)
         XCTAssertFalse(app.staticTexts["contact-birth-preservation"].exists)
-        app.navigationBars["Contact birth information"].buttons["Import"].tap()
+        app.buttons["contact-import"].tap()
         app.navigationBars["Edit person"].buttons["Save"].tap()
         XCTAssertTrue(app.navigationBars[fixtures[3].givenName].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons[identities[0]].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@","Birthday:","1995")).firstMatch.exists)
-        app.navigationBars.buttons["Kin"].tap(); XCTAssertEqual(app.cells.count,3)
+        app.navigationBars.buttons["People"].tap(); XCTAssertEqual(app.cells.count,3)
         #else
         throw XCTSkip("Synthetic Contacts fixtures must run on an isolated simulator.")
         #endif

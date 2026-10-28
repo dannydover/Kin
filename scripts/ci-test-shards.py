@@ -15,6 +15,10 @@ def discover(root=ROOT):
         text = path.read_text()
         classes = re.findall(r'\bclass\s+(\w+)\s*:\s*XCTestCase\b', text)
         methods = re.findall(r'\bfunc\s+(test\w+)\s*\(', text)
+        # This shared UI helper contains no XCTestCase or test methods.
+        # If that changes, require explicit discovery instead of dropping tests.
+        if path.name == 'EditorTestSupport.swift' and not classes and not methods:
+            continue
         if len(classes) != 1 or not methods:
             raise ValueError(f'Unrecognized UI test structure: {path.name}')
         ids.extend(f'KinUITests/{classes[0]}/{method}' for method in methods)
