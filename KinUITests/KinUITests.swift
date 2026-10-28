@@ -1232,6 +1232,19 @@ final class KinUITests: XCTestCase {
             func state(_ value: String?) -> String { value == "0" ? "off" : value == "1" ? "on" : "unknown" }
             print("KIN_CI_FRIEND \(stage) keyboard=\(app.keyboards.firstMatch.exists) wrapper=\(state(friends.element.value as? String)) control=\(state(controls.element.value as? String)) hittable=\(controls.element.isHittable)")
         }
+        // Finish editing before interacting with the switch so the form has a
+        // settled layout; continue to verify the switch and saved profile below.
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists {
+            let returnKey = keyboard.buttons["Return"]
+            guard requireTestState(app, "Name keyboard Return ready", {
+                returnKey.exists && returnKey.isHittable
+            }) else { return }
+            returnKey.tap()
+            guard requireTestState(app, "Name keyboard dismissed", {
+                !keyboard.exists
+            }) else { return }
+        }
         recordFriendStage("before")
         controls.element.tap()
         recordFriendStage("after")
