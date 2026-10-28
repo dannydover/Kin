@@ -3,7 +3,7 @@
 
 Raw build/device logs stay on the ephemeral runner. Public evidence contains only
 fixed event codes, timestamps, numeric error codes and finalized test counts.
-No app code, permissions, assertions or test timeouts are changed.
+Owner-approved nonshipping app logging only; permissions, assertions and timeouts stay unchanged.
 """
 import json
 import importlib.util
@@ -14,7 +14,8 @@ import subprocess
 import threading
 
 SOURCE = '208cb6a1500ccc8f5d0bd4f6be254b36ab9e5f92'
-APP_TREE = 'b9bd5e8ae1b14556d19a1f992a746fc0a529c684'
+BASELINE_APP_TREE = 'b9bd5e8ae1b14556d19a1f992a746fc0a529c684'
+APP_TREE = '4c37021098b5f9549656e6ec2f3b7bff299a4021'
 TEST_BLOB = '1f975554f13466a0fd2cb53a8f7c93fe14f723ab'
 TEST = 'KinUITests/KinUITests/testNewImportSavesReviewedNamesForEveryEntryPoint'
 EVENTS = {
@@ -27,12 +28,52 @@ EVENTS = {
 }
 
 
+DIRECT_EVENTS = {'picker.created', 'picker.didSelect', 'picker.didCancel',
+    'container.didLoad', 'container.willAppear', 'container.didAppear',
+    'container.willDisappear', 'container.didDisappear', 'container.beforePresent',
+    'container.afterPresent', 'container.presentCompletion', 'container.snapshot', 'container.dismantle'}
+DIRECT_EVENTS.update('picker.' + callback + '.' + edge
+    for callback in ('willAppear', 'didAppear', 'willDisappear', 'didDisappear') for edge in ('enter', 'exit'))
+
+
+def direct_payload(message):
+    marker = 'KIN_PICKER_LIFECYCLE '
+    if marker not in message:
+        return None
+    try:
+        payload = json.loads(message.split(marker, 1)[1].strip())
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or set(payload) != {'event', 'wall', 'uptime', 'controller', 'peer'}:
+        return None
+    if payload['event'] not in DIRECT_EVENTS:
+        return None
+    if any(type(payload[key]) not in (int, float) for key in ('wall', 'uptime')):
+        return None
+    for key in ('controller', 'peer'):
+        state = payload[key]
+        if not isinstance(state, dict) or not set(state) <= {'role', 'id', 'loaded', 'window',
+                'beingPresented', 'beingDismissed', 'presentedRole', 'presenterRole', 'transition'}:
+            return None
+        if state.get('role') not in ('none', 'container', 'picker', 'other'):
+            return None
+        for name, value in state.items():
+            if name in ('role', 'presentedRole', 'presenterRole') and value not in ('none', 'container', 'picker', 'other'):
+                return None
+            if name == 'id' and (type(value) is not int or not 0 < value < 10000):
+                return None
+            if name not in ('role', 'presentedRole', 'presenterRole', 'id') and type(value) is not bool:
+                return None
+    return payload
+
+
 def sanitized_event(record):
     message = record.get('eventMessage', '')
     if not isinstance(message, str):
         return None
+    direct = direct_payload(message)
     codes = sorted({code for token, code in EVENTS.items() if token.lower() in message.lower()})
-    if not codes:
+    if not codes and direct is None:
         return None
     stamp = str(record.get('timestamp', ''))
     if not re.fullmatch(r'[0-9T :.+Z-]{10,40}', stamp):
@@ -40,6 +81,8 @@ def sanitized_event(record):
     image = str(record.get('processImagePath', ''))
     process = 'Kin' if Path(image).name == 'Kin' else 'Contacts_service_or_framework'
     result = {'timestamp': stamp, 'process': process, 'events': codes}
+    if direct is not None:
+        result['direct'] = direct
     controllers = [name for name in ('CNContactPickerViewController',
                    '_UIViewServiceRootViewController', 'ContactPicker.Container') if name in message]
     if controllers:
@@ -79,7 +122,8 @@ def main():
     public = root / 'public'
     public.mkdir(parents=True)
     manifest = {'purpose': 'diagnostic only; not release validation', 'baseline_source': SOURCE,
-                'application_tree': APP_TREE, 'test': TEST, 'permission_grants': [],
+                'application_tree': APP_TREE, 'baseline_application_tree': BASELINE_APP_TREE,
+                'nonshipping_direct_lifecycle_logging': True, 'test': TEST, 'permission_grants': [],
                 'raw_logs_uploaded': False, 'status': 'preflight'}
     spec = importlib.util.spec_from_file_location('shards', 'scripts/ci-test-shards.py')
     shards = importlib.util.module_from_spec(spec)
@@ -135,14 +179,15 @@ def main():
         collector.start()
         manifest['status'] = 'running'
         write_manifest()
-        command = ['xcodebuild', '-project', 'Kin.xcodeproj', '-scheme', 'Kin',
+        command = ['xcodebuild', '-project', 'Kin.xcodeproj', '-scheme', 'Kin', '-configuration', 'Debug',
             '-destination', 'platform=iOS Simulator,id=' + device,
             '-derivedDataPath', str(root / 'DerivedData'), '-resultBundlePath', str(root / 'result.xcresult'),
             '-parallel-testing-enabled', 'NO', '-collect-test-diagnostics', 'never',
             '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '240',
             '-maximum-test-execution-time-allowance', '600']
         command += ['-only-testing:' + name for name in selected]
-        command += ['test', 'CODE_SIGNING_ALLOWED=NO']
+        command += ['test', 'CODE_SIGNING_ALLOWED=NO',
+            'SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG KIN_PICKER_LIFECYCLE_DIAGNOSTIC']
         with (root / 'test.log').open('w') as log:
             build_code = subprocess.run(command, stdout=log, stderr=log).returncode
         markers = []
@@ -187,6 +232,8 @@ def main():
             events = (public / 'native-events.jsonl').read_text().splitlines()
             manifest['native_event_count'] = len(events)
             manifest['controller_event_count'] = sum('controllers' in json.loads(row) for row in events)
+            manifest['direct_event_count'] = sum('direct' in json.loads(row) for row in events)
+            manifest['probe_observed'] = manifest['direct_event_count'] > 0
         if device is not None:
             subprocess.run(['xcrun', 'simctl', 'shutdown', device], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             cleanup = subprocess.run(['xcrun', 'simctl', 'delete', device], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

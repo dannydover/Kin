@@ -1,11 +1,11 @@
-name: UI-2 prefix picker diagnostic (not release validation)
+name: Direct picker lifecycle diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/kin-picker-lifecycle-208cb6a1]
+    branches: [diagnostic/kin-picker-direct-lifecycle]
 permissions:
   contents: read
 concurrency:
-  group: kin-picker-diagnostic-208cb6a1
+  group: kin-picker-direct-lifecycle
   cancel-in-progress: false
 jobs:
   picker-diagnostic:
@@ -25,7 +25,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: picker-ui2-prefix-diagnostic
+          name: picker-direct-lifecycle-diagnostic
           path: ${{ runner.temp }}/KinPickerDiagnostic/public/
           retention-days: 7
           if-no-files-found: error

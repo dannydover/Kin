@@ -1,5 +1,8 @@
 import SwiftUI
 import ContactsUI
+#if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+import ObjectiveC
+#endif
 
 @MainActor struct ContactSnapshot {
     let photoIdentity = UUID()
@@ -43,7 +46,13 @@ struct ContactPicker: UIViewControllerRepresentable {
     var onSelect: (ContactSnapshot) -> Void
     var onCancel: () -> Void
     @MainActor static func makePicker(delegate: CNContactPickerDelegate) -> CNContactPickerViewController {
+        #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+        PickerLifecycleProbe.install()
+        #endif
         let picker = CNContactPickerViewController()
+        #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+        PickerLifecycleProbe.record("picker.created", picker)
+        #endif
         picker.delegate = delegate
         picker.displayedPropertyKeys = [CNContactGivenNameKey, CNContactFamilyNameKey,
             CNContactBirthdayKey, CNContactNonGregorianBirthdayKey,
@@ -58,6 +67,9 @@ struct ContactPicker: UIViewControllerRepresentable {
         context.coordinator.parent = self
     }
     static func dismantleUIViewController(_ controller: Container, coordinator: Coordinator) {
+        #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+        PickerLifecycleProbe.record("container.dismantle", controller)
+        #endif
         coordinator.invalidate()
     }
 
@@ -72,16 +84,49 @@ struct ContactPicker: UIViewControllerRepresentable {
         override func viewDidLoad() {
             super.viewDidLoad()
             view.backgroundColor = .systemBackground
+            #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+            PickerLifecycleProbe.record("container.didLoad", self)
+            #endif
         }
+        #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            PickerLifecycleProbe.record("container.willAppear", self)
+        }
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            PickerLifecycleProbe.record("container.willDisappear", self)
+        }
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            PickerLifecycleProbe.record("container.didDisappear", self)
+        }
+        #endif
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
+            #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+            PickerLifecycleProbe.record("container.didAppear", self)
+            #endif
             if !hasPresented {
                 hasPresented = true
                 let picker = ContactPicker.makePicker(delegate: coordinator)
                 // A full-screen child returns appearance callbacks to this container
                 // only after its automatic dismissal transition completes.
                 picker.modalPresentationStyle = .fullScreen
+                #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+                PickerLifecycleProbe.record("container.beforePresent", self, peer: picker)
+                present(picker, animated: true) { [weak self, weak picker] in
+                    PickerLifecycleProbe.record("container.presentCompletion", self, peer: picker)
+                }
+                PickerLifecycleProbe.record("container.afterPresent", self, peer: picker)
+                for delay in [0.5, 2.0, 5.0, 9.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak picker] in
+                        PickerLifecycleProbe.record("container.snapshot", self, peer: picker)
+                    }
+                }
+                #else
                 present(picker, animated: true)
+                #endif
             } else if presentedViewController == nil {
                 coordinator.pickerDidDismiss()
             }
@@ -95,10 +140,16 @@ struct ContactPicker: UIViewControllerRepresentable {
         private var finished = false
         init(parent: ContactPicker) { self.parent = parent }
         func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
+            #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+            PickerLifecycleProbe.record("picker.didSelect", picker)
+            #endif
             guard outcome == nil, !finished else { return }
             outcome = .selected(ContactSnapshot(contact: contact))
         }
         func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
+            #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+            PickerLifecycleProbe.record("picker.didCancel", picker)
+            #endif
             guard outcome == nil, !finished else { return }
             outcome = .cancelled
         }
@@ -114,3 +165,64 @@ struct ContactPicker: UIViewControllerRepresentable {
         func invalidate() { finished = true; outcome = nil }
     }
 }
+
+#if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
+/// Nonshipping callback logger. Original picker class/implementations and ordering
+/// are preserved; wrappers only emit fixed state before/after forwarding callbacks.
+@MainActor private enum PickerLifecycleProbe {
+    private static var installed = false
+    private static var nextID = 0
+    private static var ids: [ObjectIdentifier: Int] = [:]
+    private static func role(_ controller: UIViewController?) -> String {
+        guard let controller else { return "none" }
+        if controller is ContactPicker.Container { return "container" }
+        if controller is CNContactPickerViewController { return "picker" }
+        return "other"
+    }
+    private static func state(_ controller: UIViewController?) -> [String: Any] {
+        guard let controller else { return ["role": "none"] }
+        let key = ObjectIdentifier(controller)
+        if ids[key] == nil { nextID += 1; ids[key] = nextID }
+        return ["id": ids[key]!, "role": role(controller),
+            "loaded": controller.isViewLoaded, "window": controller.viewIfLoaded?.window != nil,
+            "beingPresented": controller.isBeingPresented, "beingDismissed": controller.isBeingDismissed,
+            "presentedRole": role(controller.presentedViewController),
+            "presenterRole": role(controller.presentingViewController),
+            "transition": controller.transitionCoordinator != nil]
+    }
+    static func record(_ event: String, _ controller: UIViewController?, peer: UIViewController? = nil) {
+        let payload: [String: Any] = ["event": event, "wall": Date().timeIntervalSince1970,
+            "uptime": ProcessInfo.processInfo.systemUptime, "controller": state(controller), "peer": state(peer)]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              let line = String(data: data, encoding: .utf8) else { return }
+        NSLog("KIN_PICKER_LIFECYCLE %@", line)
+    }
+    static func install() {
+        guard !installed else { return }
+        installed = true
+        let callbacks: [(Selector, String)] = [
+            (#selector(UIViewController.viewWillAppear(_:)), "willAppear"),
+            (#selector(UIViewController.viewDidAppear(_:)), "didAppear"),
+            (#selector(UIViewController.viewWillDisappear(_:)), "willDisappear"),
+            (#selector(UIViewController.viewDidDisappear(_:)), "didDisappear")]
+        for (selector, event) in callbacks {
+            guard let method = class_getInstanceMethod(CNContactPickerViewController.self, selector) else { continue }
+            typealias Original = @convention(c) (UIViewController, Selector, Bool) -> Void
+            let original = unsafeBitCast(method_getImplementation(method), to: Original.self)
+            let block: @convention(block) (UIViewController, Bool) -> Void = { controller, animated in
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { record("picker." + event + ".enter", controller) }
+                }
+                original(controller, selector, animated)
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { record("picker." + event + ".exit", controller) }
+                }
+            }
+            let implementation = imp_implementationWithBlock(block)
+            if !class_addMethod(CNContactPickerViewController.self, selector, implementation, method_getTypeEncoding(method)) {
+                class_replaceMethod(CNContactPickerViewController.self, selector, implementation, method_getTypeEncoding(method))
+            }
+        }
+    }
+}
+#endif
