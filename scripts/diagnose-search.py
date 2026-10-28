@@ -7,7 +7,7 @@ SOURCE = '208cb6a1500ccc8f5d0bd4f6be254b36ab9e5f92'
 APP_TREE = 'b9bd5e8ae1b14556d19a1f992a746fc0a529c684'
 TEST_BLOB = '12c13e5fe35b59830aacc9a5415d3efc4fbe983e'
 TESTS = ['KinUITests/IndexMembershipUITests/testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords',
-         'KinUITests/IndexMembershipUITests/testClearSearchAndFiltersOnEmptyNotebookAtLargestText']
+         ]
 
 def instrument():
     p = Path('KinUITests/IndexMembershipUITests.swift')
@@ -30,11 +30,30 @@ def instrument():
         print("KIN_SEARCH_DIAGNOSTIC stage=after_largest_launch")
         defer { app.terminate() }'''
     assert s.count(old) == 1
-    p.write_text(s.replace(old,new))
+    s = s.replace(old,new)
+    old_fixture = '        let app = XCUIApplication(); launch(app)\n        for (name, category) in [("Alex Morgan", ""), ("Jamie Patel", "Friend"), ("Robin Chen", "Family")] {'
+    new_fixture = '        let app = XCUIApplication()\n        print("KIN_SEARCH_DIAGNOSTIC stage=fixture_launch_start")\n        launch(app)\n        print("KIN_SEARCH_DIAGNOSTIC stage=fixture_launch_end")\n        var diagnosticIndex = 0\n        for (name, category) in [("Alex Morgan", ""), ("Jamie Patel", "Friend"), ("Robin Chen", "Family")] {\n            diagnosticIndex += 1\n            print("KIN_SEARCH_DIAGNOSTIC stage=fixture_person_start index=\\(diagnosticIndex)")'
+    assert s.count(old_fixture) == 1
+    s = s.replace(old_fixture,new_fixture)
+    old_fixture_end = '            XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))\n        }\n        return app'
+    new_fixture_end = '            XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))\n            print("KIN_SEARCH_DIAGNOSTIC stage=fixture_person_end index=\\(diagnosticIndex)")\n        }\n        return app'
+    assert s.count(old_fixture_end) == 1
+    s = s.replace(old_fixture_end,new_fixture_end)
+    a = s.index('    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords()')
+    b = s.index('    @MainActor func testClearSearchAndFiltersOnEmptyNotebookAtLargestText()',a)
+    method = s[a:b]
+    for old_action,new_action in [
+      ('        app.buttons["people-menu"].tap(); app.buttons["All people"].tap()', '        print("KIN_SEARCH_DIAGNOSTIC stage=allpeople_start")\n        app.buttons["people-menu"].tap(); app.buttons["All people"].tap()'),
+      ('        search.tap(); search.typeText("NoSuchFictionalPerson")', '        print("KIN_SEARCH_DIAGNOSTIC stage=search_start")\n        search.tap(); search.typeText("NoSuchFictionalPerson")\n        print("KIN_SEARCH_DIAGNOSTIC stage=search_end")'),
+      ('        clear.tap(); assertClearSearchRestored(app)', '        print("KIN_SEARCH_DIAGNOSTIC stage=clear_start")\n        clear.tap()\n        print("KIN_SEARCH_DIAGNOSTIC stage=clear_end")\n        assertClearSearchRestored(app)')]:
+        assert method.count(old_action) == 1
+        method = method.replace(old_action,new_action)
+    s = s[:a] + method + s[b:]
+    p.write_text(s)
 
 def main():
     root=Path(os.environ['RUNNER_TEMP'])/'KinSearchDiagnostic'; public=root/'public'; public.mkdir(parents=True)
-    m={'status':'preflight','purpose':'two-test diagnostic, not release validation','source':SOURCE,'application_tree':APP_TREE,'tests':TESTS,'raw_logs_uploaded':False,'permission_grants':[]}
+    m={'status':'preflight','purpose':'single-test stage diagnostic, not release validation','source':SOURCE,'application_tree':APP_TREE,'tests':TESTS,'raw_logs_uploaded':False,'permission_grants':[]}
     device=None
     try:
         version=subprocess.check_output(['xcodebuild','-version'],text=True).strip()
@@ -53,7 +72,7 @@ def main():
         cmd += ['test','CODE_SIGNING_ALLOWED=NO']
         with (root/'test.log').open('w') as log: code=subprocess.run(cmd,stdout=log,stderr=log).returncode
         raw=(root/'test.log').read_text(errors='replace')
-        pattern=r'KIN_SEARCH_DIAGNOSTIC stage=(?:before_largest_launch|after_largest_launch|recovery nav=(?:true|false) categoryAll=(?:true|false) count=[0-9]{1,4} alex=(?:true|false) clear=(?:true|false) keyboard=(?:true|false))'
+        pattern=r'KIN_SEARCH_DIAGNOSTIC stage=(?:before_largest_launch|after_largest_launch|fixture_launch_start|fixture_launch_end|fixture_person_start index=[0-3]|fixture_person_end index=[0-3]|allpeople_start|search_start|search_end|clear_start|clear_end|recovery nav=(?:true|false) categoryAll=(?:true|false) count=[0-9]{1,4} alex=(?:true|false) clear=(?:true|false) keyboard=(?:true|false))'
         (public/'markers.txt').write_text('\n'.join(re.findall(pattern,raw))+'\n')
         summary=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(root/'result.xcresult')],text=True))
         m['summary']={k:summary.get(k) for k in ['totalTestCount','passedTests','failedTests','skippedTests','result']};m['xcodebuild_exit']=code
@@ -62,8 +81,8 @@ def main():
             ident=f.get('testIdentifierString','').removesuffix('()')
             if ident not in allowed: continue
             message=str(f.get('failureText','')).lower()
-            classes=[label for term,label in [('launch','launch'),('timed out','timeout'),('failed to get matching','query'),('assert','assertion'),('keyboard','keyboard'),('background assertion','background_assertion')] if term in message]
-            failures.append({'test':ident,'message_categories':classes})
+            classes=[label for term,label in [('launch','launch'),('timed out','timeout'),('failed to get matching','query'),('assert','assertion'),('keyboard','keyboard'),('background assertion','background_assertion'),('exceed','exceeded'),('failed','failed'),('error','error'),('wait','wait'),('element','element'),('match','matching'),('process','process'),('tap','tap'),('application','application'),('terminated','terminated'),('quiescen','quiescence'),('interrupt','interrupted')] if term in message]
+            failures.append({'test':ident,'message_categories':classes,'message_length':len(message),'source_references':sorted(set(re.findall(r'IndexMembershipUITests\.swift:[0-9]+',message,flags=re.I)))})
         m['failures']=failures;m['status']='completed';assert summary.get('totalTestCount')==len(TESTS)
     except Exception as e:
         m['status']='diagnostic_error';m['error_type']=type(e).__name__

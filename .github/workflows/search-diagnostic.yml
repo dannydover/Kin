@@ -1,7 +1,7 @@
 name: Isolated search stability diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/kin-search-stability]
+    branches: [diagnostic/kin-search-stages]
 permissions:
   contents: read
 jobs:
@@ -15,14 +15,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Two search scenarios with failure-only diagnostics
+      - name: Single failing search scenario with fixed stage diagnostics
         timeout-minutes: 45
         run: python3 scripts/diagnose-search.py
       - name: Retain sanitized diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kin-search-stability-diagnostic
+          name: kin-search-stages-diagnostic
           path: ${{ runner.temp }}/KinSearchDiagnostic/public/
           retention-days: 7
           if-no-files-found: error
