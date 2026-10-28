@@ -106,19 +106,25 @@ class Observer:
         self.status = {'manager': 'unavailable', 'process_access': 'not_started',
                        'incident_access': 'not_started', 'unverified_candidates': 0,
                        'missing_pid_fields': 0, 'rows': 0, 'incident_rows': 0,
-                       'coverage': 'allowlisted names/log PIDs only; silent or fast-lived processes may be missed'}
+                       'coverage': 'allowlisted names/log PIDs only; silent or fast-lived processes may be missed',
+                       'commands': [], 'preflight_verified': False}
         self.output = (public / 'process-metadata.jsonl').open('w')
         try:
-            r = self.command(['xcrun', 'simctl', 'spawn', device, 'launchctl', 'managerpid'])
+            r = self.command(['xcrun', 'simctl', 'spawn', device, 'launchctl', 'managerpid'], label='simulator_managerpid')
             if r is not None and r.returncode == 0 and r.stdout.strip().isdigit():
                 candidate = int(r.stdout.strip())
                 if candidate > 1:
-                    self.manager = candidate
-                    self.status['manager'] = 'owned_simulator_namespace_verified'
+                    identity = self.command(['/bin/ps', '-p', str(candidate), '-o', 'comm='], label='manager_executable')
+                    if identity is not None and identity.returncode == 0 and Path(identity.stdout.strip()).name == 'launchd_sim':
+                        self.manager = candidate
+                        self.status['manager'] = 'owned_simulator_namespace_verified'
+                    else:
+                        self.status['manager'] = 'unavailable_launchd_sim_identity_not_verified'
                 else:
                     self.status['manager'] = 'unavailable_host_namespace_rejected'
-            runtimes = self.command(['xcrun', 'simctl', 'list', 'runtimes', '-j'])
+            runtimes = self.command(['xcrun', 'simctl', 'list', 'runtimes', '-j'], label='runtime_inventory')
             if runtimes is not None and runtimes.returncode == 0:
+                self.status['inventory'] = 'runtime_json_available'
                 items = json.loads(runtimes.stdout)['runtimes']
                 item = next(x for x in items if x['identifier'] == 'com.apple.CoreSimulator.SimRuntime.iOS-27-0')
                 self.runtime = Path(item['bundlePath']) / 'Contents/Resources/RuntimeRoot'
@@ -134,26 +140,46 @@ class Observer:
                             if CONTACT_NAME.fullmatch(name) and identifier.startswith('com.apple.') and SAFE_TOKEN.fullmatch(identifier):
                                 self.names.add(name)
                                 self.bundle_ids[name] = identifier
+                self.status['inventory'] = 'allowlisted_contacts_bundles_verified' if self.bundle_ids else 'no_allowlisted_contacts_bundle_found'
         except PermissionError:
             self.status['inventory'] = 'blocked_access_denied_no_retry_or_escalation'
         except (OSError, ValueError, KeyError, StopIteration):
             self.status['inventory'] = 'partial_or_unavailable'
+        self.status['preflight_verified'] = (self.manager is not None
+            and self.status.get('inventory') == 'allowlisted_contacts_bundles_verified'
+            and not self.status['process_access'].startswith('blocked'))
         self.thread = threading.Thread(target=self.safe_loop, daemon=True)
         self.thread.start()
 
-    def command(self, args, section='process_access'):
+    def command(self, args, section='process_access', label=None):
         if self.status[section].startswith('blocked'):
             return None
+        # Only fixed operation labels and numeric outcomes are retained; never
+        # command arguments, stdout, stderr, paths, environments or exception text.
+        outcome = {'operation': label or 'scoped_numeric_process_query'}
+        started = time.monotonic()
         try:
             r = subprocess.run(args, capture_output=True, text=True, timeout=3,
                                env=MIN_ENV if args[0] in ('/bin/ps', '/usr/bin/pgrep', '/usr/bin/vm_stat', '/usr/sbin/sysctl') else None)
+            outcome.update({'result': 'exit', 'exit_code': r.returncode})
             if any(word in r.stderr.lower() for word in ('not permitted', 'permission denied', 'not allowed')):
                 self.status[section] = 'blocked_access_denied_no_retry_or_escalation'
+                outcome['access_denied'] = True
                 return None
             return r
-        except (OSError, subprocess.TimeoutExpired):
-            self.status[section] = 'unavailable_no_escalation'
+        except subprocess.TimeoutExpired:
+            outcome['result'] = 'timeout'
+            self.status[section] = 'unavailable_timeout_no_escalation'
             return None
+        except OSError as error:
+            outcome.update({'result': 'os_error', 'errno': error.errno})
+            self.status[section] = 'unavailable_os_error_no_escalation'
+            return None
+        finally:
+            outcome['elapsed_ms'] = round((time.monotonic() - started) * 1000)
+            if label is not None or outcome['result'] != 'exit' or outcome.get('exit_code') != 0:
+                if len(self.status['commands']) < 40:
+                    self.status['commands'].append(outcome)
 
     def emit(self, row):
         with self.lock:
@@ -202,7 +228,7 @@ class Observer:
             self.start = payload['wall']
         if payload and payload['event'] == 'container.presentCompletion' and self.completion is None:
             self.completion = payload['wall']
-        if not self.active():
+        if not self.status['preflight_verified'] or not self.active():
             return
         pid = record.get('processID')
         if type(pid) is not int:
@@ -308,7 +334,7 @@ class Observer:
     def loop(self):
         tick = 0
         while not self.stop.wait(1):
-            if not self.active() or self.manager is None or self.status['process_access'].startswith('blocked'):
+            if not self.active() or not self.status['preflight_verified'] or self.manager is None or self.status['process_access'].startswith('blocked'):
                 continue
             if tick % 2 == 0:
                 for name in sorted(self.names):

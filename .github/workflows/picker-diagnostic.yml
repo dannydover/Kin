@@ -1,11 +1,11 @@
-name: Scoped picker process metadata diagnostic (not release validation)
+name: Preflight-gated picker process metadata diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/kin-picker-native-metadata]
+    branches: [diagnostic/kin-picker-native-metadata-preflight]
 permissions:
   contents: read
 concurrency:
-  group: kin-picker-native-metadata
+  group: kin-picker-native-metadata-preflight
   cancel-in-progress: false
 jobs:
   picker-diagnostic:
@@ -25,7 +25,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: picker-native-metadata-diagnostic
+          name: picker-native-metadata-preflight-diagnostic
           path: ${{ runner.temp }}/KinPickerDiagnostic/public/
           retention-days: 7
           if-no-files-found: error

@@ -165,6 +165,9 @@ def main():
         observer_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(observer_module)
         observer = observer_module.Observer(device, public)
+        if not observer.status['preflight_verified']:
+            manifest['status'] = 'preflight_blocked'
+            return 1
         predicate = 'process == "Kin" OR process CONTAINS[c] "Contacts" OR subsystem BEGINSWITH "com.apple.Contacts"'
         stream_error = (root / 'stream-error.log').open('w')
         stream = subprocess.Popen(['xcrun', 'simctl', 'spawn', device, 'log', 'stream',
