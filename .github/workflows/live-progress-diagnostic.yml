@@ -1,7 +1,7 @@
 name: Synthetic live progress diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/live-progress-ci-grant]
+    branches: [diagnostic/live-progress-preflight]
 permissions:
   contents: read
 jobs:
@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [ui2, friend]
+        mode: [preflight]
     runs-on: xcode-27
     timeout-minutes: 55
     env:
