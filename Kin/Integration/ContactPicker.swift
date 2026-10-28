@@ -113,6 +113,9 @@ struct ContactPicker: UIViewControllerRepresentable {
                 // A full-screen child returns appearance callbacks to this container
                 // only after its automatic dismissal transition completes.
                 picker.modalPresentationStyle = .fullScreen
+                #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC && KIN_PICKER_DEFER_DIAGNOSTIC
+                presentAfterEnclosingTransition(picker)
+                #else
                 #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
                 PickerLifecycleProbe.record("container.beforePresent", self, peer: picker)
                 present(picker, animated: true) { [weak self, weak picker] in
@@ -127,10 +130,62 @@ struct ContactPicker: UIViewControllerRepresentable {
                 #else
                 present(picker, animated: true)
                 #endif
+                #endif
             } else if presentedViewController == nil {
                 coordinator.pickerDidDismiss()
             }
         }
+        #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC && KIN_PICKER_DEFER_DIAGNOSTIC
+        private func presentAfterEnclosingTransition(_ picker: CNContactPickerViewController) {
+            var issued = false
+            let issue = { [weak self] in
+                guard !issued else { return }
+                guard let self, self.viewIfLoaded?.window != nil, !self.isBeingDismissed else {
+                    PickerLifecycleProbe.record("variant.detached", self, peer: picker)
+                    return
+                }
+                issued = true
+                PickerLifecycleProbe.record("container.beforePresent", self, peer: picker)
+                self.present(picker, animated: true) { [weak self, weak picker] in
+                    PickerLifecycleProbe.record("container.presentCompletion", self, peer: picker)
+                }
+                PickerLifecycleProbe.record("container.afterPresent", self, peer: picker)
+                for delay in [0.5, 2.0, 5.0, 9.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak picker] in
+                        PickerLifecycleProbe.record("container.snapshot", self, peer: picker)
+                    }
+                }
+            }
+            guard let transition = transitionCoordinator else {
+                PickerLifecycleProbe.record("variant.noCoordinator", self, peer: picker)
+                issue()
+                return
+            }
+            PickerLifecycleProbe.record("variant.waiting", self, peer: picker)
+            let queued = transition.animate(alongsideTransition: nil) { [weak self] context in
+                PickerLifecycleProbe.record(context.isCancelled ? "variant.cancelled" : "variant.enclosingCompleted", self, peer: picker)
+                guard !context.isCancelled else { return }
+                DispatchQueue.main.async {
+                    PickerLifecycleProbe.record("variant.nextTurn", self, peer: picker)
+                    issue()
+                }
+            }
+            PickerLifecycleProbe.record(queued ? "variant.completionRegistered" : "variant.registrationRejected", self, peer: picker)
+            if !queued {
+                // UIKit may still invoke the completion when animation registration
+                // returns false. Share the one-shot guard with this settled-state path.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    if self.transitionCoordinator == nil {
+                        PickerLifecycleProbe.record("variant.alreadySettled", self, peer: picker)
+                        issue()
+                    } else {
+                        PickerLifecycleProbe.record("variant.stillWaiting", self, peer: picker)
+                    }
+                }
+            }
+        }
+        #endif
     }
 
     @MainActor final class Coordinator: NSObject, @preconcurrency CNContactPickerDelegate {

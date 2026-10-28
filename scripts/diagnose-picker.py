@@ -15,7 +15,7 @@ import threading
 
 SOURCE = '208cb6a1500ccc8f5d0bd4f6be254b36ab9e5f92'
 BASELINE_APP_TREE = 'b9bd5e8ae1b14556d19a1f992a746fc0a529c684'
-APP_TREE = '4c37021098b5f9549656e6ec2f3b7bff299a4021'
+APP_TREE = 'dd25dc164bffb4cf2c2824afd62a735ab4393d0e'
 TEST_BLOB = '1f975554f13466a0fd2cb53a8f7c93fe14f723ab'
 TEST = 'KinUITests/KinUITests/testNewImportSavesReviewedNamesForEveryEntryPoint'
 EVENTS = {
@@ -28,7 +28,10 @@ EVENTS = {
 }
 
 
-DIRECT_EVENTS = {'picker.created', 'picker.didSelect', 'picker.didCancel',
+DIRECT_EVENTS = {'variant.detached', 'variant.noCoordinator', 'variant.waiting',
+    'variant.cancelled', 'variant.enclosingCompleted', 'variant.nextTurn',
+    'variant.completionRegistered', 'variant.registrationRejected', 'variant.alreadySettled',
+    'variant.stillWaiting', 'picker.created', 'picker.didSelect', 'picker.didCancel',
     'container.didLoad', 'container.willAppear', 'container.didAppear',
     'container.willDisappear', 'container.didDisappear', 'container.beforePresent',
     'container.afterPresent', 'container.presentCompletion', 'container.snapshot', 'container.dismantle'}
@@ -118,10 +121,12 @@ def instrument_test():
 
 
 def main():
+    variant = os.environ.get('KIN_PICKER_VARIANT', 'control')
+    assert variant in ('control', 'deferred')
     root = Path(os.environ['RUNNER_TEMP']) / 'KinPickerDiagnostic'
     public = root / 'public'
     public.mkdir(parents=True)
-    manifest = {'purpose': 'diagnostic only; not release validation', 'baseline_source': SOURCE,
+    manifest = {'variant': variant, 'purpose': 'paired timing diagnostic only; not release validation', 'baseline_source': SOURCE,
                 'application_tree': APP_TREE, 'baseline_application_tree': BASELINE_APP_TREE,
                 'nonshipping_direct_lifecycle_logging': True, 'test': TEST, 'permission_grants': [],
                 'raw_logs_uploaded': False, 'status': 'preflight'}
@@ -186,8 +191,11 @@ def main():
             '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '240',
             '-maximum-test-execution-time-allowance', '600']
         command += ['-only-testing:' + name for name in selected]
+        conditions = 'DEBUG KIN_PICKER_LIFECYCLE_DIAGNOSTIC'
+        if variant == 'deferred':
+            conditions += ' KIN_PICKER_DEFER_DIAGNOSTIC'
         command += ['test', 'CODE_SIGNING_ALLOWED=NO',
-            'SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG KIN_PICKER_LIFECYCLE_DIAGNOSTIC']
+            'SWIFT_ACTIVE_COMPILATION_CONDITIONS=' + conditions]
         with (root / 'test.log').open('w') as log:
             build_code = subprocess.run(command, stdout=log, stderr=log).returncode
         markers = []

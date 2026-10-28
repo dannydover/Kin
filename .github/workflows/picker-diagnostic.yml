@@ -1,19 +1,24 @@
-name: Direct picker lifecycle diagnostic (not release validation)
+name: Picker transition A-B diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/kin-picker-direct-lifecycle]
+    branches: [diagnostic/kin-picker-transition-ab]
 permissions:
   contents: read
 concurrency:
-  group: kin-picker-direct-lifecycle
+  group: kin-picker-transition-ab
   cancel-in-progress: false
 jobs:
   picker-diagnostic:
     if: github.repository == 'dannydover/Kin'
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [control, deferred]
     runs-on: xcode-27
     timeout-minutes: 50
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_PICKER_VARIANT: ${{ matrix.variant }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,7 +30,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: picker-direct-lifecycle-diagnostic
+          name: picker-transition-ab-${{ matrix.variant }}
           path: ${{ runner.temp }}/KinPickerDiagnostic/public/
           retention-days: 7
           if-no-files-found: error
