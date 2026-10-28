@@ -169,7 +169,7 @@ struct ContactPicker: UIViewControllerRepresentable {
 #if DEBUG && KIN_PICKER_LIFECYCLE_DIAGNOSTIC
 /// Nonshipping callback logger. Original picker class/implementations and ordering
 /// are preserved; wrappers only emit fixed state before/after forwarding callbacks.
-@MainActor private enum PickerLifecycleProbe {
+@MainActor enum PickerLifecycleProbe {
     private static var installed = false
     private static var nextID = 0
     private static var ids: [ObjectIdentifier: Int] = [:]

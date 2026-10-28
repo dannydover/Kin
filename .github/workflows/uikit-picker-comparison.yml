@@ -1,0 +1,28 @@
+name: Nonshipping UIKit picker comparison
+on:
+  push:
+    branches: [diagnostic/kin-uikit-picker-comparison]
+permissions:
+  contents: read
+jobs:
+  comparison:
+    if: github.repository == 'dannydover/Kin'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: One paired synthetic comparison
+        timeout-minutes: 45
+        run: python3 scripts/compare-uikit-picker.py
+      - name: Retain complete synthetic XCTest results and sanitized lifecycle events
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-uikit-picker-comparison
+          path: ${{ runner.temp }}/KinUIKitComparison/public/
+          retention-days: 7
+          if-no-files-found: error

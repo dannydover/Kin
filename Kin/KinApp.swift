@@ -6,7 +6,17 @@ import Combine
 struct KinApp: App {
     @UIApplicationDelegateAdaptor(NotebookLifecycle.self) private var lifecycle
     var body: some Scene {
-        WindowGroup { NotebookRoot(lifecycle: lifecycle) }
+        WindowGroup {
+            #if DEBUG && KIN_UIKIT_COMPARISON
+            if ProcessInfo.processInfo.arguments.contains("--kin-uikit-control") {
+                UIKitPickerControl()
+            } else {
+                NotebookRoot(lifecycle: lifecycle)
+            }
+            #else
+            NotebookRoot(lifecycle: lifecycle)
+            #endif
+        }
     }
 }
 
