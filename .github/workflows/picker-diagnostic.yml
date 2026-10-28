@@ -1,11 +1,11 @@
-name: Preflight-gated picker process metadata diagnostic (not release validation)
+name: 30-second preflight-gated picker process metadata diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/kin-picker-native-metadata-preflight]
+    branches: [diagnostic/kin-picker-native-metadata-preflight30]
 permissions:
   contents: read
 concurrency:
-  group: kin-picker-native-metadata-preflight
+  group: kin-picker-native-metadata-preflight30
   cancel-in-progress: false
 jobs:
   picker-diagnostic:

@@ -156,10 +156,11 @@ class Observer:
             return None
         # Only fixed operation labels and numeric outcomes are retained; never
         # command arguments, stdout, stderr, paths, environments or exception text.
-        outcome = {'operation': label or 'scoped_numeric_process_query'}
+        deadline = 30 if label in ('simulator_managerpid', 'runtime_inventory') else 3
+        outcome = {'operation': label or 'scoped_numeric_process_query', 'deadline_seconds': deadline}
         started = time.monotonic()
         try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=3,
+            r = subprocess.run(args, capture_output=True, text=True, timeout=deadline,
                                env=MIN_ENV if args[0] in ('/bin/ps', '/usr/bin/pgrep', '/usr/bin/vm_stat', '/usr/sbin/sysctl') else None)
             outcome.update({'result': 'exit', 'exit_code': r.returncode})
             if any(word in r.stderr.lower() for word in ('not permitted', 'permission denied', 'not allowed')):
