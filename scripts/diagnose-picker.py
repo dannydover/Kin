@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""One synthetic picker diagnostic; never a substitute for required validation.
+"""One bounded UI-2 prefix diagnostic; never a substitute for required validation.
 
 Raw build/device logs stay on the ephemeral runner. Public evidence contains only
 fixed event codes, timestamps, numeric error codes and finalized test counts.
 No app code, permissions, assertions or test timeouts are changed.
 """
 import json
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -63,11 +64,11 @@ def instrument_test():
     method = text[start:end]
     original = '''            app.buttons["Import from Contacts"].tap()
             XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))'''
-    replacement = '''            print("KIN_PICKER_DIAGNOSTIC route=\\(index) stage=beforeTap uptime=\\(ProcessInfo.processInfo.systemUptime)")
+    replacement = '''            print("KIN_PICKER_DIAGNOSTIC route=\\(index) stage=beforeTap uptime=\\(ProcessInfo.processInfo.systemUptime) wall=\\(Date().timeIntervalSince1970)")
             app.buttons["Import from Contacts"].tap()
-            print("KIN_PICKER_DIAGNOSTIC route=\\(index) stage=afterTap uptime=\\(ProcessInfo.processInfo.systemUptime)")
+            print("KIN_PICKER_DIAGNOSTIC route=\\(index) stage=afterTap uptime=\\(ProcessInfo.processInfo.systemUptime) wall=\\(Date().timeIntervalSince1970)")
             let pickerReady = app.navigationBars["Contacts"].waitForExistence(timeout: 10)
-            print("KIN_PICKER_DIAGNOSTIC route=\\(index) stage=afterReadiness uptime=\\(ProcessInfo.processInfo.systemUptime) ready=\\(pickerReady)")
+            print("KIN_PICKER_DIAGNOSTIC route=\\(index) stage=afterReadiness uptime=\\(ProcessInfo.processInfo.systemUptime) wall=\\(Date().timeIntervalSince1970) ready=\\(pickerReady)")
             XCTAssertTrue(pickerReady)'''
     assert method.count(original) == 1
     path.write_text(text[:start] + method.replace(original, replacement) + text[end:])
@@ -80,6 +81,14 @@ def main():
     manifest = {'purpose': 'diagnostic only; not release validation', 'baseline_source': SOURCE,
                 'application_tree': APP_TREE, 'test': TEST, 'permission_grants': [],
                 'raw_logs_uploaded': False, 'status': 'preflight'}
+    spec = importlib.util.spec_from_file_location('shards', 'scripts/ci-test-shards.py')
+    shards = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(shards)
+    ordered = shards.selections('ui-2')
+    selected = ordered[:ordered.index(TEST) + 1]
+    assert len(selected) == 10 and selected[-1] == TEST
+    manifest['selected_tests_in_original_order'] = selected
+    manifest['context'] = 'Original UI2 prefix through import failure; same synthetic Photos preload; no permission grants, no other groups or concurrent full workflow.'
     device = None
     stream = None
     collector = None
@@ -102,6 +111,9 @@ def main():
         with (root / 'boot.log').open('w') as boot:
             run(['xcrun', 'simctl', 'boot', device], stdout=boot, stderr=boot)
             run(['xcrun', 'simctl', 'bootstatus', device, '-b'], stdout=boot, stderr=boot)
+            photo = root / 'SyntheticPhoto.png'
+            run(['python3', 'scripts/create-simulator-photo.py', str(photo)], stdout=boot, stderr=boot)
+            run(['xcrun', 'simctl', 'addmedia', device, str(photo)], stdout=boot, stderr=boot)
         # A newly created simulator contains only its standard fictional cards.
         # Do not warm the store, add cards, grant Contacts access, or open a UI app.
         predicate = 'process == "Kin" OR process CONTAINS[c] "Contacts" OR subsystem BEGINSWITH "com.apple.Contacts"'
@@ -128,24 +140,36 @@ def main():
             '-derivedDataPath', str(root / 'DerivedData'), '-resultBundlePath', str(root / 'result.xcresult'),
             '-parallel-testing-enabled', 'NO', '-collect-test-diagnostics', 'never',
             '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '240',
-            '-maximum-test-execution-time-allowance', '600', '-only-testing:' + TEST,
-            'test', 'CODE_SIGNING_ALLOWED=NO']
+            '-maximum-test-execution-time-allowance', '600']
+        command += ['-only-testing:' + name for name in selected]
+        command += ['test', 'CODE_SIGNING_ALLOWED=NO']
         with (root / 'test.log').open('w') as log:
             build_code = subprocess.run(command, stdout=log, stderr=log).returncode
         markers = []
-        pattern = r'KIN_PICKER_DIAGNOSTIC route=[0-3] stage=(?:beforeTap|afterTap|afterReadiness) uptime=[0-9.]+(?: ready=(?:true|false))?'
+        pattern = r'KIN_PICKER_DIAGNOSTIC route=[0-3] stage=(?:beforeTap|afterTap|afterReadiness) uptime=[0-9.]+ wall=[0-9.]+(?: ready=(?:true|false))?'
         for line in (root / 'test.log').read_text(errors='replace').splitlines():
             match = re.search(pattern, line)
             if match:
                 markers.append(match.group())
         (public / 'test-events.txt').write_text('\n'.join(markers) + '\n')
+        manifest['failure_source_locations'] = sorted(set(re.findall(
+            r'KinUITests/[A-Za-z0-9_]+\.swift:[0-9]+',
+            (root / 'test.log').read_text(errors='replace'))))
         summary = json.loads(subprocess.check_output(['xcrun', 'xcresulttool', 'get',
             'test-results', 'summary', '--path', str(root / 'result.xcresult')], text=True))
         manifest['summary'] = {key: summary.get(key) for key in
             ('totalTestCount', 'passedTests', 'failedTests', 'skippedTests', 'result')}
         manifest['xcodebuild_exit'] = build_code
         manifest['status'] = 'completed'
-        assert summary.get('totalTestCount') == 1
+        allowed_failures = {name.removeprefix('KinUITests/') for name in selected}
+        manifest['failed_tests'] = [failure['testIdentifierString']
+            for failure in summary.get('testFailures', [])
+            if failure.get('testIdentifierString', '').removesuffix('()') in allowed_failures]
+        configs = summary.get('devicesAndConfigurations', [])
+        if configs:
+            device_summary = configs[0].get('device', {})
+            manifest['runtime'] = {key: device_summary.get(key) for key in ('osVersion', 'osBuildNumber', 'modelName')}
+        assert summary.get('totalTestCount') == len(selected)
     except Exception as error:
         manifest['status'] = 'diagnostic_error'
         manifest['error_type'] = type(error).__name__

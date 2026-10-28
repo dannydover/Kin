@@ -1,4 +1,4 @@
-name: Native picker diagnostic (not release validation)
+name: UI-2 prefix picker diagnostic (not release validation)
 on:
   push:
     branches: [diagnostic/kin-picker-lifecycle-208cb6a1]
@@ -18,14 +18,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: One synthetic test with filtered native-service events
+      - name: Original UI-2 prefix with filtered native-service events
         timeout-minutes: 45
         run: python3 scripts/diagnose-picker.py
       - name: Retain only sanitized diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: picker-lifecycle-diagnostic
+          name: picker-ui2-prefix-diagnostic
           path: ${{ runner.temp }}/KinPickerDiagnostic/public/
           retention-days: 7
           if-no-files-found: error
