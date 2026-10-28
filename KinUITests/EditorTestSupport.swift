@@ -1,5 +1,22 @@
 import XCTest
 
+/// Time only the system Contacts picker readiness check. The downstream
+/// selection and import assertions still determine whether the flow works.
+@MainActor func waitForNativeContactsPicker(_ app: XCUIApplication) -> Bool {
+    let start = ProcessInfo.processInfo.systemUptime
+    let ready = app.navigationBars["Contacts"].waitForExistence(timeout: 30)
+    let elapsed = ProcessInfo.processInfo.systemUptime - start
+    let measurement = String(format: "Contacts readiness wait: %.3f seconds; ready: %@", elapsed, ready ? "yes" : "no")
+    print(measurement)
+    XCTContext.runActivity(named: "Native Contacts readiness timing") { activity in
+        let attachment = XCTAttachment(string: measurement)
+        attachment.name = "Synthetic Contacts readiness timing"
+        attachment.lifetime = .keepAlways
+        activity.add(attachment)
+    }
+    return ready
+}
+
 /// Reveal the actual shared-editor control after deliberate section reordering.
 /// Lazy form rows need bounded scrolling before hierarchy uniqueness assertions.
 @MainActor func editorSwitchWrapper(_ identifier: String, in app: XCUIApplication, scrollStep: CGFloat? = nil) -> XCUIElement {

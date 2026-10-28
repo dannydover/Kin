@@ -36,7 +36,7 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(waitForNativeContactsPicker(app))
             guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
                 app.navigationBars["Contacts"].buttons["Cancel"].tap()
                 throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
@@ -231,7 +231,7 @@ final class KinUITests: XCTestCase {
         app.buttons["gender-choice"].tap(); app.buttons["Unspecified"].tap()
         func selectSample() throws {
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(waitForNativeContactsPicker(app))
             guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
                 app.navigationBars["Contacts"].buttons["Cancel"].tap()
                 throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
@@ -695,7 +695,7 @@ final class KinUITests: XCTestCase {
                     && app.textFields["First name (optional)"].value as? String == "Synthetic Existing Draft"
             }) else { return }
             importButton.tap()
-            let appeared = app.navigationBars["Contacts"].waitForExistence(timeout: 10)
+            let appeared = waitForNativeContactsPicker(app)
             if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
             XCTAssertTrue(appeared)
             let search = app.searchFields.firstMatch
@@ -772,7 +772,7 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(waitForNativeContactsPicker(app))
             let card = app.cells["John Appleseed"]
             XCTAssertTrue(card.waitForExistence(timeout: 10), "Isolated simulator must have its standard synthetic contact")
             card.tap()
@@ -999,7 +999,7 @@ final class KinUITests: XCTestCase {
         app.terminate()
     }
     @MainActor private func selectSettledNativeContact(_ app: XCUIApplication,name: String) {
-        XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForNativeContactsPicker(app))
         // Enumerate indexed native candidates: a relaunch can briefly expose
         // two picker trees, and a multi-match frame query is ambiguous.
         func targets() -> [XCUIElement] {
