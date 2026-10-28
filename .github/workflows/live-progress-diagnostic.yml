@@ -1,7 +1,7 @@
 name: Synthetic live progress diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/live-progress-preflight]
+    branches: [diagnostic/observed-grant]
 permissions:
   contents: read
 jobs:
@@ -9,9 +9,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [preflight]
+        mode: [ui2, friend]
     runs-on: xcode-27
-    timeout-minutes: 55
+    timeout-minutes: 75
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -19,6 +19,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Bounded diagnostic with sanitized progress
+        timeout-minutes: 65
         run: python3 scripts/diagnose-live-progress.py ${{ matrix.mode }}
       - name: Retain progress and any finalized synthetic result
         if: always()

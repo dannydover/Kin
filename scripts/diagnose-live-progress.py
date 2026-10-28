@@ -35,7 +35,7 @@ def retain(result, target):
 def main():
     mode=sys.argv[1];assert mode in ('ui2','friend','preflight')
     ids=shards.selections('ui-2') if mode in ('ui2','preflight') else ['KinUITests/KinUITests/testBlankNameEditsCancelAndLaterNamingPreserveEntry']
-    allowed=set(ids);manifest={'purpose':'synthetic diagnostic, not required CI','mode':mode,'expected_tests':len(ids),'status':'preflight','runner_contacts_grant':False,'retention':'pending'}
+    allowed=set(ids);manifest={'purpose':'synthetic diagnostic, not required CI','mode':mode,'expected_tests':len(ids),'status':'preflight','runner_contacts_grant':False,'retention':'pending','authorization':'unknown','cleanup':{}}
     (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     device=None; proc=None; result=ROOT/(mode+'.xcresult')
     def stage(name):
@@ -60,6 +60,25 @@ def main():
         diagnosticState("after")
         let save = editor.buttons.matching(identifier: "Save")'''
             p.write_text(s.replace(needle,block))
+        if mode in ('ui2','preflight'):
+            p=Path('KinUITests/NativeContactsTests.swift'); content=p.read_text()
+            marker='    override func setUpWithError() throws { continueAfterFailure = false }'
+            observer="""    func testSyntheticRunnerAuthorizationObservation() {
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        let value: String
+        switch status {
+        case .notDetermined: value = "notDetermined"
+        case .restricted: value = "restricted"
+        case .denied: value = "denied"
+        case .authorized: value = "authorized"
+        case .limited: value = "limited"
+        @unknown default: value = "unknown"
+        }
+        print("KIN_AUTH_OBSERVATION \(value)")
+    }
+"""
+            assert content.count(marker)==1
+            p.write_text(content.replace(marker,marker+'\n'+observer))
         stage('create_simulator')
         device=subprocess.check_output(['xcrun','simctl','create','Synthetic progress diagnostic','com.apple.CoreSimulator.SimDeviceType.iPhone-17','com.apple.CoreSimulator.SimRuntime.iOS-27-0'],text=True).strip()
         stage('boot_simulator')
@@ -69,7 +88,26 @@ def main():
         if mode in ('ui2','preflight'):
             # Match CI's ephemeral test-runner-only grant on this owned synthetic simulator.
             stage('grant_runner_contacts')
-            subprocess.run(['xcrun','simctl','privacy',device,'grant','contacts','com.intriguingideas.KinUITests.xctrunner'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+            # Match CI: issue one grant with no extra command-specific deadline.
+            # The enclosing diagnostic step and job remain bounded.
+            grant_start=time.monotonic()
+            grant=subprocess.run(['xcrun','simctl','privacy',device,'grant','contacts','com.intriguingideas.KinUITests.xctrunner'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            manifest['grant_exit']=grant.returncode
+            manifest['grant_seconds']=round(time.monotonic()-grant_start,1)
+            stage('observe_runner_authorization')
+            observer_result=ROOT/'authorization.xcresult';observer_log=ROOT/'authorization.log'
+            observer_cmd=['xcodebuild','-project','Kin.xcodeproj','-scheme','Kin','-destination','platform=iOS Simulator,id='+device,'-derivedDataPath',str(ROOT/'ObserverDerived'),'-resultBundlePath',str(observer_result),'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-only-testing:KinUITests/NativeContactsTests/testSyntheticRunnerAuthorizationObservation','test','CODE_SIGNING_ALLOWED=NO']
+            with observer_log.open('w') as log:
+                observed=subprocess.run(observer_cmd,stdout=log,stderr=log,env=ENV,timeout=600)
+            matches=re.findall(r'KIN_AUTH_OBSERVATION (notDetermined|restricted|denied|authorized|limited|unknown)\b',observer_log.read_text(errors='replace'))
+            observer_hash=retain(observer_result,OUT/'authorization-xcresult.zip')
+            manifest['observer_result_sha256']=observer_hash
+            if observed.returncode==0 and observer_hash and len(matches)==1:
+                summary=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(observer_result)],text=True,env=ENV,timeout=60))
+                if summary.get('totalTestCount')==1 and summary.get('passedTests')==1 and summary.get('skippedTests')==0:
+                    manifest['authorization']=matches[0]
+            if manifest['authorization']!='authorized':
+                manifest['status']='authorization_not_verified';return 1
             manifest['runner_contacts_grant']=True
             stage('create_synthetic_photo')
             subprocess.run(['python3','scripts/create-simulator-photo.py',str(ROOT/'synthetic.png')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -119,8 +157,15 @@ def main():
             os.killpg(proc.pid,signal.SIGKILL);proc.wait()
         if device:
             for action in ('shutdown','delete'):
-                try:subprocess.run(['xcrun','simctl',action,device],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20)
-                except subprocess.TimeoutExpired:pass
+                try:
+                    cleanup=subprocess.run(['xcrun','simctl',action,device],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=60)
+                    manifest['cleanup'][action]='success' if cleanup.returncode==0 else 'failed'
+                except subprocess.TimeoutExpired:manifest['cleanup'][action]='timeout'
+            try:
+                inventory=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','-j'],text=True,timeout=60))
+                found=any(x.get('udid')==device for group in inventory.get('devices',{}).values() for x in group)
+                manifest['cleanup']['inventory']='present' if found else 'absent'
+            except (subprocess.SubprocessError,ValueError,OSError):manifest['cleanup']['inventory']='unknown'
         (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     return 0 if manifest['status'] in ('finalized','preflight_complete') else 1
 if __name__=='__main__':sys.exit(main())
