@@ -23,7 +23,7 @@ import Foundation
     static func needsPhotoConfirmation(for source: ContactBirthInformation, isNew: Bool) -> Bool {
         !isNew && !hasUsableBirthday(source)
     }
-    static func apply(_ snapshot: ContactSnapshot, to person: inout Person, birthday: Birthday? = nil, importPhoto: Bool = true, today: Date = Date(), calendar: Calendar = .current) {
+    static func apply(_ snapshot: ContactSnapshot, to person: inout Person, birthday: Birthday? = nil, importPhoto: Bool = true, preparedPhoto: PreparedContactPhoto? = nil, today: Date = Date(), calendar: Calendar = .current) {
         person.firstName = snapshot.firstName.isEmpty ? nil : snapshot.firstName
         person.lastName = snapshot.lastName.isEmpty ? nil : snapshot.lastName
         let existing = person.reference > 0 && person.revision > 0
@@ -33,6 +33,10 @@ import Foundation
         person.photo = nil
         guard importPhoto, birthday != nil || hasUsableBirthday(snapshot.birthInformation),
               AgeRules(calendar: calendar).allowsPhoto(person.birthday, on: today) else { return }
+        if let preparedPhoto {
+            guard preparedPhoto.birthday == person.birthday, preparedPhoto.contactID == snapshot.photoIdentity else { return }
+            person.photo = preparedPhoto.data; return
+        }
         if let data = snapshot.photo(for: person.birthday, today: today, calendar: calendar), let photo = PhotoProcessor.thumbnail(data) { person.photo = photo }
     }
 }

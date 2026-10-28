@@ -36,21 +36,47 @@ final class NativeContactsTests: XCTestCase {
         app.launch(); defer { app.terminate() }
         for (name,birthYear,isAdult) in fixtures {
             app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 20))
+            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
             let search = app.searchFields.firstMatch
             XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText(name)
             let card = app.collectionViews["Search results"].cells[name].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts["This contact has a birthday with a year."].exists)
-            let friend = app.switches["contact-connection-friend"].switches.firstMatch
-            for _ in 0..<6 { if friend.isHittable { break }; app.swipeUp() }
+            if isAdult {
+                let first = app.textFields["Imported first name (optional)"]
+                first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: name.count) + "Michael")
+                let gender = app.buttons["contact-gender-choice"]
+                XCTAssertEqual(gender.value as? String,"Male")
+                gender.tap(); app.buttons["Female"].tap()
+                first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: 7) + name)
+                XCTAssertEqual(gender.value as? String,"Female")
+            }
+            if app.keyboards.firstMatch.exists {
+                let finishEntry = app.keyboards.firstMatch.buttons["Return"]
+                XCTAssertTrue(finishEntry.exists && finishEntry.isHittable)
+                finishEntry.tap()
+                XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            }
+            let friend = editorToggle("contact-connection-friend", in: app)
+            XCTAssertTrue(friend.exists && friend.isHittable)
             friend.tap()
+            XCTAssertEqual(editorSwitchWrapper("contact-connection-friend", in: app).value as? String,"1")
+            let preview = app.images["contact-photo-preview"]
+            let emptyPreview = app.staticTexts["contact-photo-preview-empty"]
+            let target = isAdult ? preview : emptyPreview
+            for _ in 0..<8 { if target.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(target.isHittable)
+            XCTAssertEqual(preview.exists,isAdult)
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = isAdult ? "Eligible Contacts preview - synthetic" : "Ineligible Contacts preview - synthetic"
+            attachment.lifetime = .keepAlways; add(attachment)
             let exactBirthday = app.buttons["Birth information, Exact birthday"]
             for _ in 0..<8 { if exactBirthday.exists { break }; app.swipeUp() }
             XCTAssertTrue(exactBirthday.exists)
-            app.navigationBars["Contact birth information"].buttons["Import and Save"].tap()
+            app.buttons["contact-import"].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
+            if isAdult { XCTAssertTrue(app.staticTexts["Gender: Female"].exists) }
             let birthday = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",String(birthYear))).firstMatch
             XCTAssertTrue(birthday.waitForExistence(timeout: 5))
             app.terminate(); app.launch(); app.staticTexts[name].tap()
@@ -58,7 +84,7 @@ final class NativeContactsTests: XCTestCase {
             app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
             XCTAssertEqual(app.buttons["Change photo"].exists,isAdult)
             if !isAdult { XCTAssertFalse(app.buttons["Add photo"].exists) }
-            app.navigationBars["Edit person"].buttons["Cancel"].tap(); app.navigationBars.buttons["Kin"].tap()
+            app.navigationBars["Edit person"].buttons["Cancel"].tap(); app.navigationBars.buttons["People"].tap()
         }
         #else
         throw XCTSkip("Synthetic Contacts fixture creation is restricted to isolated simulators.")

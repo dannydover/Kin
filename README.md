@@ -14,10 +14,10 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
 - One authoritative Person with a stable identity, optional names, gender, notes,
   optional protected adult photo, and unknown, exact, or estimated birth information.
 - Independent Friend, Family, and Colleague connections under Your connection.
-  Optional connection labels are independent of the explicit Show in Your people choice.
+  Optional connection labels are independent of the explicit Show on main list choice.
   Direct additions start listed; relationship-based additions start unlisted. All people,
   available from the navigation menu, provides searchable recovery for unlisted
-  entries and disconnected profiles. Your people is the default menu view; About
+  entries and disconnected profiles. People is the default menu view; About
   is available in the same menu.
 - Explicit parent links (biological, adoptive, step, unspecified) and mutual partner
   links (current, former, unknown), with reuse of existing people or atomic create/link.
@@ -29,13 +29,22 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
   under 16 and profiles with no parents yet. Reuse a person or create/import one
   through the shared editor; the selected person is the parent of the open profile.
   Multiple explicit parents are allowed. Removing a relationship keeps both people.
-- Your people index previews explicitly linked children with age and approximate
+- Filter the selected people list by All, Friend, Family or Colleague alongside
+  name search. All includes visible people without a category; filters do not
+  change records or list inclusion.
+- The People index previews explicitly linked children with age and approximate
   school-grade cues; the indexed person’s own age stays on their profile.
 - Exact birthdays show completed calendar months before the first birthday, with
   “Less than 1 month” for newborns, then years. Estimates retain their precision.
 - A fresh Add child draft suggests the source person's surname once; it can be
   edited or cleared without changing any saved person.
+- New-person name entry can suggest an editable gender from a bundled offline
+  name lookup. Choosing any gender, including Unspecified, keeps that choice for
+  the draft. Existing people's gender is never re-inferred. Contacts review shows
+  the editable proposal for new people alongside the imported name.
 - Shared Add/Edit workflows, one-time Contacts imports, and explicit Save/Cancel.
+  Review eligible Contacts photos before importing; reviewed age and explicit
+  photo choices retain the same established-adult rules.
 - Delete all people from the navigation menu, with a scope explanation and separate
   destructive confirmation. Includes unlisted people and their relationships, notes
   and managed photos; keeps settings, Contacts and external copies/backups. Cancel
@@ -48,8 +57,9 @@ as unknown. There is no separate unknown-name control. These entries use a perma
 context label such as “Child 3.” Numbers are notebook references, never birth order.
 Naming later preserves identity and all links. Labels stay stable across profiles.
 Top-level additions save without a connection label and open the saved profile.
-Linked additions start unlisted. Show in Your people manages index inclusion on
+Linked additions start unlisted. Show on main list manages index inclusion on
 linked drafts and saved profiles; changing categories never changes inclusion.
+The toggle explains: “Show this person on your main People screen.”
 Legacy payloads without the optional inclusion field retain their previous
 category-based visibility. Opening them does not rewrite records or reset data.
 Profiles with a recorded current age under 16 hide Partners and Children, including
@@ -102,6 +112,11 @@ cycles are rejected. Kin does not infer kinship, siblings, cousins, or other fie
 
 Future features and proposals are tracked in [GitHub issues](https://github.com/dannydover/Kin/issues).
 An issue is a proposal or work item, not a release commitment.
+
+Name suggestions use recorded sex associations from U.S. Social Security
+Administration applications, not individual identity. They require no runtime
+network or AI service and never log entered names. The public dataset is CC0;
+SSA does not endorse Kin. See [source provenance and reproducible generation](Development/DataSources/SSA.md).
 
 ## Open, build, and test
 
@@ -247,7 +262,8 @@ are introduced, commit the generated app lockfile for reproducible resolution.
 from `main` for the exact shipped commit and version/build after its CI succeeds.
 It prepares one source-only draft per public App Store version with generated notes.
 Review the notes and confirm App Store availability before deliberately publishing.
-See [release instructions](scripts/RELEASING.md) for inputs, safety checks, and retries.
+See [release preparation protocol](Development/ReleaseProtocol.md) and
+[release instructions](scripts/RELEASING.md) for provenance, approval, checks and retries.
 
 ## Data and privacy
 

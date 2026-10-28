@@ -2,6 +2,7 @@ import Foundation
 
 enum Gender: String, CaseIterable, Codable, Sendable, Identifiable {
     case unknown, male, female, other
+    var title: String { self == .unknown ? "Unspecified" : rawValue.capitalized }
     var id: String { rawValue }
 }
 enum Connection: String, CaseIterable, Codable, Sendable, Identifiable {
@@ -90,7 +91,7 @@ enum KinError: LocalizedError, Equatable {
         switch self {
         case .invalidName: "Please shorten each name to 200 characters or less. You can leave a name blank if you don’t know it."
         case .invalidBirthday: "Choose a valid date that isn’t in the future. Enter an age between 0 and 120 for an estimate."
-        case .missingPerson: "This person is no longer in your notebook. Go back to All people to check."
+        case .missingPerson: "This person is no longer in your notebook. Go back and check your saved people."
         case .invalidLink: "Choose two different people who are already saved. If they’re already linked, edit that relationship instead."
         case .cycle: "This would make someone their own ancestor. Check the parent and child you selected."
         case .invalidData: "Kin couldn’t read your saved notebook. Your data hasn’t been reset. Try opening it again."
@@ -102,9 +103,11 @@ enum KinError: LocalizedError, Equatable {
     }
 }
 enum PeopleIndex {
-    static func results(_ people: [Person], query: String, includeUnlisted: Bool = false) -> [Person] {
+    static func results(_ people: [Person], query: String, includeUnlisted: Bool = false, category: Connection? = nil) -> [Person] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return people.filter { (includeUnlisted || $0.isListed) && (query.isEmpty || $0.displayName.localizedStandardContains(query)) }
+        return people.filter { person in (includeUnlisted || person.isListed)
+            && (category.map { person.connections.contains($0) } ?? true)
+            && (query.isEmpty || person.displayName.localizedStandardContains(query)) }
             .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
     }
 }

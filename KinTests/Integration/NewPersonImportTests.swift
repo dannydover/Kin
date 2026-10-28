@@ -100,11 +100,14 @@ import UIKit
         }
         let background = try #require(UIColor(named: "KinBackground"))
         let accent = try #require(UIColor(named: "KinAccent"))
+        let confirmationText = try #require(UIColor(named: "KinText"))
         for style in [UIUserInterfaceStyle.light,.dark] {
             for contrast in [UIAccessibilityContrast.normal,.high] {
                 let traits = UITraitCollection(traitsFrom: [UITraitCollection(userInterfaceStyle: style), UITraitCollection(accessibilityContrast: contrast)])
                 let ink = luminance(KinTheme.helperInk.resolvedColor(with: traits))
                 let surface = luminance(background.resolvedColor(with: traits))
+                let confirmation = luminance(confirmationText.resolvedColor(with: traits))
+                #expect((max(confirmation,surface)+0.05)/(min(confirmation,surface)+0.05) >= 4.5)
                 #expect((max(ink,surface)+0.05)/(min(ink,surface)+0.05) >= 4.5)
                 let button = luminance(accent.resolvedColor(with: traits))
                 // Profile actions use clay ink on the actual elevated row surface.

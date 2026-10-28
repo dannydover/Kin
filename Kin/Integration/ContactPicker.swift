@@ -2,6 +2,7 @@ import SwiftUI
 import ContactsUI
 
 @MainActor struct ContactSnapshot {
+    let photoIdentity = UUID()
     var firstName: String
     var lastName: String
     var birthInformation: ContactBirthInformation = .missing

@@ -5,6 +5,8 @@ struct ContentView: View {
     private enum PeopleScope { case yours, all }
     @State private var scope = PeopleScope.yours
     @State private var query = ""
+    @State private var searching = false
+    @State private var category: Connection?
     @State private var adding = false
     @State private var path: [UUID] = []
     @State private var savedPersonID: UUID?
@@ -12,13 +14,14 @@ struct ContentView: View {
     @State private var deletingAll = false
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
-    private var hits: [Person] { PeopleIndex.results(store.people, query: query, includeUnlisted: scope == .all) }
+    private var hits: [Person] { PeopleIndex.results(store.people, query: query, includeUnlisted: scope == .all, category: category) }
     private var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var body: some View {
         NavigationStack(path: $path) {
             Group {
                 if hits.isEmpty {
                     if isSearching { noMatches }
+                    else if category != nil { emptyCategory }
                     else { emptyState }
                 } else {
                     List(hits) { person in
@@ -31,18 +34,19 @@ struct ContentView: View {
                     }.listStyle(.plain)
                 }
             }
-            .kinForm().navigationTitle(scope == .yours ? "Kin" : "All people").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: scope == .yours ? "Find your people" : "Find all people")
+            .kinForm().navigationTitle(scope == .yours ? "People" : "All people").navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, isPresented: $searching, prompt: scope == .yours ? "Find people" : "Find all people")
+            .safeAreaInset(edge: .top, spacing: 0) { categoryFilter }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
-                        Button("Your people", systemImage: scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
+                        Button("People", systemImage: scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
                         Button("All people", systemImage: scope == .all ? "checkmark" : "person.3") { switchScope(.all) }
                         Button("About", systemImage: "info.circle") { showingAbout = true }
                         Button("Delete all people", systemImage: "trash", role: .destructive) { deletingAll = true }
                     } label: { Image(systemName: "line.3.horizontal") }
                     .accessibilityLabel("Navigation menu")
-                    .accessibilityHint(scope == .yours ? "Showing Your people" : "Showing All people")
+                    .accessibilityHint(scope == .yours ? "Showing People" : "Showing All people")
                     .accessibilityIdentifier("people-menu")
                 }
                 ToolbarItem(placement: .primaryAction) { Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add person") }
@@ -58,7 +62,7 @@ struct ContentView: View {
             .sheet(isPresented: $deletingAll) {
                 NavigationStack {
                     DeleteAllPeopleView(store: store) {
-                        path = []; query = ""; scope = .yours; deletingAll = false
+                        path = []; query = ""; category = nil; scope = .yours; deletingAll = false
                     }
                 }
             }
@@ -67,20 +71,45 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in today = Date() }
         }.notebookAvailability(store)
     }
-    private func switchScope(_ selection: PeopleScope) { scope = selection; query = "" }
+    private func switchScope(_ selection: PeopleScope) { scope = selection; query = ""; category = nil }
+    private var categoryFilter: some View {
+        Menu {
+            Button("All", systemImage: category == nil ? "checkmark" : "person.2") { category = nil }
+                .accessibilityAddTraits(category == nil ? .isSelected : [])
+            ForEach(Connection.allCases) { connection in
+                Button(connection.rawValue.capitalized, systemImage: category == connection ? "checkmark" : "person") { category = connection }
+                    .accessibilityAddTraits(category == connection ? .isSelected : [])
+            }
+        } label: {
+            Label(category?.rawValue.capitalized ?? "All", systemImage: "line.3.horizontal.decrease")
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.horizontal)
+        }
+        .accessibilityLabel("Category filter")
+        .accessibilityValue(category?.rawValue.capitalized ?? "All")
+        .accessibilityIdentifier("category-filter")
+        .background(KinTheme.background)
+    }
+    private var emptyCategory: some View {
+        filteredEmptyState(title: Text("No people in this category"), image: "person.2",
+            explanation: Text("No one matches the selected category. Tap \(FeatureReference.clearSearchAndFilters) to return to the \(FeatureReference.people) screen."))
+    }
     private var emptyState: some View {
         ScrollView {
             VStack(spacing: 24) {
                 Image("notebook").renderingMode(.template).resizable().scaledToFit()
                     .foregroundStyle(KinTheme.accent).frame(width: 124, height: 124).accessibilityHidden(true)
                 VStack(spacing: 12) {
-                    Text(store.people.isEmpty ? "Keep your people close." : "Your people is empty")
+                    Text(store.people.isEmpty ? "Keep your people close." : "Your main list is empty")
                         .font(.largeTitle).fontDesign(.serif).multilineTextAlignment(.center)
                         .accessibilityAddTraits(.isHeader)
-                    Text(store.people.isEmpty
-                         ? "Names, ages, and the little things you want to remember. A small, private notebook for the people in your life."
-                         : "Turn on Show in Your people on a profile to include them here. Everyone you’ve saved is in All people in the menu.")
-                        .font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
+                    Group {
+                        if store.people.isEmpty {
+                            Text("Names, ages, and the little things you want to remember. A small, private notebook for the people in your life.")
+                        } else {
+                            Text("Open a profile, tap \(FeatureReference.edit), then turn on the \(FeatureReference.showOnMainList) setting. Everyone you’ve saved is on the \(FeatureReference.allPeople) screen in the navigation menu.")
+                        }
+                    }.font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
                 }.fixedSize(horizontal: false, vertical: true)
                 if store.people.isEmpty {
                     Button { adding = true } label: {
@@ -97,13 +126,45 @@ struct ContentView: View {
         }
     }
     private var noMatches: some View {
-        ContentUnavailableView {
-            Label("No matches", systemImage: "magnifyingglass")
-        } description: {
-            Text(scope == .yours ? "Try another name or a label like Child 2. Search All people for anyone outside Your people." : "Try another name or a label like Child 2.")
-        } actions: {
-            if scope == .yours { Button("Search all people") { scope = .all } }
+        filteredEmptyState(title: Text("No matches"), image: "magnifyingglass",
+            explanation: Text("Try another name, such as Alex Morgan. Tap \(FeatureReference.clearSearchAndFilters) to return to the \(FeatureReference.people) screen."),
+            offersAllPeople: scope == .yours)
+    }
+    private func filteredEmptyState(title: Text, image: String, explanation: Text,
+                                    offersAllPeople: Bool = false) -> some View {
+        GeometryReader { geometry in
+            ScrollView {
+                // Keep the complete explanation in scrollable content, including
+                // when the keyboard and accessibility text leave a short viewport.
+                VStack(spacing: 16) {
+                    Image(systemName: image).font(.system(size: 48)).foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    title.font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                    explanation.foregroundStyle(.secondary)
+                        .accessibilityIdentifier("filtered-empty-explanation")
+                    if offersAllPeople { Button("Search all people") { scope = .all } }
+                }
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(24)
+                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            }.accessibilityIdentifier("filtered-empty-content")
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            clearSearchAndFiltersButton.padding(16).background(KinTheme.background)
+        }
+    }
+    private var clearSearchAndFiltersButton: some View {
+        Button {
+            query = ""; category = nil; scope = .yours; searching = false
+        } label: {
+            Text("Clear search and filters").fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.borderedProminent).controlSize(.large)
+        .tint(KinTheme.accent).foregroundStyle(KinTheme.background)
+        .accessibilityIdentifier("clear-search-and-filters")
+        .accessibilityHint("Clears the search and category filter and returns to the People screen.")
     }
 }
 /// Index previews follow explicit parent links only; partner links imply no children.
@@ -220,6 +281,9 @@ private struct AboutKinView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .id("indie-message")
+                            Text("Optional name-based gender suggestions use an offline lookup derived from U.S. Social Security Administration data (CC0). Recorded application sex associations do not establish anyone’s identity. SSA does not endorse Kin.")
+                                .font(.footnote).foregroundStyle(KinTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                             Link(destination: URL(string: "https://www.intriguingideas.com/kin-privacy-policy")!) {
                                 Label("Privacy Policy", systemImage: "arrow.up.right.square")
                                     .fixedSize(horizontal: false, vertical: true)

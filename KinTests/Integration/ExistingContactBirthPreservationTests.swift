@@ -113,4 +113,18 @@ struct ExistingContactBirthPreservationTests {
             #expect(store.people.count == 2 && store.parentLinks == links)
         }
     }
+    @Test("Existing imports retain every saved or explicitly edited gender", arguments: Gender.allCases)
+    func genderPreservation(_ gender: Gender) throws {
+        let store = try KinStore(inMemory: true)
+        defer { try? store.close() }
+        let original = try saved(known[0],in: store)
+        for source in [ContactBirthInformation.missing,.exact(CivilDate(year: 1990,month: 2,day: 3))] {
+            var draft = original; draft.gender = gender
+            let snapshot = ContactSnapshot(firstName: "Michael",lastName: "Synthetic",birthInformation: source)
+            ContactImport.apply(snapshot,to: &draft,importPhoto: false,today: today)
+            #expect(draft.gender == gender && draft.id == original.id)
+            #expect(try store.person(original.id) == original,"Canceling imported edits preserves the saved gender")
+        }
+    }
+
 }

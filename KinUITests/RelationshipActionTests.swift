@@ -94,14 +94,14 @@ final class RelationshipActionTests: XCTestCase {
             app.navigationBars[addTitle].buttons["Cancel"].tap()
             XCTAssertTrue(app.navigationBars["Synthetic Source"].waitForExistence(timeout: 5))
         }
-        app.navigationBars.buttons["Kin"].tap()
+        app.navigationBars.buttons["People"].tap()
         app.buttons["people-menu"].tap(); app.buttons["Delete all people"].tap()
         XCTAssertTrue(app.navigationBars["Delete all people"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["5 people saved in this notebook."].exists,
                       "Opening and canceling relationship edits changes no people, including unlisted records")
         let scope = app.staticTexts.matching(NSPredicate(format: "label == %@","Delete every person saved in this Kin notebook, including people not shown in your list, and all their relationships, notes and photos.")).firstMatch
         XCTAssertTrue(scope.exists)
-        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@","outside Your people")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@","outside your main list")).firstMatch.exists)
         #if targetEnvironment(simulator)
         if !large {
             let image = XCTAttachment(screenshot: app.screenshot())
@@ -109,6 +109,6 @@ final class RelationshipActionTests: XCTestCase {
         }
         #endif
         app.navigationBars["Delete all people"].buttons["Cancel"].tap()
-        XCTAssertTrue(app.navigationBars["Kin"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
     }
 }
