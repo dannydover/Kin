@@ -1,0 +1,31 @@
+name: Native picker diagnostic (not release validation)
+on:
+  push:
+    branches: [diagnostic/kin-picker-lifecycle-208cb6a1]
+permissions:
+  contents: read
+concurrency:
+  group: kin-picker-diagnostic-208cb6a1
+  cancel-in-progress: false
+jobs:
+  picker-diagnostic:
+    if: github.repository == 'dannydover/Kin'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: One synthetic test with filtered native-service events
+        timeout-minutes: 45
+        run: python3 scripts/diagnose-picker.py
+      - name: Retain only sanitized diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: picker-lifecycle-diagnostic
+          path: ${{ runner.temp }}/KinPickerDiagnostic/public/
+          retention-days: 7
+          if-no-files-found: error
