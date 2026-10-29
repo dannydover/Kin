@@ -110,7 +110,9 @@ def main():
             observer_hash=retain(observer_result,OUT/'authorization-xcresult.zip')
             manifest['observer_result_sha256']=observer_hash
             if observed.returncode==0 and observer_hash and len(matches)==1:
-                summary=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(observer_result)],text=True,env=ENV,timeout=60))
+                manifest['observed_authorization']=matches[0]
+                stage('verify_authorization_result')
+                summary=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(observer_result)],text=True,env=ENV,timeout=180))
                 if summary.get('totalTestCount')==1 and summary.get('passedTests')==1 and summary.get('skippedTests')==0:
                     manifest['authorization']=matches[0]
             if manifest['authorization']!='authorized':
