@@ -902,12 +902,15 @@ final class KinUITests: XCTestCase {
         for _ in 0..<8 {
             let current = first.value as? String ?? ""
             if current.isEmpty || current == first.placeholderValue { break }
+            print("KIN_CI_DELETE before=\(current.count)")
             first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: min(current.count,32)))
             let shortened = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 let value = first.value as? String ?? ""
                 return value.isEmpty || value == first.placeholderValue || value.count < current.count
             },object: nil)
-            guard XCTWaiter.wait(for: [shortened],timeout: 5) == .completed else {
+            let shortenedResult = XCTWaiter.wait(for: [shortened],timeout: 5)
+            print("KIN_CI_DELETE after=\((first.value as? String ?? "").count) completed=\(shortenedResult == .completed)")
+            guard shortenedResult == .completed else {
                 XCTFail("Import review name did not shorten after the deletion chunk"); return
             }
         }
@@ -1032,6 +1035,14 @@ final class KinUITests: XCTestCase {
         var scrolls = 0
         let stable = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             let candidates = targets().filter(finite)
+            if timeout == 10 {
+                print("KIN_CI_CONTACT count=\(candidates.count)")
+                for (index, candidate) in candidates.enumerated() {
+                    let frame = candidate.frame
+                    let inside = frame.minY >= 145 && frame.maxY <= app.frame.maxY - 100
+                    print("KIN_CI_CONTACT candidate=\(index) inside=\(inside)")
+                }
+            }
             let visible = candidates.filter {
                 $0.isHittable && $0.frame.minY >= 145 && $0.frame.maxY <= app.frame.maxY - 100
             }
