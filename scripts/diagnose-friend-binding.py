@@ -2,7 +2,7 @@
 """Synthetic isolated diagnostic; allowlisted progress, never release validation."""
 import datetime, hashlib, importlib.util, json, os, platform, re, select, signal, subprocess, sys, time, zipfile
 from pathlib import Path
-ROOT=Path(os.environ['RUNNER_TEMP'])/'KinFriendBinding'; OUT=ROOT/'public'; OUT.mkdir(parents=True,exist_ok=True)
+ROOT=Path(os.environ['RUNNER_TEMP'])/'KinFriendEvent'; OUT=ROOT/'public'; OUT.mkdir(parents=True,exist_ok=True)
 ENV={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','HOME':os.environ['HOME'],'TMPDIR':str(ROOT),'DEVELOPER_DIR':'/Applications/Xcode_27.app/Contents/Developer','LANG':'en_US.UTF-8','LC_ALL':'en_US.UTF-8','NSUnbufferedIO':'YES'}
 APP='b9bd5e8ae1b14556d19a1f992a746fc0a529c684'
 spec=importlib.util.spec_from_file_location('shards','scripts/ci-test-shards.py'); shards=importlib.util.module_from_spec(spec);spec.loader.exec_module(shards)
@@ -37,7 +37,7 @@ def retain(result, target):
 def main():
     mode=sys.argv[1];assert mode in ('ui2','friend','preflight')
     ids=shards.selections('ui-1') if mode=='ui2' else ['KinUITests/KinUITests/testBlankNameEditsCancelAndLaterNamingPreserveEntry']
-    allowed=set(ids);manifest={'purpose':'one full ordered UI-1 binding diagnostic, not required CI','mode':mode,'expected_tests':len(ids),'status':'preflight','runner_contacts_grant':False,'retention':'pending','authorization':'unknown','cleanup':{}}
+    allowed=set(ids);manifest={'purpose':'one full ordered UI-1 touch and binding diagnostic, not required CI','mode':mode,'expected_tests':len(ids),'status':'preflight','runner_contacts_grant':False,'retention':'pending','authorization':'unknown','cleanup':{}}
     (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     device=None; proc=None; result=ROOT/(mode+'.xcresult')
     def stage(name):
@@ -92,7 +92,62 @@ def main():
                     if connection == .friend { Logger(subsystem: "com.kin.synthetic.binding", category: "friend").notice("KIN_BINDING after selected=\(selected, privacy: .public) present=\(draft.connections.contains(connection), privacy: .public)") }
 '''
             assert source.count(before)==1
-            p.write_text(source.replace(before,after))
+            source=source.replace(before,after)
+            row='''                Toggle(connection.rawValue.capitalized, isOn: Binding(get: { draft.connections.contains(connection) }, set: { selected in
+'''
+            # Observe the unmodified row bounds, never storing coordinates.
+            row_end='''                }))
+            }
+        } header: { Text("Your connection") }'''
+            decorated='''                }))
+                .background {
+                    if connection == .friend {
+                        GeometryReader { proxy in
+                            Color.clear.allowsHitTesting(false)
+                                .onAppear { FriendEventProbe.row = proxy.frame(in: .global) }
+                                .onChange(of: proxy.frame(in: .global)) { _, frame in FriendEventProbe.row = frame }
+                        }
+                    }
+                }
+            }
+        } header: { Text("Your connection") }'''
+            assert source.count(row)==1 and source.count(row_end)==1
+            p.write_text(source.replace(row_end,decorated))
+            p=Path('Kin/KinApp.swift'); app=p.read_text()
+            app=app.replace('import SwiftUI\n','import SwiftUI\nimport OSLog\nimport ObjectiveC.runtime\n',1)
+            marker='struct KinApp: App {\n'
+            assert app.count(marker)==1
+            app=app.replace(marker,marker+'    init() { FriendEventProbe.install() }\n',1)
+            app += r'''
+
+// Diagnostic-only hook: logs fixed booleans for touches inside the synthetic
+// Friend row. No coordinates, labels, text or unrelated touch events are logged.
+@MainActor enum FriendEventProbe {
+    static var row = CGRect.null
+    static func install() {
+        guard let original = class_getInstanceMethod(UIApplication.self, #selector(UIApplication.sendEvent(_:))),
+              let observer = class_getInstanceMethod(UIApplication.self, #selector(UIApplication.kinDiagnosticSendEvent(_:))) else { return }
+        method_exchangeImplementations(original, observer)
+    }
+}
+extension UIApplication {
+    @objc dynamic func kinDiagnosticSendEvent(_ event: UIEvent) {
+        if event.type == .touches, let touch = event.allTouches?.first,
+           touch.phase == .began, let window = touch.window,
+           FriendEventProbe.row.contains(touch.location(in: window)) {
+            var view = window.hitTest(touch.location(in: window), with: event)
+            var onSwitch = false
+            while let current = view {
+                if current is UISwitch { onSwitch = true }
+                view = current.superview
+            }
+            Logger(subsystem: "com.kin.synthetic.event", category: "friend").notice("KIN_TOUCH inrow=true switch=\(onSwitch, privacy: .public)")
+        }
+        kinDiagnosticSendEvent(event)
+    }
+}
+'''
+            p.write_text(app)
         stage('create_simulator')
         device=subprocess.check_output(['xcrun','simctl','create','Synthetic progress diagnostic','com.apple.CoreSimulator.SimDeviceType.iPhone-17','com.apple.CoreSimulator.SimRuntime.iOS-27-0'],text=True).strip()
         stage('boot_simulator')
@@ -164,19 +219,22 @@ def main():
         stage('collect_binding_events')
         events=[]
         try:
-            log = subprocess.run(['xcrun','simctl','spawn',device,'log','show','--last','90m','--style','ndjson','--predicate','subsystem == "com.kin.synthetic.binding"'],capture_output=True,text=True,timeout=120)
+            log = subprocess.run(['xcrun','simctl','spawn',device,'log','show','--last','90m','--style','ndjson','--predicate','subsystem == "com.kin.synthetic.binding" OR subsystem == "com.kin.synthetic.event"'],capture_output=True,text=True,timeout=120)
             manifest['binding_log_exit']=log.returncode
             if log.returncode==0:
                 for line in log.stdout.splitlines():
                     try: item=json.loads(line)
                     except ValueError: continue
                     match=re.fullmatch(r'KIN_BINDING (before|after) selected=(true|false) present=(true|false)',item.get('eventMessage',''))
-                    if match: events.append({'timestamp':item.get('timestamp'), 'stage':match[1], 'selected':match[2]=='true', 'present':match[3]=='true'})
+                    if match: events.append({'kind':'binding', 'timestamp':item.get('timestamp'), 'stage':match[1], 'selected':match[2]=='true', 'present':match[3]=='true'})
+                    touch=re.fullmatch(r'KIN_TOUCH inrow=true switch=(true|false)',item.get('eventMessage',''))
+                    if touch: events.append({'kind':'touch', 'timestamp':item.get('timestamp'), 'inrow':True, 'switch':touch[1]=='true'})
         except (subprocess.TimeoutExpired, OSError) as e:
             manifest['binding_log_error']=type(e).__name__
         (OUT/'binding-events.json').write_text(json.dumps(events,indent=2)+'\n')
         manifest['binding_event_count']=len(events)
-        manifest['binding_trace_verified']=len(events)>0
+        manifest['binding_trace_verified']=any(e['kind']=='binding' for e in events)
+        manifest['touch_trace_verified']=any(e['kind']=='touch' for e in events)
         manifest['exit']=proc.returncode;manifest['result_sha256']=retain(result,OUT/(mode+'-xcresult.zip'));manifest['retention']='complete' if manifest['result_sha256'] else 'incomplete'
         if manifest['result_sha256']:
             s=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','summary','--path',str(result)],text=True,env=ENV,timeout=60));manifest['summary']={k:s.get(k) for k in ('totalTestCount','passedTests','failedTests','skippedTests','result')};manifest['status']='finalized'

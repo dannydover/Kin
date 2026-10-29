@@ -1,7 +1,7 @@
 name: Synthetic live progress diagnostic (not release validation)
 on:
   push:
-    branches: [diagnostic/friend-binding]
+    branches: [diagnostic/friend-event]
 permissions:
   contents: read
 jobs:
@@ -25,7 +25,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: friend-binding-${{ matrix.mode }}
-          path: ${{ runner.temp }}/KinFriendBinding/public/
+          name: friend-event-${{ matrix.mode }}
+          path: ${{ runner.temp }}/KinFriendEvent/public/
           retention-days: 7
           if-no-files-found: error
