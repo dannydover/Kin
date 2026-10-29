@@ -3,7 +3,20 @@ import Contacts
 import UIKit
 
 final class KinUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        let label: String
+        switch status {
+        case .notDetermined: label = "notDetermined"
+        case .restricted: label = "restricted"
+        case .denied: label = "denied"
+        case .authorized: label = "authorized"
+        case .limited: label = "limited"
+        @unknown default: label = "unknown"
+        }
+        print("KIN_CI_AUTH \(label)")
+    }
     @MainActor func testNormalColdLaunchOpensNotebookAndPreservesSavedPerson() throws {
         #if targetEnvironment(simulator)
         // Run only in a fresh isolated simulator: exercise the normal notebook,
@@ -36,7 +49,7 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(waitForNativeContactsPicker(app))
             guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
                 app.navigationBars["Contacts"].buttons["Cancel"].tap()
                 throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
@@ -151,7 +164,8 @@ final class KinUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "relationship-parent").firstMatch.exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "relationship-child").firstMatch.exists)
     }
-    @MainActor func testAddParentsForYoungPersonReuseCreateNavigateAndUnlink() throws {
+    // Separate complete scenarios keep the unchanged per-test runtime bound meaningful.
+    @MainActor private func prepareYoungPersonAndExistingParent() -> XCUIApplication {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addPerson(app,name: "Synthetic Young"); addPerson(app,name: "Synthetic Existing Parent")
         app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
@@ -159,6 +173,15 @@ final class KinUITests: XCTestCase {
         reveal(birth,in: app); birth.tap(); app.buttons["Estimated age"].tap()
         chooseAge(app,value: 3); app.buttons["Save"].tap()
         XCTAssertFalse(app.buttons["Add child"].exists); XCTAssertFalse(app.buttons["Add partner"].exists)
+        return app
+    }
+    @MainActor private func linkExistingBiologicalParent(_ app: XCUIApplication) {
+        app.buttons["Add parent"].tap(); app.buttons["relationship-details"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Biological"].tap()
+        chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testAddParentsReuseAndCancel() throws {
+        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
         app.buttons["Add parent"].tap()
         XCTAssertTrue(app.buttons["relationship-details"].exists)
         XCTAssertFalse(app.buttons["Parent relationship, Unspecified"].exists)
@@ -170,10 +193,18 @@ final class KinUITests: XCTestCase {
         app.buttons["Add parent"].tap(); app.buttons["relationship-details"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Biological"].tap()
         chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testAddParentsDuplicateRejectionPreservesBothPeople() throws {
+        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        linkExistingBiologicalParent(app)
         // Re-selecting a linked person must reject the duplicate without changing either person.
         app.buttons["Add parent"].tap(); chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
         XCTAssertTrue(app.alerts["Couldn’t finish"].waitForExistence(timeout: 5)); app.alerts.buttons["OK"].tap()
         try cancelRelationshipDraft(app, parent: "Synthetic Existing Parent", child: "Synthetic Young"); app.navigationBars["Add parent"].buttons["Cancel"].tap()
+    }
+    @MainActor func testAddParentsReverseCycleRejectionAndDraftCancellation() throws {
+        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        linkExistingBiologicalParent(app)
         app.staticTexts["Synthetic Existing Parent"].tap()
         XCTAssertTrue(app.navigationBars["Synthetic Existing Parent"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Synthetic Young"].exists)
@@ -184,6 +215,11 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.alerts.staticTexts["This would make someone their own ancestor. Check the parent and child you selected."].exists)
         app.alerts.buttons["OK"].tap(); try cancelRelationshipDraft(app, parent: "Synthetic Young", child: "Synthetic Existing Parent"); app.navigationBars["Add parent"].buttons["Cancel"].tap()
         app.navigationBars.buttons["Synthetic Young"].tap()
+        XCTAssertTrue(app.navigationBars["Synthetic Young"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testAddParentsCreatePersistNavigateAndUnlink() throws {
+        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        linkExistingBiologicalParent(app)
         app.buttons["Add parent"].tap(); app.buttons["relationship-details"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Step"].tap()
         app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Parent 3"].waitForExistence(timeout: 5)); XCTAssertTrue(app.staticTexts["Step parent"].exists)
@@ -208,7 +244,7 @@ final class KinUITests: XCTestCase {
         app.buttons["gender-choice"].tap(); app.buttons["Unspecified"].tap()
         func selectSample() throws {
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(waitForNativeContactsPicker(app))
             guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
                 app.navigationBars["Contacts"].buttons["Cancel"].tap()
                 throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
@@ -672,7 +708,7 @@ final class KinUITests: XCTestCase {
                     && app.textFields["First name (optional)"].value as? String == "Synthetic Existing Draft"
             }) else { return }
             importButton.tap()
-            let appeared = app.navigationBars["Contacts"].waitForExistence(timeout: 10)
+            let appeared = waitForNativeContactsPicker(app)
             if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
             XCTAssertTrue(appeared)
             let search = app.searchFields.firstMatch
@@ -749,7 +785,7 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(waitForNativeContactsPicker(app))
             let card = app.cells["John Appleseed"]
             XCTAssertTrue(card.waitForExistence(timeout: 10), "Isolated simulator must have its standard synthetic contact")
             card.tap()
@@ -862,7 +898,29 @@ final class KinUITests: XCTestCase {
         // Hardware Select All can instead leave a native edit menu open.
         first.coordinate(withNormalizedOffset: CGVector(dx: 1,dy: 0.5))
             .withOffset(CGVector(dx: -1,dy: 0)).tap()
-        first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: 201) + "Synthetic Retry")
+        // Observe each bounded deletion chunk before issuing the next one.
+        // A bulk key event can return before the field's accessibility value settles.
+        for _ in 0..<8 {
+            let current = first.value as? String ?? ""
+            if current.isEmpty || current == first.placeholderValue { break }
+            first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: min(current.count,32)))
+            let shortened = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                let value = first.value as? String ?? ""
+                return value.isEmpty || value == first.placeholderValue || value.count < current.count
+            },object: nil)
+            guard XCTWaiter.wait(for: [shortened],timeout: 5) == .completed else {
+                XCTFail("Import review name did not shorten after the deletion chunk"); return
+            }
+        }
+        let cleared = first.value as? String ?? ""
+        guard cleared.isEmpty || cleared == first.placeholderValue else {
+            XCTFail("Import review name was not fully cleared before replacement"); return
+        }
+        first.typeText("Synthetic Retry")
+        let replacementReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            first.value as? String == "Synthetic Retry"
+        },object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [replacementReady],timeout: 5),.completed)
         XCTAssertEqual(first.value as? String,"Synthetic Retry", "Verify replacement before retrying Save")
         app.buttons["contact-import"].doubleTap()
         XCTAssertTrue(app.navigationBars["Synthetic Retry Appleseed"].waitForExistence(timeout: 10))
@@ -954,7 +1012,7 @@ final class KinUITests: XCTestCase {
         app.terminate()
     }
     @MainActor private func selectSettledNativeContact(_ app: XCUIApplication,name: String) {
-        XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForNativeContactsPicker(app))
         // Enumerate indexed native candidates: a relaunch can briefly expose
         // two picker trees, and a multi-match frame query is ambiguous.
         func targets() -> [XCUIElement] {
@@ -1170,7 +1228,13 @@ final class KinUITests: XCTestCase {
         }) else { return }
         // The labeled accessibility wrapper spans the row; its nested switch
         // is the demonstrated action target. Let XCTest scroll it into view.
+        func recordFriendStage(_ stage: String) {
+            func state(_ value: String?) -> String { value == "0" ? "off" : value == "1" ? "on" : "unknown" }
+            print("KIN_CI_FRIEND \(stage) keyboard=\(app.keyboards.firstMatch.exists) wrapper=\(state(friends.element.value as? String)) control=\(state(controls.element.value as? String)) hittable=\(controls.element.isHittable)")
+        }
+        recordFriendStage("before")
         controls.element.tap()
+        recordFriendStage("after")
         let save = editor.buttons.matching(identifier: "Save")
         guard requireTestState(app, "Friend on and Save enabled", {
             friends.count == 1 && controls.count == 1

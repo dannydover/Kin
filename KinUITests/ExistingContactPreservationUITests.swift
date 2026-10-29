@@ -35,7 +35,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
         app.launch(); defer { app.terminate() }
         func select(_ name: String) {
             let action = app.buttons["Import from Contacts"]; reveal(action,in: app); action.tap()
-            XCTAssertTrue(app.navigationBars["Contacts"].waitForExistence(timeout: 10))
+            XCTAssertTrue(waitForNativeContactsPicker(app))
             let search = app.searchFields.firstMatch; XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
             if search.buttons["Clear text"].exists { search.buttons["Clear text"].tap() }
             search.typeText(name)
