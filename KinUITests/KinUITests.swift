@@ -785,10 +785,9 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            XCTAssertTrue(waitForNativeContactsPicker(app))
-            let card = app.cells["John Appleseed"]
-            XCTAssertTrue(card.waitForExistence(timeout: 10), "Isolated simulator must have its standard synthetic contact")
-            card.tap()
+            // Relaunches may briefly expose two native picker trees. Select
+            // only a unique, stable visible match within the existing bound.
+            selectSettledNativeContact(app,name: "John Appleseed",timeout: 10)
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
             if index == 0 { XCTAssertTrue(app.buttons["Import and Save"].isEnabled) }
             let first = app.textFields["Imported first name (optional)"]
@@ -1011,7 +1010,7 @@ final class KinUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["23 months"].exists)
         app.terminate()
     }
-    @MainActor private func selectSettledNativeContact(_ app: XCUIApplication,name: String) {
+    @MainActor private func selectSettledNativeContact(_ app: XCUIApplication,name: String,timeout: TimeInterval = 45) {
         XCTAssertTrue(waitForNativeContactsPicker(app))
         // Enumerate indexed native candidates: a relaunch can briefly expose
         // two picker trees, and a multi-match frame query is ambiguous.
@@ -1058,7 +1057,7 @@ final class KinUITests: XCTestCase {
             }
             return false
         },object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [stable],timeout: 45),.completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [stable],timeout: timeout),.completed,
                        "Require one stable hittable native contact after bounded reveal")
         guard let largeContactName = chosen else { return }
         XCTAssertTrue(largeContactName.isHittable)
