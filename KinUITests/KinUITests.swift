@@ -1037,11 +1037,6 @@ final class KinUITests: XCTestCase {
             let candidates = targets().filter(finite)
             if timeout == 10 {
                 print("KIN_CI_CONTACT count=\(candidates.count)")
-                for (index, candidate) in candidates.enumerated() {
-                    let frame = candidate.frame
-                    let inside = frame.minY >= 145 && frame.maxY <= app.frame.maxY - 100
-                    print("KIN_CI_CONTACT candidate=\(index) inside=\(inside)")
-                }
             }
             let visible = candidates.filter {
                 let frame = $0.frame
