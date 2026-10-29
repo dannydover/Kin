@@ -1044,7 +1044,8 @@ final class KinUITests: XCTestCase {
                 }
             }
             let visible = candidates.filter {
-                $0.isHittable && $0.frame.minY >= 145 && $0.frame.maxY <= app.frame.maxY - 100
+                let frame = $0.frame
+                return frame.minY >= 145 && frame.maxY <= app.frame.maxY - 100 && $0.isHittable
             }
             if visible.count == 1 {
                 let target = visible[0], frame = target.frame
