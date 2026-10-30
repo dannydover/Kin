@@ -38,21 +38,24 @@ final class NativeContactsTests: XCTestCase {
             app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
             XCTAssertTrue(waitForNativeContactsPicker(app))
             let nativeSearches = app.searchFields.matching(identifier: "Search")
-            var chosenSearch: XCUIElement?
-            let searchReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                let candidates = nativeSearches.allElementsBoundByIndex.filter {
-                    let frame = $0.frame
-                    return frame.minY >= 62 && frame.maxY <= app.frame.maxY - 30 && $0.isHittable
-                }
-                guard candidates.count == 1 else { return false }
-                chosenSearch = candidates[0]; return true
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [searchReady], timeout: 5), .completed,
-                           "Require one visible native Contacts search field")
-            let search = try XCTUnwrap(chosenSearch)
-            search.tap()
-            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-            search.typeText(name)
+            func requireVisibleSearch() throws -> XCUIElement {
+                var chosen: XCUIElement?
+                let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    let candidates = nativeSearches.allElementsBoundByIndex.filter {
+                        let frame = $0.frame
+                        return frame.minY >= 62 && frame.maxY <= app.frame.maxY - 30 && $0.isHittable
+                    }
+                    guard candidates.count == 1 else { return false }
+                    chosen = candidates[0]; return true
+                }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+                               "Require one visible native Contacts search field")
+                return try XCTUnwrap(chosen)
+            }
+            try requireVisibleSearch().tap()
+            // The out-of-process picker may own the keyboard outside app.keyboards.
+            // Resolve its field again after activation; typeText requires focus.
+            try requireVisibleSearch().typeText(name)
             let card = app.collectionViews["Search results"].cells[name].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
