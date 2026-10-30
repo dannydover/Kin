@@ -37,8 +37,25 @@ final class NativeContactsTests: XCTestCase {
         for (name,birthYear,isAdult) in fixtures {
             app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
             XCTAssertTrue(waitForNativeContactsPicker(app))
-            let search = app.searchFields.firstMatch
-            XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText(name)
+            let nativeSearches = app.searchFields.matching(identifier: "Search")
+            func requireVisibleSearch() throws -> XCUIElement {
+                var chosen: XCUIElement?
+                let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    let candidates = nativeSearches.allElementsBoundByIndex.filter {
+                        let frame = $0.frame
+                        return frame.minY >= 62 && frame.maxY <= app.frame.maxY - 30 && $0.isHittable
+                    }
+                    guard candidates.count == 1 else { return false }
+                    chosen = candidates[0]; return true
+                }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+                               "Require one visible native Contacts search field")
+                return try XCTUnwrap(chosen)
+            }
+            try requireVisibleSearch().tap()
+            // The out-of-process picker may own the keyboard outside app.keyboards.
+            // Resolve its field again after activation; typeText requires focus.
+            try requireVisibleSearch().typeText(name)
             let card = app.collectionViews["Search results"].cells[name].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))

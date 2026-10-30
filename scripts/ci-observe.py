@@ -14,6 +14,14 @@ def parse(line, allowed):
     if m:return {'kind':'authorization','state':m[1]}
     m=re.search(r'KIN_CI_FRIEND (before|after) keyboard=(true|false) wrapper=(on|off|unknown) control=(on|off|unknown) hittable=(true|false)',line)
     if m:return {'kind':'friend','stage':m[1],'keyboard':m[2]=='true','wrapper':m[3],'control':m[4],'hittable':m[5]=='true'}
+    m=re.search(r'KIN_CI_DELETE before=([0-9]{1,4})\b',line)
+    if m:return {'kind':'deletion','stage':'before','length':int(m[1])}
+    m=re.search(r'KIN_CI_DELETE after=([0-9]{1,4}) completed=(true|false)\b',line)
+    if m:return {'kind':'deletion','stage':'after','length':int(m[1]),'completed':m[2]=='true'}
+    m=re.search(r'KIN_CI_CONTACT count=([0-9]{1,3})\b',line)
+    if m:return {'kind':'contact_candidates','count':int(m[1])}
+    m=re.search(r'KIN_CI_CONTACT candidate=([0-9]{1,3}) inside=(true|false)\b',line)
+    if m:return {'kind':'contact_candidate','index':int(m[1]),'inside':m[2]=='true'}
     if re.search(r'\bt =\s*[0-9.]+s',line):
         for pattern,label in [(r'\bTap ','tap'),(r'\bDouble tap ','double_tap'),(r'\bWaiting ','wait'),(r'\bSwipe ','swipe'),(r'\bType ','type'),(r'\bLaunch ','launch'),(r'\bTerminate ','terminate'),(r'\bChecking existence','exists'),(r'\bSynthesize event','synthesize'),(r'\bWait for .* idle','idle')]:
             if re.search(pattern,line):return {'kind':'action','stage':label}
@@ -50,7 +58,7 @@ def main():
                             if event['kind']=='test':current=event['id'] if event['event']=='started' else None
                             if event['kind']=='authorization':authorization.add(event['state'])
                             event['elapsed']=elapsed
-                            if current and event['kind'] in ('action','friend'):event['test']=current
+                            if current and event['kind'] in ('action','friend','deletion','contact_candidates','contact_candidate'):event['test']=current
                             append(out,event)
                     if len(buf)>65536:buf=b''
                 elif proc.poll() is not None:break
