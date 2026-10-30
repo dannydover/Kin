@@ -63,7 +63,7 @@ def main():
     for path in changed:
         print('  ' + path)
     print('NOT release approval: separately verify build inputs, signed archive provenance,')
-    print('exact validation main-push CI, reviews, release identity and App Store availability.')
+    print('actual CI outcomes, explicit risk acceptance, reviews, release identity and App Store availability.')
 
 
 if __name__ == '__main__':

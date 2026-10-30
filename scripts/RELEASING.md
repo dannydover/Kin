@@ -111,39 +111,52 @@ References: GitHub's [release API](https://docs.github.com/en/rest/releases/rele
 [Git references API](https://docs.github.com/en/rest/git/refs), and
 [GITHUB_TOKEN permissions](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token).
 
-## Proposed one-time Kin 1.2 exception — review required
+## Proposed one-time Kin 1.2 release-risk exception — review required
 
-This exception is limited to the already-shipped Kin **1.2.0 (6)** source
-`6172840e99687e917aa74db01442fbc4bfb0a6cc`. It never changes the shipped source,
-version tag or archive. It does not claim that the source's failed CI passed.
-It may be used only after this policy change is reviewed and merged, the test
-changes pass normal review and branch protections, and all checks below succeed.
-It is not a general replacement for the exact-source rule above.
+This exception applies only to the already-shipped Kin **1.2.0 (6)** and
+source `6172840e99687e917aa74db01442fbc4bfb0a6cc`. All other versions keep the
+existing policy. This provision allows a separately approved manual release
+only after this change is reviewed and merged through normal protections and
+an owner explicitly accepts the actual current release risks. Preparing or
+merging this policy alone is not approval to release.
 
-1. Independently verify the signed archive's recorded clean source, Release
-   configuration, version/build and the build selected and publicly released by
-   Apple. Preserve private signing and device evidence outside GitHub.
-2. Identify a later, full validation SHA on main descended from the shipped SHA.
-   Run `python3 scripts/verify-kin12-exception.py VALIDATION_SHA` from the reviewed
-   checkout. It rejects changes outside the exact list of UI test, CI support and
-   exception-policy files. Review every allowed change for preserved meaningful
-   assertions and coverage; allowed paths are not automatic approval.
-3. Independently compare **all production build inputs**: app source, resources,
-   Xcode project, schemes, Release settings, dependencies and lockfiles, build
-   scripts and generated inputs. Review the source project's build phases and
-   external dependencies. The path preflight cannot attest to external inputs,
-   the actual build environment, signing, or archive provenance. Stop if any
-   input differs or cannot be verified.
-4. Verify the latest completed **main push** Build and test run at the exact
-   validation SHA and its `validate` job both succeeded, without skips or bypass.
-   A PR run alone does not qualify. Record its link and the shipped SHA's failed
-   historical main run; do not describe the latter as passing.
-5. Because current main's workflow files differ from the shipped source, use a
-   **separately reviewed manual release** as described above; do not grant extra
-   credentials or bypass the draft workflow's guards. Verify no conflicting tag
-   or release exists. Set `v1.2.0` to the exact shipped SHA, disclose both SHAs,
-   the validation run and historical CI failure in the reviewed notes, and
-   verify the published tag resolves to the shipped SHA. Never move a tag.
+This is reduced assurance: the shipped source's exact-source main CI failed;
+the later main-push run 40986605922 failed three of 184 tests, zero skips.
+PR #57 run 40981748050 previously passed all 184. UI failures have moved across
+scenarios and remain unexplained; passing physical-device QA and an unsuccessful
+phone reproduction do not rule out a real product defect. The signed archive
+records Xcode 27.1 (27A9275), iPhoneOS SDK 27.1; hosted CI used Xcode 27.0
+(27A266a). Do not claim the toolchains or resulting binaries are identical.
 
-Passing later CI tests the same reviewed build inputs with a different harness;
-it cannot reproduce the historical CI outcome or rule out intermittent defects.
+1. Reverify archive identity, clean recorded source, version/build, signing
+   evidence and public App Store availability. Keep private evidence outside
+   GitHub. Confirm the source is in current main history.
+2. Compare versioned production inputs against the later reviewed source; run
+   `python3 scripts/verify-kin12-exception.py VALIDATION_SHA` as a read-only path
+   preflight and independently review changed files, project build phases,
+   external or generated inputs and archive provenance. A path allowlist is not
+   a complete provenance or build-environment attestation. Document and obtain
+   explicit acceptance of the known toolchain difference; stop for any new or
+   unresolved material input or provenance discrepancy.
+3. Inspect and record the latest run and attempt for shipped source and later
+   main, including pending, failed, cancelled or incomplete checks. Preserve
+   earlier failures and the passing PR evidence. If evidence changes or any
+   required fact is uncertain, stop for a fresh owner decision; never label a
+   failed or incomplete run successful or represent the earlier PR result as
+   a later main-push pass.
+4. Obtain an explicit owner decision on the exact, current evidence and risk,
+   including the lower CI assurance and toolchain difference, before creating a
+   draft, tag or release. This exception waives the exact-source successful-CI
+   requirement for this release only; it does not change `validate`, tests,
+   workflow permissions, branch protection or other release requirements.
+5. Current main workflow files differ from shipped source, so the existing
+   automated draft guard deliberately rejects this case. Do not bypass or alter
+   it. Use a separately reviewed manual release only after approval. Verify the
+   version, build, source ancestry, immediately previous published tag, canonical
+   tag and any existing draft or release for conflicts, and recheck main and tag
+   state before writes. Set `v1.2.0` to the exact shipped source; never move an
+   existing tag. Verify the final release and tag after publication.
+6. Public release notes must accurately disclose shipped and later CI source
+   SHAs, actual test outcomes and the toolchain difference, with no private
+   logs, signed binaries, credentials or device identifiers. The exception must
+   not be described as equivalent to a passing exact-source validation.

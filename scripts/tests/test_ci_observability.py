@@ -9,6 +9,10 @@ class ObservabilityTests(unittest.TestCase):
         self.assertIsNone(m.parse("Test Case '-[Private.Secret testName]' started. SECRET",ids))
         self.assertEqual(m.parse('t = 5.0s Type PRIVATE_FIELD SECRET',ids),{'kind':'action','stage':'type'})
         self.assertEqual(m.parse('KIN_CI_AUTH authorized SECRET',ids),{'kind':'authorization','state':'authorized'})
+        self.assertEqual(m.parse('KIN_CI_DELETE before=201 SECRET',ids),{'kind':'deletion','stage':'before','length':201})
+        self.assertEqual(m.parse('KIN_CI_DELETE after=169 completed=true SECRET',ids),{'kind':'deletion','stage':'after','length':169,'completed':True})
+        self.assertEqual(m.parse('KIN_CI_CONTACT candidate=1 inside=false SECRET',ids),{'kind':'contact_candidate','index':1,'inside':False})
+        self.assertEqual(m.parse('KIN_CI_CONTACT count=2 SECRET',ids),{'kind':'contact_candidates','count':2})
     def test_retention_distinguishes_partial_and_complete(self):
         with tempfile.TemporaryDirectory() as d:
             root=pathlib.Path(d);env=dict(os.environ,RUNNER_TEMP=d);bundle=root/'KinTests.xcresult';bundle.mkdir()

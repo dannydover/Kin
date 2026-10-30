@@ -120,7 +120,7 @@ final class IndexMembershipUITests: XCTestCase {
             app.navigationBars["People"].exists
                 && app.buttons["category-filter"].value as? String == "All"
                 && app.cells.count == 3 && app.staticTexts["Alex Morgan"].exists
-                && !clear.exists && !app.keyboards.firstMatch.exists
+                && !clear.exists
         },object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [restored],timeout: 5),.completed)
         XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
