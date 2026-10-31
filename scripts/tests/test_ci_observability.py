@@ -15,7 +15,7 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(m.parse('KIN_CI_CONTACT count=2 SECRET',ids),{'kind':'contact_candidates','count':2})
     def test_live_test_events_are_allowlisted_and_do_not_emit_raw_output(self):
         shards=load('ci-test-shards.py')
-        ident=shards.selections('ui-7',group_count=8)[0]
+        ident=shards.selections('ui-3')[0]
         _,klass,method=ident.split('/')
         with tempfile.TemporaryDirectory() as d:
             p=pathlib.Path(d);fake=p/'xcodebuild'
@@ -26,8 +26,8 @@ class ObservabilityTests(unittest.TestCase):
                             + 'exit 1\n')
             fake.chmod(0o755)
             env=dict(os.environ,PATH=d+':'+os.environ['PATH'],RUNNER_TEMP=d,
-                     KIN_CI_SIMULATOR='synthetic',KIN_UI_SHARD_COUNT='8')
-            run=subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),'ui-7'],
+                     KIN_CI_SIMULATOR='synthetic')
+            run=subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),'ui-3'],
                                cwd=ROOT,env=env,capture_output=True,text=True)
             self.assertNotEqual(run.returncode,0)
             self.assertIn(f'CI_TEST started {ident} elapsed=',run.stdout)

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Partition current XCTest UI methods without dropping any test target."""
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -32,7 +31,7 @@ def discover(root=ROOT):
         raise ValueError('Test targets changed; update shard coverage explicitly')
     return sorted(ids)
 
-def allocate(ids, timings, fallback, group_count=4):
+def allocate(ids, timings, fallback):
     """Deterministic longest-first balancing; unmeasured tests remain blocking."""
     if type(fallback) not in (int, float) or not 0 < fallback <= 3600:
         raise ValueError('Invalid timing fallback')
@@ -43,9 +42,7 @@ def allocate(ids, timings, fallback, group_count=4):
         raise ValueError('Invalid UI timings')
     if not ids or len(ids) != len(set(ids)):
         raise ValueError('Missing or duplicate UI test IDs')
-    if type(group_count) is not int or group_count not in (4, 8):
-        raise ValueError('UI shard count must be 4 or 8')
-    bins = [[] for _ in range(group_count)]
+    bins = [[] for _ in GROUPS[1:]]
     loads = [0] * len(bins)
     for ident in sorted(ids, key=lambda item: (-timings.get(item, fallback), item)):
         index = min(range(len(bins)), key=lambda i: (loads[i], i))
@@ -54,21 +51,14 @@ def allocate(ids, timings, fallback, group_count=4):
     return [sorted(group) for group in bins]
 
 
-def selections(group, root=ROOT, group_count=None):
-    if group_count is None:
-        raw_count = os.environ.get('KIN_UI_SHARD_COUNT', '4')
-        if raw_count not in ('4', '8'):
-            raise ValueError('UI shard count must be 4 or 8')
-        group_count = int(raw_count)
-    if type(group_count) is not int or group_count not in (4, 8):
-        raise ValueError('UI shard count must be 4 or 8')
+def selections(group, root=ROOT):
     ids = discover(root)
     if group == 'unit':
         return ['KinTests']
-    if group not in tuple(f'ui-{i}' for i in range(group_count)):
+    if group not in GROUPS:
         raise ValueError('Unknown shard')
     baseline = json.loads((root / 'scripts/ci-ui-timings.json').read_text())
-    return allocate(ids, baseline['seconds'], baseline['fallback_seconds'], group_count)[int(group[-1])]
+    return allocate(ids, baseline['seconds'], baseline['fallback_seconds'])[int(group[-1])]
 
 
 def verify_test_ids(report, selected):
