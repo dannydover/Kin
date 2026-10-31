@@ -167,18 +167,9 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
+    // The fixture avoids repeating three create-person flows; creation and
+    // persistence have independent UI and integration coverage.
     @MainActor func testClearEmptyCategoryRestoresPeopleWithoutChangingRecords() {
-        let app = clearSearchFixture(); defer { app.terminate() }
-        let clear = app.buttons["clear-search-and-filters"]
-        app.buttons["category-filter"].tap(); app.buttons["Colleague"].tap()
-        XCTAssertTrue(app.staticTexts["No people in this category"].exists)
-        clear.tap(); assertClearSearchRestored(app)
-        assertClearSearchPreservedCategory(app)
-    }
-
-    // Candidate deterministic setup; keep the original create-through-UI flow
-    // until the replacement and fixture have passed hosted validation.
-    @MainActor func testPreviewClearEmptyCategoryRestoresPeopleWithoutChangingRecords() {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview", "filter-fixture"]
         app.launch(); defer { app.terminate() }

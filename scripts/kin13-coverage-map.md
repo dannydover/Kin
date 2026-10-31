@@ -15,9 +15,9 @@ Baseline: 59 UI test methods and the existing KinTests suite. The import-route m
 
 | Existing assertion or behavior | Candidate or retained layer | Status |
 |---|---|---|
-| Every creation route opens review without a current-draft label or temporary Person/Parent/Child/Partner identity; the selected synthetic name is shown | App UI: `testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | Candidate shares the original assertions and needs hosted validation. |
-| Cancelling review leaves the draft blank, does not create a person, and does not consume the next reference | The same synthetic app-UI candidate, plus the existing store cancellation and reference-identity integration tests | Candidate needs hosted validation. |
-| Native picker actually selects a Contacts card and hands it to the review flow | Existing native `testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow` and other native Contacts tests | Retained unchanged until the synthetic replacement is validated and any reduction is reviewed. |
+| Every creation route opens review without a current-draft label or temporary Person/Parent/Child/Partner identity; the selected synthetic name is shown | App UI: `testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | Passed once in run 41240567374 with the original assertions; exact migrated head still needs full validation. |
+| Cancelling review leaves the draft blank, does not create a person, and does not consume the next reference | The same synthetic app-UI candidate, plus the existing store cancellation and reference-identity integration tests | Candidate passed once in run 41240567374; exact migrated head still needs validation. |
+| Native picker actually selects a Contacts card and hands it to the review flow | `testNativeUnnamedDraftReviewOmitsTemporaryIdentity` and other native Contacts tests | One native direct-entry review remains; the synthetic test retains all four route assertions. Three repeated native invocations are removed. |
 
 
 ## Reviewed deletion and filtering coverage (no UI retirement)
@@ -49,7 +49,7 @@ These rows identify supported lower-level coverage and the UI assertions it does
 
 ## Next candidate: deterministic filter fixture
 
-`DevelopmentPreview.filterNotebook` seeds the same three listed synthetic people and categories used by the existing Clear tests. `DevelopmentPreviewTests.filterNotebook` checks the fixture identities, listed state, categories, and empty relationship graph. The candidate `testPreviewClearEmptyCategoryRestoresPeopleWithoutChangingRecords` retains the original empty-category, Clear restoration, keyboard, category-preservation and edit/cancel assertions. The original create-through-UI test remains required until both the fixture and the candidate pass hosted checks. Person creation, save, and reopen remain covered independently by the existing direct-save UI and storage tests. No production Release fixture is enabled; the existing Release guard rejects preview code.
+`DevelopmentPreview.filterNotebook` seeds the same three listed synthetic people and categories used by the existing Clear tests. `DevelopmentPreviewTests.filterNotebook` checks the fixture identities, listed state, categories, and empty relationship graph. The candidate `testPreviewClearEmptyCategoryRestoresPeopleWithoutChangingRecords` retains the original empty-category, Clear restoration, keyboard, category-preservation and edit/cancel assertions. Both the fixture integration test and candidate passed in run 41240567374. The original empty-category test now uses that fixture and retains every Clear, keyboard, category and edit/cancel assertion; its three repeated setup-only person creations are removed. Person creation, save, and reopen remain covered independently by the existing direct-save UI and storage tests. This in-memory fixture does not itself prove disk persistence. The migrated head still needs validation. No production Release fixture is enabled; the existing Release guard rejects preview code.
 
 
 ## Accessibility, copy and visible layout
@@ -78,14 +78,15 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `IndexMembershipUITests.testDirectFailedSaveAndCancelDoNotCreatePeopleAndLinkedCreationStaysUnlisted` | app UI, integration | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testClearSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `IndexMembershipUITests.testPreviewClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Candidate for the empty-category clear path using a verified synthetic fixture; the original creation-through-UI test remains required until validation. |
-| `IndexMembershipUITests.testClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Retain; assertion-level review pending. |
+| `IndexMembershipUITests.testPreviewClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41240567374; its assertions move to the original test name below. |
+| `IndexMembershipUITests.testClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated synthetic fixture instead of three UI-only setup creations. Validate the migrated head. |
 | `IndexMembershipUITests.testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testClearSearchAndFiltersOnEmptyNotebookAtLargestText` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | app UI, integration | Candidate; all existing unnamed-draft assertions run through a synthetic adapter. Native version retained pending hosted validation. |
-| `KinUITests.testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow` | native, app UI, integration | Retain; assertion-level review pending. |
+| `KinUITests.testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | app UI, integration | Passed once in run 41240567374; all four unnamed-draft routes remain required. The one-route native smoke also remains required. |
+| `KinUITests.testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow` | native, app UI, integration | Replaced by the synthetic four-route test and one native direct-route smoke above; validate the migrated head. |
+| `KinUITests.testNativeUnnamedDraftReviewOmitsTemporaryIdentity` | native, app UI | One real Contacts review remains required. |
 | `KinUITests.testRelationshipRoleLabelsFromBothDirectionsAndForPartners` | app UI, integration | Retain; assertion-level review pending. |
 | `KinUITests.testRelationshipRoleLabelsWrapLongNamesAtLargestDynamicType` | app UI, integration | Retain; assertion-level review pending. |
 | `KinUITests.testAddParentsReuseAndCancel` | app UI, integration | Retain; assertion-level review pending. |
@@ -137,6 +138,6 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 ## Release gate and acceptance
 
 - Keep every current UI test and `validate` required; migrate an old assertion only after its replacement is recorded and validated. No skip, retry-to-green, or passing status for a failed native journey.
-- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The migration above removes three repeated native picker invocations; all other membership and cadence still require assertion-level review.
+- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The import and unnamed-review migrations remove six repeated native picker invocations; all other membership and cadence still require assertion-level review.
 - Validate lower-level replacements first, then any UI change on the exact commit. Exercise bounded repeated full suites and relevant order variation; report every failure and retain artifacts. A single green run is not a reliability guarantee.
 - Historical native focus, picker readiness, Friend switch, Clear restoration and accessibility query stalls remain unresolved. Resource free/inactive counters are not a direct memory-pressure measurement.

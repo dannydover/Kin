@@ -39,7 +39,7 @@ final class KinUITests: XCTestCase {
         throw XCTSkip("Normal notebook startup regression requires an isolated simulator.")
         #endif
     }
-    @MainActor func testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow() throws {
+    @MainActor func testNativeUnnamedDraftReviewOmitsTemporaryIdentity() throws {
         try checkUnnamedDraftContactsReview(useNativePicker: true)
     }
     @MainActor func testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow() throws {
@@ -49,7 +49,10 @@ final class KinUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         if !useNativePicker { app.launchArguments.append("--kin-ui-synthetic-contact") }
         app.launch(); addPerson(app,name: "Synthetic Source")
-        for route in ["Add person","Add child","Add partner","Add parent"] {
+        // Keep one real Contacts review; exercise all creation routes through
+        // the separately validated synthetic adapter with identical assertions.
+        let routes = useNativePicker ? ["Add person"] : ["Add person","Add child","Add partner","Add parent"]
+        for route in routes {
             if route == "Add person" { app.buttons[route].tap() }
             else {
                 app.staticTexts["Synthetic Source"].tap(); reveal(app.buttons[route],in: app); app.buttons[route].tap()
