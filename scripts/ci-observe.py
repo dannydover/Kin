@@ -117,4 +117,16 @@ def main():
     if not cleanup_ok:
         print('Synthetic Contacts cleanup was not fully verified.',file=sys.stderr);return 1
     return 0
-if __name__=='__main__':sys.exit(main())
+if __name__=='__main__':
+    resource_spec = importlib.util.spec_from_file_location('resource_sampler', 'scripts/ci-resource.py')
+    resource = importlib.util.module_from_spec(resource_spec)
+    resource_spec.loader.exec_module(resource)
+    sampler = resource.ResourceSampler(os.environ['RUNNER_TEMP'])
+    sampler.start()
+    failed = True
+    try:
+        result = main()
+        failed = result != 0
+    finally:
+        sampler.finish(failed)
+    sys.exit(result)
