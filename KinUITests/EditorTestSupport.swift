@@ -17,6 +17,35 @@ import XCTest
     return ready
 }
 
+/// Preserve the immediate switch assertion while collecting a bounded,
+/// synthetic-only follow-up state if it fails. Never tap the control again.
+@MainActor func assertSwitchImmediatelyOn(_ element: XCUIElement, in app: XCUIApplication,
+                                         file: StaticString = #filePath, line: UInt = #line) {
+    let initial = element.value as? String
+    if initial != "1" {
+        let laterOn = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            element.value as? String == "1"
+        }, object: nil)
+        _ = XCTWaiter.wait(for: [laterOn], timeout: 5)
+        let later = element.value as? String
+        func state(_ value: String?) -> String {
+            value == "1" ? "on" : value == "0" ? "off" : "unknown"
+        }
+        let description = "initial=\(state(initial)) later=\(state(later))"
+        XCTContext.runActivity(named: "Synthetic switch failure observation") { activity in
+            let attachment = XCTAttachment(string: description)
+            attachment.name = "Synthetic switch immediate and later state"
+            attachment.lifetime = .keepAlways
+            activity.add(attachment)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.name = "Synthetic switch state after failed immediate assertion"
+            screenshot.lifetime = .keepAlways
+            activity.add(screenshot)
+        }
+    }
+    XCTAssertEqual(initial, "1", file: file, line: line)
+}
+
 /// Reveal the actual shared-editor control after deliberate section reordering.
 /// Lazy form rows need bounded scrolling before hierarchy uniqueness assertions.
 @MainActor func editorSwitchWrapper(_ identifier: String, in app: XCUIApplication, scrollStep: CGFloat? = nil) -> XCUIElement {

@@ -29,6 +29,12 @@ In run 41210574048, typing through the application reached and selected four
 synthetic search results and the second targeted test passed, but the first
 test later failed synthesizing a scroll. This supports the narrow locator
 change without establishing that the complete flow or other failures are fixed.
+Full run 41212418281 passed 184 of 185 tests with no skips; its remaining
+failure was an immediate off value after a tap inside the visible import-review
+Friend switch. The isolated calibrated diagnostic 41214870560 passed without
+reproducing that failure, so it does not establish the cause. A test-only
+failure observer records the original immediate value and a bounded later
+value without changing the original assertion or tapping again.
 
 ## Shared-system audit
 

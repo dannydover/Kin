@@ -880,7 +880,7 @@ final class KinUITests: XCTestCase {
         // can hit the footer. Tap the settled uniquely identified visible row,
         // explicitly outside the persistent confirmation footer.
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: friendFrame.maxX - 35,dy: friendFrame.midY)).tap()
-        XCTAssertEqual(friend.value as? String,"1")
+        assertSwitchImmediatelyOn(friend, in: app)
         XCTAssertTrue(app.navigationBars["Contact birth information"].exists)
         verifyContactActionGeometry(app, largest: false)
         verifyContactLowerRowsReachable(app, largest: false)
