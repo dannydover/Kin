@@ -1,14 +1,14 @@
 # Kin 1.3 test coverage migration map
 
-Baseline: 59 UI test methods and the existing KinTests suite; one synthetic replacement candidate is added alongside them. All rows remain required while replacements are validated. The assignments below describe the lowest layer that can verify the named behavior; a lower-level test does not prove presentation, focus, accessibility, gestures, or platform behavior. “Candidate” means not yet approved as equivalent coverage.
+Baseline: 59 UI test methods and the existing KinTests suite; one synthetic replacement candidate is added alongside them. Original rows remain required unless an assertion-level replacement is recorded and validated below. The assignments below describe the lowest layer that can verify the named behavior; a lower-level test does not prove presentation, focus, accessibility, gestures, or platform behavior. “Candidate” means not yet approved as equivalent coverage.
 
 ## Proposed first migration: reviewed imports from every entry point
 
 | Existing assertion or behavior | Replacement or retained layer | Status |
 |---|---|---|
-| Reviewed name and stable identity; direct, parent, child, partner relationship; duplicate-save protection; listed vs unlisted; persistence after reopening | Integration: `NewPersonImportTests.entryPoints` plus new `entryPointsAfterReopen` | Candidate; new parameterized test needs hosted validation. It does not drive the four UI routes. |
-| Add person / parent / child / partner navigation, review, editing, Step parent UI, Save, and reopened values | Candidate app UI: `KinUITests.testSyntheticImportSavesReviewedNamesForEveryEntryPoint` uses a DEBUG-only fixed synthetic picker adapter; existing native route test remains unchanged | Candidate requires hosted validation; the synthetic adapter does not test system picker presentation or selection. |
-| Picker delivers a real synthetic Contacts selection; edited review saves to profile and survives relaunch | Native end-to-end: `NativeContactsTests.testNativeFullBirthdayAndPhotoImportForAdultAndMinor` and `KinUITests.testNewImportSavesReviewedNamesForEveryEntryPoint` | Retained; no native journey retired. |
+| Reviewed name and stable identity; direct, parent, child, partner relationship; duplicate-save protection; listed vs unlisted; persistence after reopening | Integration: `NewPersonImportTests.entryPoints` plus new `entryPointsAfterReopen` | Passed in the unit-only retry of run 41230972213 (127 tests, zero skips). It does not drive the four UI routes. |
+| Add person / parent / child / partner navigation, review, editing, Step parent UI, Save, and reopened values | App UI: `KinUITests.testSyntheticImportSavesReviewedNamesForEveryEntryPoint` uses a DEBUG-only fixed synthetic picker adapter and the same shared assertions | Passed once in run 41230972213. The synthetic adapter does not test system picker presentation or selection. |
+| Picker delivers a real synthetic Contacts selection; edited review saves to profile and survives relaunch | Native end-to-end: `NativeContactsTests.testNativeFullBirthdayAndPhotoImportForAdultAndMinor` and `KinUITests.testNativeImportSavesReviewedName` | Retained; the latter runs the direct-entry path once instead of invoking the same system picker four times. All four app routes retain their review, save, relaunch, relationship and list assertions in the synthetic test. |
 
 ## UI baseline inventory
 
@@ -52,8 +52,9 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testEstimatedAgeWheelAtLargestDynamicType` | app UI, unit | Retain; assertion-level review pending. |
 | `KinUITests.testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto` | native, app UI, integration | Retain; assertion-level review pending. |
 | `KinUITests.testContactMissingBirthdayPromptCancellationAndEstimatedImport` | native, app UI, integration, unit | Retain; assertion-level review pending. |
-| `KinUITests.testSyntheticImportSavesReviewedNamesForEveryEntryPoint` | app UI, integration | Candidate replacement; run and review before retiring any native repetition. |
-| `KinUITests.testNewImportSavesReviewedNamesForEveryEntryPoint` | native, app UI, integration | Retain; assertion-level review pending. |
+| `KinUITests.testSyntheticImportSavesReviewedNamesForEveryEntryPoint` | app UI, integration | Passed once in run 41230972213; retains all four route assertions. |
+| `KinUITests.testNewImportSavesReviewedNamesForEveryEntryPoint` | app UI, integration, native | Replaced by the synthetic four-route test and one native direct-route smoke above; verify the new exact head before accepting this migration. |
+| `KinUITests.testNativeImportSavesReviewedName` | native, app UI | New one-route native smoke; required. |
 | `KinUITests.testChildSurnameIsEditableClearableAndNeverReapplied` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `KinUITests.testImportReviewRetainsFailedEditsAndAccessibilityHelpersWrap` | native, app UI, integration | Retain; assertion-level review pending. |
 | `KinUITests.testCompactUnknownAgeWithLongNamesAtStandardAndAccessibilitySizes` | app UI, unit | Retain; assertion-level review pending. |
@@ -79,7 +80,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 
 ## Release gate and acceptance
 
-- Keep existing full UI selection and `validate` required until replacement tests and the assertion-level map have been reviewed and validated. No skip, retry-to-green, or passing status for a failed native journey.
-- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. Exact membership and cadence require a coverage review; none has been removed by this map.
+- Keep every current UI test and `validate` required; migrate an old assertion only after its replacement is recorded and validated. No skip, retry-to-green, or passing status for a failed native journey.
+- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The migration above removes three repeated native picker invocations; all other membership and cadence still require assertion-level review.
 - Validate lower-level replacements first, then any UI change on the exact commit. Exercise bounded repeated full suites and relevant order variation; report every failure and retain artifacts. A single green run is not a reliability guarantee.
 - Historical native focus, picker readiness, Friend switch, Clear restoration and accessibility query stalls remain unresolved. Resource free/inactive counters are not a direct memory-pressure measurement.

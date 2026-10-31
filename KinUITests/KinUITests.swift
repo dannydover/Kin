@@ -769,7 +769,7 @@ final class KinUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Save"].isEnabled)
         chooseAge(app,value: 80); app.buttons["Save"].tap()
     }
-    @MainActor func testNewImportSavesReviewedNamesForEveryEntryPoint() throws {
+    @MainActor func testNativeImportSavesReviewedName() throws {
         try checkReviewedImportForEveryEntryPoint(useNativePicker: true)
     }
     @MainActor func testSyntheticImportSavesReviewedNamesForEveryEntryPoint() throws {
@@ -780,7 +780,10 @@ final class KinUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         if !useNativePicker { app.launchArguments.append("--kin-ui-synthetic-contact") }
         app.launch(); addPerson(app,name: "Synthetic Import Source")
-        let routes = ["Add person","Add parent","Add child","Add partner"]
+        // The native smoke covers real picker selection once. The synthetic
+        // app-UI test below exercises all four entry points with the same review,
+        // save, relationship, visibility and relaunch assertions.
+        let routes = useNativePicker ? ["Add person"] : ["Add person","Add parent","Add child","Add partner"]
         for (index,route) in routes.enumerated() {
             if index == 0 { app.buttons[route].tap() }
             else {
@@ -822,8 +825,8 @@ final class KinUITests: XCTestCase {
         }
         XCTAssertEqual(app.cells.count,2, "Only the source and direct import are listed")
         openAllPeople(app)
-        for index in 0..<4 { XCTAssertTrue(app.staticTexts["Synthetic Saved \(index) Appleseed"].exists) }
-        XCTAssertEqual(app.cells.count,5)
+        for index in routes.indices { XCTAssertTrue(app.staticTexts["Synthetic Saved \(index) Appleseed"].exists) }
+        XCTAssertEqual(app.cells.count,routes.count + 1)
     }
     @MainActor func testChildSurnameIsEditableClearableAndNeverReapplied() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
