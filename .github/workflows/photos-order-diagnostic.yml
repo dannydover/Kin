@@ -1,0 +1,68 @@
+name: Synthetic Photos query order diagnostic (nonshipping)
+on:
+  push:
+    branches: [diagnostic/kin13-photos-order]
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [isolated, after-prefix]
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          test "$(uname -m)" = arm64
+          python3 scripts/test-photos-order.py
+      - name: Prepare synthetic simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin order ${GITHUB_RUN_ID}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          export KIN_CI_SIMULATOR
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          python3 scripts/ci-simulator.py grant
+          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+      - name: Instrument one existing assertion
+        run: python3 scripts/prepare-photos-order.py
+      - name: Run original selected tests
+        timeout-minutes: 45
+        run: python3 scripts/ci-photos-order.py "${{ matrix.mode }}"
+      - name: Read finalized result metadata
+        if: always()
+        run: |
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
+      - name: Retain fixed-field result and observed order
+        if: always()
+        run: python3 scripts/collect-photos-order.py "${{ matrix.mode }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: photos-order-${{ matrix.mode }}
+          path: ${{ runner.temp }}/KinPhotosOrder/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove synthetic simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then python3 scripts/ci-simulator.py cleanup; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: photos-order-cleanup-${{ matrix.mode }}
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: warn
