@@ -86,9 +86,21 @@ struct PersonEditor: View {
                         } onCancel: { pendingContact = nil; pickingContact = false }
                     }
                 } else {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--kin-ui-synthetic-contact") {
+                        Button("Use synthetic contact") {
+                            pendingContact = ContactSnapshot(firstName: "John", lastName: "Appleseed")
+                        }.accessibilityIdentifier("synthetic-contact-selection")
+                    } else {
+                        ContactPicker { snapshot in
+                            pendingContact = snapshot
+                        } onCancel: { pickingContact = false }
+                    }
+                    #else
                     ContactPicker { snapshot in
                         pendingContact = snapshot
                     } onCancel: { pickingContact = false }
+                    #endif
                 }
             }.interactiveDismissDisabled()
         }

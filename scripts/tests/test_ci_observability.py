@@ -1,9 +1,22 @@
-import importlib.util, json, os, pathlib, subprocess, sys, tempfile, unittest, zipfile
+import importlib.util, json, os, pathlib, re, subprocess, sys, tempfile, unittest, zipfile
 import xml.etree.ElementTree as ET
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 def load(name):
     spec=importlib.util.spec_from_file_location('observe',ROOT/'scripts'/name); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 class ObservabilityTests(unittest.TestCase):
+    def test_release_guard_rejects_synthetic_contacts_adapter_markers(self):
+        release = load('check-release.py')
+        for marker in (b'--kin-ui-synthetic-contact', b'synthetic-contact-selection'):
+            self.assertIsNotNone(re.search(release.DEBUG_PATTERN, marker))
+
+    def test_coverage_map_accounts_for_every_current_ui_method(self):
+        shards = load('ci-test-shards.py')
+        document = (ROOT / 'scripts/kin13-coverage-map.md').read_text()
+        entries = re.findall(r'^\| `([A-Za-z0-9_]+)\.(test[A-Za-z0-9_]+)` \|', document, re.MULTILINE)
+        self.assertEqual(len(entries), len(set(entries)))
+        mapped = {f'KinUITests/{klass}/{method}' for klass, method in entries}
+        self.assertTrue(set(shards.discover()).issubset(mapped), 'Every current UI method needs a coverage-map row')
+
     def test_order_comparison_requires_exact_identities_and_real_change(self):
         m=load('ci-compare-order.py')
         expected={'ui-0':['a','b','c'],'ui-1':['d','e']}

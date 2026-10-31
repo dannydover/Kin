@@ -770,8 +770,15 @@ final class KinUITests: XCTestCase {
         chooseAge(app,value: 80); app.buttons["Save"].tap()
     }
     @MainActor func testNewImportSavesReviewedNamesForEveryEntryPoint() throws {
+        try checkReviewedImportForEveryEntryPoint(useNativePicker: true)
+    }
+    @MainActor func testSyntheticImportSavesReviewedNamesForEveryEntryPoint() throws {
+        try checkReviewedImportForEveryEntryPoint(useNativePicker: false)
+    }
+    @MainActor private func checkReviewedImportForEveryEntryPoint(useNativePicker: Bool) throws {
         executionTimeAllowance = 600
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        if !useNativePicker { app.launchArguments.append("--kin-ui-synthetic-contact") }
         app.launch(); addPerson(app,name: "Synthetic Import Source")
         let routes = ["Add person","Add parent","Add child","Add partner"]
         for (index,route) in routes.enumerated() {
@@ -786,9 +793,13 @@ final class KinUITests: XCTestCase {
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
-            // Relaunches may briefly expose two native picker trees. Select
-            // only a unique, stable visible match within the existing bound.
-            selectSettledNativeContact(app,name: "John Appleseed",timeout: 10)
+            if useNativePicker {
+                // Preserve the existing native path until its replacement is reviewed.
+                selectSettledNativeContact(app,name: "John Appleseed",timeout: 10)
+            } else {
+                let fixture = app.buttons["synthetic-contact-selection"]
+                XCTAssertTrue(fixture.waitForExistence(timeout: 10)); fixture.tap()
+            }
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
             if index == 0 { XCTAssertTrue(app.buttons["Import and Save"].isEnabled) }
             let first = app.textFields["Imported first name (optional)"]

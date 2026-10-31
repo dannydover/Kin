@@ -30,6 +30,40 @@ import UIKit
         if route == 2 { #expect(store.parentLinks.first?.parentage == .adoptive) }
         if route == 3 { #expect(store.partnerLinks.first?.status == .former) }
     }
+    @Test("Reviewed imports from every relationship route preserve identity and links after reopening", arguments: [0,1,2,3])
+    func entryPointsAfterReopen(_ route: Int) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("import-reopen.sqlite")
+        let store = try KinStore(storeURL: url)
+        let source = Person(firstName: "Synthetic source")
+        try store.savePerson(source)
+        let relationship: NewRelationship? = switch route {
+        case 1: .parent(of: source.id,parentage: .step)
+        case 2: .child(of: source.id,parentage: .unspecified)
+        case 3: .partner(of: source.id,status: .current)
+        default: nil
+        }
+        let draft = Person(firstName: "Reviewed",lastName: "Appleseed")
+        let commit = NewContactImportCommit()
+        try commit.save(draft,store: store,relationship: relationship)
+        try commit.save(draft,store: store,relationship: relationship)
+        let people = store.people, parents = store.parentLinks, partners = store.partnerLinks
+        #expect(commit.completedID == draft.id && people.count == 2)
+        #expect(parents.count == (route == 1 || route == 2 ? 1 : 0))
+        #expect(partners.count == (route == 3 ? 1 : 0))
+        try store.close()
+        let reopened = try KinStore(storeURL: url); defer { try? reopened.close() }
+        #expect(reopened.people == people && reopened.parentLinks == parents && reopened.partnerLinks == partners)
+        let saved = try reopened.person(draft.id)
+        #expect(saved.firstName == "Reviewed" && saved.lastName == "Appleseed")
+        #expect(saved.isListed == (route == 0))
+        #expect(PeopleIndex.results(reopened.people,query: "").contains { $0.id == draft.id } == (route == 0))
+        #expect(PeopleIndex.results(reopened.people,query: "",includeUnlisted: true).contains { $0.id == draft.id })
+        if route == 1 { #expect(reopened.parentLinks.first?.parentage == .step) }
+        if route == 2 { #expect(reopened.parentLinks.first?.parentage == .unspecified) }
+        if route == 3 { #expect(reopened.partnerLinks.first?.status == .current) }
+    }
     @Test("Failed save retains review identity; retry is atomic, including after commit", arguments: [false,true])
     func failure(_ afterCommit: Bool) throws {
         var fail = false
