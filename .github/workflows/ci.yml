@@ -58,18 +58,26 @@ jobs:
           test "$(uname -m)" = arm64
       - name: Create isolated iOS 27 simulator
         run: |
+          echo "KIN_CI_SETUP stage=create status=start elapsed=$SECONDS"
           KIN_CI_SIMULATOR=$(xcrun simctl create "Kin CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
           echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
           export KIN_CI_SIMULATOR
+          echo "KIN_CI_SETUP stage=create status=complete elapsed=$SECONDS"
+          echo "KIN_CI_SETUP stage=boot status=start elapsed=$SECONDS"
           xcrun simctl boot "$KIN_CI_SIMULATOR"
           xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          echo "KIN_CI_SETUP stage=boot status=complete elapsed=$SECONDS"
           # Only the UI test runner seeds synthetic Contacts; Kin itself retains
           # selection-only picker access without an address-book permission.
           if [ "${{ matrix.shard }}" != "unit" ]; then
+            echo "KIN_CI_SETUP stage=contacts status=start elapsed=$SECONDS"
             python3 scripts/ci-simulator.py grant
+            echo "KIN_CI_SETUP stage=contacts status=complete elapsed=$SECONDS"
+            echo "KIN_CI_SETUP stage=media status=start elapsed=$SECONDS"
+            python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+            xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+            echo "KIN_CI_SETUP stage=media status=complete elapsed=$SECONDS"
           fi
-          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
-          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
       - name: Unit, integration, and UI regression suite (iOS 27)
         timeout-minutes: 45
         run: python3 scripts/ci-observe.py "${{ matrix.shard }}"

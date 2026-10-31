@@ -19,6 +19,17 @@ and the old category still displayed afterward. Those observations support
 several distinct hypotheses; they do not prove a single common cause or exclude
 an application defect. Avoid attributing all failures to the simulator or Apple.
 
+On the cleanup candidate, run 41206523843 completed 183 of 185 tests
+successfully, with two failures and no skips. The extra test exercises the new
+cleanup helper. A Contacts failure selected an unfocused historical Search
+field while a different field had keyboard focus; the Clear restoration wait
+also failed. The first proposed picker fix incorrectly assumed the native
+keyboard was exposed in `app.keyboards` and failed in targeted run 41209201761.
+In run 41210574048, typing through the application reached and selected four
+synthetic search results and the second targeted test passed, but the first
+test later failed synthesizing a scroll. This supports the narrow locator
+change without establishing that the complete flow or other failures are fixed.
+
 ## Shared-system audit
 
 Each hosted job uses a fresh VM and simulator, but UI tests within a shard share
@@ -27,9 +38,10 @@ history. UUID notebook arguments isolate app storage, not system services. Runne
 setup, rather than a dedicated preflight; every current shard contains that
 class, but a future shard without it would fail despite an authorized runner.
 A shared same-runner authorization preflight can remove that composition
-dependency without weakening the gate. Some Contacts fixture teardown uses
-`try?`, so a cleanup failure can be hidden until
-the whole simulator is deleted; no evidence yet shows this caused a failure.
+dependency without weakening the gate. Contacts fixture teardown now verifies
+removal of test-owned identifiers and reports missing, failed or uncertain
+cleanup without suppressing the original failure. No evidence yet shows that
+the formerly ignored cleanup errors caused a failure.
 The native picker relies on real service transitions and sample contacts, and
 some tests issue many sequential accessibility queries or use compound readiness
 predicates. Those are risks to investigate, not proof that the individual waits

@@ -39,7 +39,10 @@ final class ExistingContactPreservationUITests: XCTestCase {
             XCTAssertTrue(waitForNativeContactsPicker(app))
             let search = app.searchFields.firstMatch; XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
             if search.buttons["Clear text"].exists { search.buttons["Clear text"].tap() }
-            search.typeText(name)
+            // Picker accessibility can retain earlier unfocused Search fields.
+            // Type through the application so XCTest targets its focused descendant;
+            // the exact synthetic search result below remains required.
+            app.typeText(name)
             let card = app.collectionViews["Search results"].cells[name].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))

@@ -713,7 +713,7 @@ final class KinUITests: XCTestCase {
             if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
             XCTAssertTrue(appeared)
             let search = app.searchFields.firstMatch
-            XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText(contactName)
+            XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); app.typeText(contactName)
             let card = app.collectionViews["Search results"].cells[contactName].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 5)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
