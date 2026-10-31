@@ -67,7 +67,7 @@ No accessibility, visible-copy, or layout test is retired by this map.
 
 ## Further filter fixture candidates
 
-The search-only, combined search/category, and All people Clear tests now each have a separate preview-fixture candidate that calls the same assertion helper as the original test. The original three creation-through-UI tests remain required while these candidates are tested. If each candidate passes, the original test name can use the validated fixture and the duplicate candidate can be removed; the keyboard, no-results copy, repeated Clear, scope, category, identity and edit/cancel assertions stay intact. This moves setup only, not the UI behavior under test. The fixture is in-memory and is not evidence of disk persistence.
+The search-only, combined search/category, and All people Clear tests each had a separate preview-fixture candidate calling the same assertion helper as the original. The search-only and All people candidates passed in run 41245990817 and are mapped back to their original test names. The combined-filter candidate failed; its creation-through-UI original remains required. If each candidate passes, the original test name can use the validated fixture and the duplicate candidate can be removed; the keyboard, no-results copy, repeated Clear, scope, category, identity and edit/cancel assertions stay intact. This moves setup only, not the UI behavior under test. The fixture is in-memory and is not evidence of disk persistence. The combined-filter candidate failed in run 41245990817 and is not a validated replacement; a late observation does not turn its failure into a pass.
 
 ## UI baseline inventory
 
@@ -82,14 +82,14 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `IndexMembershipUITests.testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testDirectFailedSaveAndCancelDoNotCreatePeopleAndLinkedCreationStaysUnlisted` | app UI, integration | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `IndexMembershipUITests.testPreviewClearSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Candidate shares all Clear assertions; original creation-through-UI case remains required pending validation. |
-| `IndexMembershipUITests.testClearSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Retain; assertion-level review pending. |
+| `IndexMembershipUITests.testPreviewClearSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41245990817; shared assertions move to the original test name. |
+| `IndexMembershipUITests.testClearSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated in-memory fixture and retains the original shared assertions. The migrated head needs validation. |
 | `IndexMembershipUITests.testPreviewClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41240567374; its assertions move to the original test name below. |
 | `IndexMembershipUITests.testClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated synthetic fixture instead of three UI-only setup creations. Validate the migrated head. |
-| `IndexMembershipUITests.testPreviewClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` | app UI, integration, unit | Candidate shares all Clear assertions; original creation-through-UI case remains required pending validation. |
+| `IndexMembershipUITests.testPreviewClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` | app UI, integration, unit | Failed in run 41245990817: the original five-second restoration waiter timed out; afterward all fixed-field restoration observations were true. Cause unresolved; original test remains required. |
 | `IndexMembershipUITests.testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `IndexMembershipUITests.testPreviewClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Candidate shares all Clear assertions; original creation-through-UI case remains required pending validation. |
-| `IndexMembershipUITests.testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Retain; assertion-level review pending. |
+| `IndexMembershipUITests.testPreviewClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41245990817; shared assertions move to the original test name. |
+| `IndexMembershipUITests.testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated in-memory fixture and retains all shared assertions. The migrated head needs validation. |
 | `IndexMembershipUITests.testClearSearchAndFiltersOnEmptyNotebookAtLargestText` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | app UI, integration | Retain; assertion-level review pending. |
 | `KinUITests.testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | app UI, integration | Passed once in run 41240567374; all four unnamed-draft routes remain required. The one-route native smoke also remains required. |

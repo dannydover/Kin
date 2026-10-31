@@ -164,8 +164,7 @@ final class IndexMembershipUITests: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
-    @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() { checkClearSearchRestoresPeople(usePreview: false) }
-    @MainActor func testPreviewClearSearchRestoresPeopleWithoutChangingRecords() { checkClearSearchRestoresPeople(usePreview: true) }
+    @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() { checkClearSearchRestoresPeople(usePreview: true) }
     @MainActor private func checkClearSearchRestoresPeople(usePreview: Bool) {
         let app = clearSearchFixture(usePreview: usePreview); defer { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
@@ -209,8 +208,7 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
-    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: false) }
-    @MainActor func testPreviewClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: true) }
+    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: true) }
     @MainActor private func checkClearAllPeopleSearch(usePreview: Bool) {
         let app = clearSearchFixture(usePreview: usePreview); defer { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
