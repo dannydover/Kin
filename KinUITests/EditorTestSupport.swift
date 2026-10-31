@@ -17,6 +17,27 @@ import XCTest
     return ready
 }
 
+/// Resolve the one hittable native search field before activating it. The
+/// picker can retain offscreen search fields from an earlier presentation.
+/// A unique visible field is a precondition, not proof of keyboard focus;
+/// the caller must still perform typing and assert the exact search result.
+@MainActor func requireNativeContactsSearch(_ app: XCUIApplication) throws -> XCUIElement {
+    let searches = app.searchFields.matching(identifier: "Search")
+    var chosen: XCUIElement?
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        let candidates = searches.allElementsBoundByIndex.filter {
+            let frame = $0.frame
+            return frame.minY >= 62 && frame.maxY <= app.frame.maxY - 30 && $0.isHittable
+        }
+        guard candidates.count == 1 else { return false }
+        chosen = candidates[0]
+        return true
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+                   "Require one visible native Contacts search field")
+    return try XCTUnwrap(chosen)
+}
+
 /// Preserve the immediate switch assertion while collecting a bounded,
 /// synthetic-only follow-up state if it fails. Never tap the control again.
 @MainActor func assertSwitchImmediatelyOn(_ element: XCUIElement, in app: XCUIApplication,

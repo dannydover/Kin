@@ -34,10 +34,10 @@ final class ExistingContactPreservationUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview","import-preservation","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryL","-UIAccessibilityBoldTextEnabled","NO"]
         app.launch(); defer { app.terminate() }
-        func select(_ name: String) {
+        func select(_ name: String) throws {
             let action = app.buttons["Import from Contacts"]; reveal(action,in: app); action.tap()
             XCTAssertTrue(waitForNativeContactsPicker(app))
-            let search = app.searchFields.firstMatch; XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
+            let search = try requireNativeContactsSearch(app); search.tap()
             if search.buttons["Clear text"].exists { search.buttons["Clear text"].tap() }
             // Picker accessibility can retain earlier unfocused Search fields.
             // Type through the application so XCTest targets its focused descendant;
@@ -54,7 +54,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts[originals[index]].waitForExistence(timeout: 10)); app.staticTexts[originals[index]].tap()
             let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@","edit-person-")).firstMatch
             identities.append(edit.identifier); edit.tap()
-            select(fixtures[index].givenName)
+            try select(fixtures[index].givenName)
             XCTAssertTrue(app.staticTexts["contact-birth-preservation"].exists)
             let kind = app.buttons["contact-birth-information"]; reveal(kind,in: app); XCTAssertTrue(kind.label.contains(kinds[index]))
             if index < 2 {
@@ -64,7 +64,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
             if index == 0 {
                 app.buttons["contact-cancel"].tap()
                 XCTAssertEqual(app.textFields["First name (optional)"].value as? String,originals[index])
-                select(fixtures[index].givenName)
+                try select(fixtures[index].givenName)
                 let noPhoto = app.buttons["Continue without importing photo"]; reveal(noPhoto,in: app); noPhoto.tap()
             } else { app.buttons["contact-import"].tap() }
             XCTAssertTrue(app.navigationBars["Edit person"].waitForExistence(timeout: 5))
@@ -75,7 +75,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
             app.navigationBars.buttons["People"].tap()
         }
         app.staticTexts[fixtures[0].givenName].tap(); app.navigationBars.buttons["Edit"].tap()
-        select(fixtures[3].givenName)
+        try select(fixtures[3].givenName)
         XCTAssertFalse(app.staticTexts["contact-birth-preservation"].exists)
         app.buttons["contact-import"].tap()
         app.navigationBars["Edit person"].buttons["Save"].tap()

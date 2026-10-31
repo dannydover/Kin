@@ -712,8 +712,8 @@ final class KinUITests: XCTestCase {
             let appeared = waitForNativeContactsPicker(app)
             if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
             XCTAssertTrue(appeared)
-            let search = app.searchFields.firstMatch
-            XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); app.typeText(contactName)
+            let search = try requireNativeContactsSearch(app)
+            search.tap(); app.typeText(contactName)
             let card = app.collectionViews["Search results"].cells[contactName].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 5)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
@@ -1034,6 +1034,9 @@ final class KinUITests: XCTestCase {
         var previousFrame = CGRect.null
         var stableSince = Date()
         var scrolls = 0
+        var lastCandidateCount = 0
+        var lastVisibleCount = 0
+        var sawUnsettledFrame = false
         let stable = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             let candidates = targets().filter(finite)
             if timeout == 10 {
@@ -1043,13 +1046,15 @@ final class KinUITests: XCTestCase {
                 let frame = $0.frame
                 return frame.minY >= 145 && frame.maxY <= app.frame.maxY - 100 && $0.isHittable
             }
+            lastCandidateCount = candidates.count
+            lastVisibleCount = visible.count
             if visible.count == 1 {
                 let target = visible[0], frame = target.frame
                 if abs(frame.minX - previousFrame.minX) > 0.5 || abs(frame.minY - previousFrame.minY) > 0.5
                     || abs(frame.width - previousFrame.width) > 0.5 || abs(frame.height - previousFrame.height) > 0.5 {
-                    previousFrame = frame; stableSince = Date(); return false
+                    previousFrame = frame; stableSince = Date(); sawUnsettledFrame = true; return false
                 }
-                guard Date().timeIntervalSince(stableSince) >= 1 else { return false }
+                guard Date().timeIntervalSince(stableSince) >= 1 else { sawUnsettledFrame = true; return false }
                 chosen = target; return true
             }
             previousFrame = .null; stableSince = Date()
@@ -1065,7 +1070,20 @@ final class KinUITests: XCTestCase {
             }
             return false
         },object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [stable],timeout: timeout),.completed,
+        let result = XCTWaiter.wait(for: [stable],timeout: timeout)
+        if result != .completed {
+            // Fixed numeric/boolean values captured during the existing wait;
+            // do not issue another accessibility query or repeat an interaction.
+            let observation = "candidates=\(lastCandidateCount) visible=\(lastVisibleCount) "
+                + "scrolls=\(scrolls) unsettled=\(sawUnsettledFrame)"
+            XCTContext.runActivity(named: "Synthetic native contact selection failure state") { activity in
+                let attachment = XCTAttachment(string: observation)
+                attachment.name = "Synthetic native contact selection state"
+                attachment.lifetime = .keepAlways
+                activity.add(attachment)
+            }
+        }
+        XCTAssertEqual(result,.completed,
                        "Require one stable hittable native contact after bounded reveal")
         guard let largeContactName = chosen else { return }
         XCTAssertTrue(largeContactName.isHittable)

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Bounded aggregate host samples; retained only when the suite fails."""
+"""Bounded aggregate host samples; retained only when the suite fails.
+
+Free and inactive pages are counters, not a measure of memory pressure.
+"""
 import collections
 import json
 import os
