@@ -29,6 +29,18 @@ import SwiftUI
         try store.savePartnerLink(PartnerLink(firstID: source.id,secondID: partner.id,status: .former))
         return store
     }
+    /// Synthetic fixture for exercising filters without recreating people in UI.
+    static func filterNotebook() throws -> KinStore {
+        let store = try KinStore(inMemory: true)
+        for (name, connections): (String, Set<Connection>) in [
+            ("Alex Morgan", []), ("Jamie Patel", [.friend]), ("Robin Chen", [.family])
+        ] {
+            var person = Person(firstName: name, connections: connections)
+            person.isListed = true
+            try store.savePerson(person)
+        }
+        return store
+    }
     static func importPreservationNotebook() throws -> KinStore {
         let store = try KinStore(inMemory: true)
         for (name,birthday): (String,Birthday) in [

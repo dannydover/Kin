@@ -65,6 +65,7 @@ private struct NotebookRoot: View {
                     case "babies": store = try DevelopmentPreview.babyNotebook()
                     case "relationships": store = try DevelopmentPreview.relationshipNotebook()
                     case "import-preservation": store = try DevelopmentPreview.importPreservationNotebook()
+                    case "filter-fixture": store = try DevelopmentPreview.filterNotebook()
                     case "relationship-actions": store = try DevelopmentPreview.relationshipActionsNotebook()
                     case "relationships-empty": store = try DevelopmentPreview.relationshipNotebook(onlySource: true)
                     case "delete-failure": store = try DevelopmentPreview.relationshipNotebook(failDeletion: true)
