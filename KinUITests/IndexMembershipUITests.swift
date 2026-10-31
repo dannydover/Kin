@@ -122,7 +122,24 @@ final class IndexMembershipUITests: XCTestCase {
                 && app.cells.count == 3 && app.staticTexts["Alex Morgan"].exists
                 && !clear.exists
         },object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [restored],timeout: 5),.completed)
+        let result = XCTWaiter.wait(for: [restored],timeout: 5)
+        if result != .completed {
+            // Preserve fixed-field evidence before the original assertion stops
+            // the test; do not repeat the tap or relax the readiness bound.
+            let people = app.navigationBars["People"].exists
+            let categoryAll = (app.buttons["category-filter"].value as? String) == "All"
+            let threeCells = app.cells.count == 3
+            let alexVisible = app.staticTexts["Alex Morgan"].exists
+            let state = "people=\(people) categoryAll=\(categoryAll) threeCells=\(threeCells) "
+                + "alexVisible=\(alexVisible) clearVisible=\(clear.exists)"
+            XCTContext.runActivity(named: "Synthetic clear restoration failure state") { activity in
+                let attachment = XCTAttachment(string: state)
+                attachment.name = "Synthetic clear restoration state"
+                attachment.lifetime = .keepAlways
+                activity.add(attachment)
+            }
+        }
+        XCTAssertEqual(result,.completed)
         XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["category-filter"].value as? String,"All")
         XCTAssertEqual(app.cells.count,3)

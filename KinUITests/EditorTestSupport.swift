@@ -17,6 +17,22 @@ import XCTest
     return ready
 }
 
+/// Contacts may keep covered Search fields from earlier picker presentations in
+/// the accessibility tree. Re-resolve the active field after opening the keyboard
+/// instead of typing into the first historical match.
+@MainActor func activateNativeContactsSearch(_ app: XCUIApplication) -> XCUIElement {
+    let initial = app.searchFields.firstMatch
+    XCTAssertTrue(initial.waitForExistence(timeout: 5))
+    initial.tap()
+    let keyboard = app.keyboards.firstMatch
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+    let candidates = app.searchFields.allElementsBoundByIndex.filter {
+        $0.isHittable && $0.frame.height > 0 && $0.frame.maxY <= keyboard.frame.minY
+    }
+    XCTAssertEqual(candidates.count, 1, "Expected exactly one visible Contacts search field above the keyboard")
+    return candidates.first ?? app.searchFields["__missing_native_contacts_search__"]
+}
+
 /// Reveal the actual shared-editor control after deliberate section reordering.
 /// Lazy form rows need bounded scrolling before hierarchy uniqueness assertions.
 @MainActor func editorSwitchWrapper(_ identifier: String, in app: XCUIApplication, scrollStep: CGFloat? = nil) -> XCUIElement {
