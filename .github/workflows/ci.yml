@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [unit, ui-0, ui-1, ui-2]
+        shard: [unit, ui-0, ui-1, ui-2, ui-3]
     runs-on: xcode-27
     timeout-minutes: 50
     env:
@@ -78,7 +78,12 @@ jobs:
         run: |
           xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
           python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
-          python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json"
+          if [ "${{ matrix.shard }}" = unit ]; then
+            python3 scripts/ci-test-shards.py unit "$RUNNER_TEMP/KinTests-summary.json"
+          else
+            xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+            python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json"
+          fi
       - name: Package synthetic progress and finalized result
         if: always()
         run: python3 scripts/ci-retain.py
@@ -101,6 +106,83 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kin-cleanup-${{ matrix.shard }}
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: warn
+  # One bounded, PR-only diagnostic; results remain visible but do not alter validate.
+  ui-comparison-eight:
+    # Wait for the four-group wave to finish, even on failure, to limit contention.
+    needs: [simulator-tests]
+    if: always() && !cancelled() && github.event_name == 'pull_request' && github.head_ref == 'feature/kin-1.3-ci-comparison' && github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ui-0, ui-1, ui-2, ui-3, ui-4, ui-5, ui-6, ui-7]
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_UI_SHARD_COUNT: '8'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify test toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
+      - name: Create isolated iOS 27 simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          export KIN_CI_SIMULATOR
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          # Only the UI test runner seeds synthetic Contacts; Kin itself retains
+          # selection-only picker access without an address-book permission.
+          if [ "${{ matrix.shard }}" != "unit" ]; then
+            python3 scripts/ci-simulator.py grant
+          fi
+          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+      - name: Unit, integration, and UI regression suite (iOS 27)
+        timeout-minutes: 45
+        run: python3 scripts/ci-observe.py "${{ matrix.shard }}"
+      - name: Require finalized results with full fixture coverage
+        if: always()
+        run: |
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
+          if [ "${{ matrix.shard }}" = unit ]; then
+            python3 scripts/ci-test-shards.py unit "$RUNNER_TEMP/KinTests-summary.json"
+          else
+            xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+            python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json"
+          fi
+      - name: Package synthetic progress and finalized result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - name: Retain synthetic progress and finalized result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-comparison-eight-tests-${{ matrix.shard }}
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove this run's isolated simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
+            python3 scripts/ci-simulator.py cleanup
+          fi
+      - name: Retain synthetic cleanup outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-comparison-eight-cleanup-${{ matrix.shard }}
           path: ${{ runner.temp }}/KinTests-cleanup.json
           retention-days: 7
           if-no-files-found: warn
