@@ -60,6 +60,10 @@ def main():
                             event['elapsed']=elapsed
                             if current and event['kind'] in ('action','friend','deletion','contact_candidates','contact_candidate'):event['test']=current
                             append(out,event)
+                            # Only allowlisted test IDs and fixed status tokens reach the live log.
+                            # This records when a failure is observed, distinct from job failure.
+                            if event['kind']=='test':
+                                print(f"CI_TEST {event['event']} {event['id']} elapsed={elapsed}",flush=True)
                     if len(buf)>65536:buf=b''
                 elif proc.poll() is not None:break
             if elapsed-last>=15:append(out,{'kind':'heartbeat','elapsed':elapsed,'test':current});last=elapsed

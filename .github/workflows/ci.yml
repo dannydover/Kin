@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [unit, ui-0, ui-1, ui-2]
+        shard: [unit, ui-0, ui-1, ui-2, ui-3]
     runs-on: xcode-27
     timeout-minutes: 50
     env:
@@ -78,7 +78,12 @@ jobs:
         run: |
           xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
           python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
-          python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json"
+          if [ "${{ matrix.shard }}" = unit ]; then
+            python3 scripts/ci-test-shards.py unit "$RUNNER_TEMP/KinTests-summary.json"
+          else
+            xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+            python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json"
+          fi
       - name: Package synthetic progress and finalized result
         if: always()
         run: python3 scripts/ci-retain.py

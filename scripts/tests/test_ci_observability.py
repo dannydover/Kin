@@ -13,6 +13,27 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(m.parse('KIN_CI_DELETE after=169 completed=true SECRET',ids),{'kind':'deletion','stage':'after','length':169,'completed':True})
         self.assertEqual(m.parse('KIN_CI_CONTACT candidate=1 inside=false SECRET',ids),{'kind':'contact_candidate','index':1,'inside':False})
         self.assertEqual(m.parse('KIN_CI_CONTACT count=2 SECRET',ids),{'kind':'contact_candidates','count':2})
+    def test_live_test_events_are_allowlisted_and_do_not_emit_raw_output(self):
+        shards=load('ci-test-shards.py')
+        ident=shards.selections('ui-3')[0]
+        _,klass,method=ident.split('/')
+        with tempfile.TemporaryDirectory() as d:
+            p=pathlib.Path(d);fake=p/'xcodebuild'
+            fake.write_text('#!/bin/sh\n'
+                            + f'echo "Test Case \'-[KinUITests.{klass} {method}]\' started. PRIVATE_PAYLOAD"\n'
+                            + 'echo "KIN_CI_AUTH authorized PRIVATE_PAYLOAD"\n'
+                            + f'echo "Test Case \'-[KinUITests.{klass} {method}]\' failed. PRIVATE_PAYLOAD"\n'
+                            + 'exit 1\n')
+            fake.chmod(0o755)
+            env=dict(os.environ,PATH=d+':'+os.environ['PATH'],RUNNER_TEMP=d,
+                     KIN_CI_SIMULATOR='synthetic')
+            run=subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),'ui-3'],
+                               cwd=ROOT,env=env,capture_output=True,text=True)
+            self.assertNotEqual(run.returncode,0)
+            self.assertIn(f'CI_TEST started {ident} elapsed=',run.stdout)
+            self.assertIn(f'CI_TEST failed {ident} elapsed=',run.stdout)
+            self.assertNotIn('PRIVATE_PAYLOAD',run.stdout)
+            self.assertNotIn('PRIVATE_PAYLOAD',(p/'KinTests-progress.jsonl').read_text())
     def test_retention_distinguishes_partial_and_complete(self):
         with tempfile.TemporaryDirectory() as d:
             root=pathlib.Path(d);env=dict(os.environ,RUNNER_TEMP=d);bundle=root/'KinTests.xcresult';bundle.mkdir()
