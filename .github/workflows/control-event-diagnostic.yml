@@ -1,0 +1,31 @@
+name: Synthetic control event diagnostic (nonshipping)
+on:
+  push:
+    branches: [diagnostic/kin-control-events]
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [friend, clear]
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Capture one original synthetic test context
+        timeout-minutes: 40
+        run: python3 scripts/diagnose-control-events.py "${{ matrix.case }}"
+      - name: Retain only sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-events-${{ matrix.case }}
+          path: ${{ runner.temp }}/KinControlDiagnostic/public/
+          retention-days: 7
+          if-no-files-found: error
