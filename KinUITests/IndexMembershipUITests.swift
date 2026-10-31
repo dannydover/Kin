@@ -93,8 +93,16 @@ final class IndexMembershipUITests: XCTestCase {
         app.terminate()
     }
 
-    @MainActor private func clearSearchFixture() -> XCUIApplication {
-        let app = XCUIApplication(); launch(app)
+    @MainActor private func clearSearchFixture(usePreview: Bool = false) -> XCUIApplication {
+        let app = XCUIApplication()
+        if usePreview {
+            app.launchArguments = ["--kin-preview", "filter-fixture"]
+            app.launch()
+            XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
+            XCTAssertEqual(app.cells.count, 3)
+            return app
+        }
+        launch(app)
         for (name, category) in [("Alex Morgan", ""), ("Jamie Patel", "Friend"), ("Robin Chen", "Family")] {
             app.buttons["Add person"].tap()
             let first = app.textFields["First name (optional)"]
@@ -156,8 +164,10 @@ final class IndexMembershipUITests: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
-    @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() {
-        let app = clearSearchFixture(); defer { app.terminate() }
+    @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() { checkClearSearchRestoresPeople(usePreview: false) }
+    @MainActor func testPreviewClearSearchRestoresPeopleWithoutChangingRecords() { checkClearSearchRestoresPeople(usePreview: true) }
+    @MainActor private func checkClearSearchRestoresPeople(usePreview: Bool) {
+        let app = clearSearchFixture(usePreview: usePreview); defer { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         search.tap(); search.typeText("NoSuchFictionalPerson")
@@ -182,8 +192,10 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
-    @MainActor func testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() {
-        let app = clearSearchFixture(); defer { app.terminate() }
+    @MainActor func testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() { checkClearCombinedSearchAndCategory(usePreview: false) }
+    @MainActor func testPreviewClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() { checkClearCombinedSearchAndCategory(usePreview: true) }
+    @MainActor private func checkClearCombinedSearchAndCategory(usePreview: Bool) {
+        let app = clearSearchFixture(usePreview: usePreview); defer { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         for _ in 0..<2 {
@@ -197,8 +209,10 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
-    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() {
-        let app = clearSearchFixture(); defer { app.terminate() }
+    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: false) }
+    @MainActor func testPreviewClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: true) }
+    @MainActor private func checkClearAllPeopleSearch(usePreview: Bool) {
+        let app = clearSearchFixture(usePreview: usePreview); defer { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
