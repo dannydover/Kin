@@ -677,12 +677,13 @@ final class KinUITests: XCTestCase {
         fixtureContact.imageData = UIGraphicsImageRenderer(size: CGSize(width: 64,height: 64)).image { context in
             UIColor.systemTeal.setFill(); context.fill(CGRect(x: 0,y: 0,width: 64,height: 64))
         }.pngData()
+        var created: [CNMutableContact] = []
+        var creationUncertain = false
+        addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: fixtureStore, scope: .missingBirthday, creationUncertain: creationUncertain) }
         let create = CNSaveRequest(); create.add(fixtureContact,toContainerWithIdentifier: nil)
-        try fixtureStore.execute(create)
-        defer {
-            let remove = CNSaveRequest(); remove.delete(fixtureContact)
-            try? fixtureStore.execute(remove)
-        }
+        creationUncertain = true
+        try fixtureStore.execute(create); created.append(fixtureContact)
+        creationUncertain = false
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addEstimatedAdult(app, name: "Synthetic Existing Draft")
         app.navigationBars.buttons["Edit"].tap(); app.swipeUp(); app.buttons["Add photo"].tap()

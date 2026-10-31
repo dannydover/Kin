@@ -13,6 +13,53 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(m.parse('KIN_CI_DELETE after=169 completed=true SECRET',ids),{'kind':'deletion','stage':'after','length':169,'completed':True})
         self.assertEqual(m.parse('KIN_CI_CONTACT candidate=1 inside=false SECRET',ids),{'kind':'contact_candidate','index':1,'inside':False})
         self.assertEqual(m.parse('KIN_CI_CONTACT count=2 SECRET',ids),{'kind':'contact_candidates','count':2})
+    def test_cleanup_markers_are_fixed_and_redacted(self):
+        m=load('ci-observe.py')
+        self.assertEqual(m.parse('KIN_CI_CONTACT_CLEANUP native-full failed PRIVATE_PAYLOAD',set()),
+                         {'kind':'contact_cleanup','scope':'native-full','status':'failed'})
+        self.assertIsNone(m.parse('KIN_CI_CONTACT_CLEANUP arbitrary failed',set()))
+        self.assertIsNone(m.parse('KIN_CI_CONTACT_CLEANUP native-full unknown',set()))
+
+    def test_passing_run_requires_exact_verified_cleanup_markers(self):
+        m=load('ci-observe.py')
+        group=next(g for g in m.shards.GROUPS[1:] if any(ident in m.CLEANUP_SCOPES for ident in m.shards.selections(g)))
+        ids=m.shards.selections(group)
+        expected=sorted(m.CLEANUP_SCOPES[ident] for ident in ids if ident in m.CLEANUP_SCOPES)
+        self.assertTrue(expected)
+        with tempfile.TemporaryDirectory() as d:
+            p=pathlib.Path(d); fake=p/'xcodebuild'; env=dict(os.environ,PATH=d+':'+os.environ['PATH'],
+                RUNNER_TEMP=d,KIN_CI_SIMULATOR='synthetic')
+            def run(markers, code=0):
+                fake.write_text('#!/bin/sh\necho "KIN_CI_AUTH authorized"\n'
+                    + ''.join(f'echo "KIN_CI_CONTACT_CLEANUP {scope} {status} PRIVATE_PAYLOAD"\n' for scope,status in markers)
+                    + f'exit {code}\n')
+                fake.chmod(0o755)
+                return subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),group],
+                                      cwd=ROOT,env=env,capture_output=True,text=True)
+            verified=[(scope,'verified') for scope in expected]
+            self.assertEqual(run(verified).returncode,0)
+            for markers in (verified[:-1], verified+[verified[0]],
+                            [(expected[0],'failed')]+verified[1:],
+                            [(expected[0],'empty')]+verified[1:]):
+                with self.subTest(markers=markers):
+                    outcome=run(markers)
+                    self.assertNotEqual(outcome.returncode,0)
+                    self.assertNotIn('PRIVATE_PAYLOAD',outcome.stdout)
+            outcome=run([(expected[0],'failed')],code=65)
+            self.assertNotEqual(outcome.returncode,0)
+            self.assertIn(f'CI_CONTACT_CLEANUP {expected[0]} failed',outcome.stdout)
+            events=[json.loads(line) for line in (p/'KinTests-progress.jsonl').read_text().splitlines()]
+            self.assertIn({'kind':'contact_cleanup','scope':expected[0],
+                           'status':'failed','elapsed':events[1]['elapsed']},events)
+            self.assertNotIn('PRIVATE_PAYLOAD',(p/'KinTests-progress.jsonl').read_text())
+            for markers, state in (([], 'missing'),
+                                   ([(expected[0],'verified')]*2, 'duplicate')):
+                outcome=run(markers,code=65)
+                self.assertEqual(outcome.returncode,65)
+                self.assertIn(f'CI_CONTACT_CLEANUP_ACCOUNTING {expected[0]} {state}',outcome.stderr)
+                events=[json.loads(line) for line in (p/'KinTests-progress.jsonl').read_text().splitlines()]
+                self.assertTrue(any(e.get('kind')=='contact_cleanup_accounting' and e.get('scope')==expected[0] and e.get('status')==state for e in events))
+
     def test_live_test_events_are_allowlisted_and_do_not_emit_raw_output(self):
         shards=load('ci-test-shards.py')
         ident=shards.selections('ui-3')[0]
@@ -33,6 +80,28 @@ class ObservabilityTests(unittest.TestCase):
             self.assertIn(f'CI_TEST started {ident} elapsed=',run.stdout)
             self.assertIn(f'CI_TEST failed {ident} elapsed=',run.stdout)
             self.assertNotIn('PRIVATE_PAYLOAD',run.stdout)
+            self.assertNotIn('PRIVATE_PAYLOAD',(p/'KinTests-progress.jsonl').read_text())
+
+    def test_original_and_cleanup_failures_are_both_retained(self):
+        m=load('ci-observe.py')
+        group=next(g for g in m.shards.GROUPS[1:] if any(i in m.CLEANUP_SCOPES for i in m.shards.selections(g)))
+        ident=next(i for i in m.shards.selections(group) if i in m.CLEANUP_SCOPES)
+        _,klass,method=ident.split('/')
+        scope=m.CLEANUP_SCOPES[ident]
+        with tempfile.TemporaryDirectory() as d:
+            p=pathlib.Path(d);fake=p/'xcodebuild'
+            fake.write_text('#!/bin/sh\n'
+                            + f'echo "Test Case \'-[KinUITests.{klass} {method}]\' failed. PRIVATE_PAYLOAD"\n'
+                            + f'echo "KIN_CI_CONTACT_CLEANUP {scope} failed PRIVATE_PAYLOAD"\n'
+                            + 'exit 65\n')
+            fake.chmod(0o755)
+            env=dict(os.environ,PATH=d+':'+os.environ['PATH'],RUNNER_TEMP=d,KIN_CI_SIMULATOR='synthetic')
+            run=subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),group],
+                               cwd=ROOT,env=env,capture_output=True,text=True)
+            self.assertNotEqual(run.returncode,0)
+            events=[json.loads(line) for line in (p/'KinTests-progress.jsonl').read_text().splitlines()]
+            self.assertTrue(any(e.get('kind')=='test' and e.get('id')==ident and e.get('event')=='failed' for e in events))
+            self.assertTrue(any(e.get('kind')=='contact_cleanup' and e.get('scope')==scope and e.get('status')=='failed' for e in events))
             self.assertNotIn('PRIVATE_PAYLOAD',(p/'KinTests-progress.jsonl').read_text())
     def test_retention_distinguishes_partial_and_complete(self):
         with tempfile.TemporaryDirectory() as d:

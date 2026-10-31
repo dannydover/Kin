@@ -19,16 +19,17 @@ final class ExistingContactPreservationUITests: XCTestCase {
                       "Synthetic fixture access is required only for the isolated test runner.")
         let contacts = CNContactStore(); let suffix = String(UUID().uuidString.prefix(8))
         var fixtures: [CNMutableContact] = []
-        defer {
-            let remove = CNSaveRequest(); for contact in fixtures { remove.delete(contact) }
-            try? contacts.execute(remove)
-        }
+        var creationUncertain = false
+        // Register before creation so partially created fixtures are included.
+        addTeardownBlock { try cleanupOwnedSyntheticContacts(fixtures, store: contacts, scope: .preservation, creationUncertain: creationUncertain) }
         for index in 0..<4 {
             let card = CNMutableContact(); card.givenName = "Kin Synthetic Keep \(index) \(suffix)"
             if index == 1 { card.birthday = DateComponents(month: 3,day: 14) }
             if index == 3 { card.birthday = DateComponents(year: 1995,month: 6,day: 23) }
             let save = CNSaveRequest(); save.add(card,toContainerWithIdentifier: nil)
+            creationUncertain = true
             try contacts.execute(save); fixtures.append(card)
+            creationUncertain = false
         }
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview","import-preservation","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryL","-UIAccessibilityBoldTextEnabled","NO"]

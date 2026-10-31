@@ -20,17 +20,18 @@ final class NativeContactsTests: XCTestCase {
         let fixtures = [("Kin Synthetic Adult " + suffix,year - 30,true),
                         ("Kin Synthetic Minor " + suffix,year - 8,false)]
         var created: [CNMutableContact] = []
-        defer {
-            let request = CNSaveRequest()
-            for contact in created { request.delete(contact) }
-            try? contacts.execute(request)
-        }
+        var creationUncertain = false
+        // XCTest runs teardown even when the test records an earlier failure;
+        // a cleanup error is reported separately instead of being discarded.
+        addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: contacts, scope: .nativeFull, creationUncertain: creationUncertain) }
         for (name,birthYear,_) in fixtures {
             let contact = CNMutableContact(); contact.givenName = name
             contact.birthday = DateComponents(year: birthYear,month: 1,day: 2)
             contact.imageData = image
             let request = CNSaveRequest(); request.add(contact,toContainerWithIdentifier: nil)
+            creationUncertain = true
             try contacts.execute(request); created.append(contact)
+            creationUncertain = false
         }
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook",UUID().uuidString]
         app.launch(); defer { app.terminate() }
