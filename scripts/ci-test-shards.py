@@ -12,7 +12,7 @@ TIMINGS = ROOT / 'scripts/ci-ui-timings.json'
 
 def discover(root=ROOT):
     ids = []
-    for path in sorted((root / 'KinUITests').glob('*.swift')):
+    for path in sorted((root / 'KinUITests').rglob('*.swift')):
         text = path.read_text()
         classes = re.findall(r'\bclass\s+(\w+)\s*:\s*XCTestCase\b', text)
         methods = re.findall(r'\bfunc\s+(test\w+)\s*\(', text)

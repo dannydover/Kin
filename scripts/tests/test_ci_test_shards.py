@@ -17,6 +17,30 @@ class CoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'EditorTestSupport'):
                 shards.discover(root)
 
+    def test_nested_synchronized_ui_test_is_discovered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / 'KinUITests' / 'Nested'
+            nested.mkdir(parents=True)
+            (nested / 'NestedUITests.swift').write_text(
+                'class NestedUITests: XCTestCase { func testNested() {} }')
+            scheme = root / 'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            scheme.parent.mkdir(parents=True)
+            scheme.write_text('<Scheme><TestableReference><BuildableReference BlueprintName="KinTests"/>'
+                              '</TestableReference><TestableReference>'
+                              '<BuildableReference BlueprintName="KinUITests"/>'
+                              '</TestableReference></Scheme>')
+            self.assertEqual(shards.discover(root), ['KinUITests/NestedUITests/testNested'])
+
+    def test_nested_unrecognized_test_structure_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / 'KinUITests' / 'Nested'
+            nested.mkdir(parents=True)
+            (nested / 'Extension.swift').write_text('extension Existing { func testNew() {} }')
+            with self.assertRaisesRegex(ValueError, 'Unrecognized UI test structure'):
+                shards.discover(root)
+
     def test_all_ui_methods_appear_exactly_once(self):
         expected = shards.discover()
         selected = [item for group in shards.GROUPS[1:] for item in shards.selections(group)]
