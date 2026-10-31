@@ -2,7 +2,9 @@ name: Build and test
 on:
   pull_request:
   push:
-    branches: [main]
+    # Two standard and one randomized, first-attempt trials can point at the
+    # exact reviewed commit. These branches run the same required jobs.
+    branches: [main, diagnostic/kin13-trial-standard-a, diagnostic/kin13-trial-standard-b, diagnostic/kin13-trial-random]
 permissions:
   contents: read
 concurrency:
@@ -46,6 +48,7 @@ jobs:
     timeout-minutes: 50
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_CI_ORDER: ${{ github.ref == 'refs/heads/diagnostic/kin13-trial-random' && 'random' || 'standard' }}
     steps:
       - uses: actions/checkout@v4
         with:

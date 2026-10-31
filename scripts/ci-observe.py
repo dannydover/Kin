@@ -39,12 +39,25 @@ def parse(line, allowed):
 def append(out, record):
     out.write(json.dumps(record,separators=(',',':'))+'\n');out.flush();os.fsync(out.fileno())
 
+def test_scheme(group, order):
+    if order not in ('standard', 'random'):
+        raise ValueError('Unsupported test order')
+    # The unit target stays on the production scheme in every trial.
+    return 'KinRandomOrder' if group != 'unit' and order == 'random' else 'Kin'
+
 def main():
     group=sys.argv[1];ids=shards.selections(group);allowed=set(ids)
     result=Path(os.environ['RUNNER_TEMP'])/'KinTests.xcresult';progress=Path(os.environ['RUNNER_TEMP'])/'KinTests-progress.jsonl'
     env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','DEVELOPER_DIR','LANG','LC_ALL') if k in os.environ}
     env['NSUnbufferedIO']='YES'
-    cmd=['xcodebuild','-project','Kin.xcodeproj','-scheme','Kin','-destination','platform=iOS Simulator,id='+os.environ['KIN_CI_SIMULATOR'],'-derivedDataPath','DerivedData','-resultBundlePath',str(result),'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES','-default-test-execution-time-allowance','240','-maximum-test-execution-time-allowance','600']+['-only-testing:'+x for x in ids]+['clean','test','CODE_SIGNING_ALLOWED=NO']
+    order=os.environ.get('KIN_CI_ORDER','standard');scheme=test_scheme(group,order)
+    if scheme == 'KinRandomOrder':
+        plan_spec=importlib.util.spec_from_file_location('random_plan','scripts/ci-random-plan.py')
+        plan=importlib.util.module_from_spec(plan_spec);plan_spec.loader.exec_module(plan)
+        if plan.generate(shards.ROOT) != scheme:
+            raise ValueError('Unexpected generated scheme')
+    print(f'CI_TEST_ORDER order={order} scheme={scheme}',flush=True)
+    cmd=['xcodebuild','-project','Kin.xcodeproj','-scheme',scheme,'-destination','platform=iOS Simulator,id='+os.environ['KIN_CI_SIMULATOR'],'-derivedDataPath','DerivedData','-resultBundlePath',str(result),'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES','-default-test-execution-time-allowance','240','-maximum-test-execution-time-allowance','600']+['-only-testing:'+x for x in ids]+['clean','test','CODE_SIGNING_ALLOWED=NO']
     started=time.monotonic();current=None;authorization=set();cleanup=[];interrupted=False
     with progress.open('w') as out:
         proc=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=env,start_new_session=True,bufsize=0)

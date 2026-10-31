@@ -121,3 +121,14 @@ an explicitly identified baseline and continue observing over subsequent changes
 do not imply an improvement without a denominator and observation window.
 Confirm local/hosted toolchain differences rather than assuming parity. Physical
 QA and source-to-signed-archive provenance remain separate release requirements.
+
+The three exact diagnostic branch names in the CI trigger allow independent
+first-attempt runs at the same commit without merging the draft or replacing a
+failed run. Two use the standard scheme; the third generates a disposable
+test-only scheme from it with the same targets and a randomized Xcode test plan.
+The production scheme is not modified. The unit target and
+release build retain the production scheme in every trial. UI selection and
+identity verification are unchanged. Run the trials sequentially, retain every
+result, and compare observed test-start sequences within each shard; if the
+randomized trial does not actually change an observed sequence, report the
+order-variation criterion as unverified rather than assuming it occurred.

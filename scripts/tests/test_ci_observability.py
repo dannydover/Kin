@@ -1,8 +1,64 @@
 import importlib.util, json, os, pathlib, subprocess, sys, tempfile, unittest, zipfile
+import xml.etree.ElementTree as ET
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 def load(name):
     spec=importlib.util.spec_from_file_location('observe',ROOT/'scripts'/name); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 class ObservabilityTests(unittest.TestCase):
+    def test_order_comparison_requires_exact_identities_and_real_change(self):
+        m=load('ci-compare-order.py')
+        expected={'ui-0':['a','b','c'],'ui-1':['d','e']}
+        before={'ui-0':['a','b','c'],'ui-1':['d','e']}
+        self.assertEqual(m.compare(before,{'ui-0':['b','a','c'],'ui-1':['d','e']},expected),['ui-0'])
+        with self.assertRaises(ValueError):m.compare(before,before,expected)
+        with self.assertRaises(ValueError):m.compare(before,{'ui-0':['a','a','c'],'ui-1':['d','e']},expected)
+        with self.assertRaises(ValueError):m.compare(before,{'ui-0':['a','b','c']},expected)
+
+    def test_random_order_only_changes_ui_trial_scheme(self):
+        m=load('ci-observe.py')
+        self.assertEqual(m.test_scheme('unit','standard'),'Kin')
+        self.assertEqual(m.test_scheme('unit','random'),'Kin')
+        self.assertEqual(m.test_scheme('ui-0','standard'),'Kin')
+        self.assertEqual(m.test_scheme('ui-0','random'),'KinRandomOrder')
+        with self.assertRaises(ValueError):m.test_scheme('ui-0','unknown')
+        generator=load('ci-random-plan.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory)
+            original_path=ROOT/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            copied=root/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            copied.parent.mkdir(parents=True)
+            copied.write_bytes(original_path.read_bytes())
+            self.assertEqual(generator.generate(root),'KinRandomOrder')
+            self.assertEqual(copied.read_bytes(),original_path.read_bytes())
+            plan=json.loads((root/'KinRandomOrder.xctestplan').read_text())
+            alternate=ET.parse(root/'Kin.xcodeproj/xcshareddata/xcschemes/KinRandomOrder.xcscheme').getroot()
+            with self.assertRaises(ValueError):generator.generate(root)
+        self.assertEqual(plan['configurations'][0]['options']['testExecutionOrdering'],'random')
+        self.assertEqual({t['target']['name'] for t in plan['testTargets']},{'KinTests','KinUITests'})
+        self.assertTrue(all(t.get('parallelizable') is False for t in plan['testTargets']))
+        original=ET.parse(ROOT/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme').getroot()
+        old_test=original.find('TestAction');new_test=alternate.find('TestAction')
+        self.assertEqual(old_test.attrib,new_test.attrib)
+        refs=old_test.findall('.//BuildableReference')
+        self.assertEqual({(r.get('BlueprintIdentifier'),r.get('BlueprintName')) for r in refs},
+                         {(t['target']['identifier'],t['target']['name']) for t in plan['testTargets']})
+        self.assertEqual(new_test.find('./TestPlans/TestPlanReference').get('reference'),
+                         'container:KinRandomOrder.xctestplan')
+        for tag in ('BuildAction','LaunchAction','ProfileAction','AnalyzeAction','ArchiveAction'):
+            def canonical(node):
+                return (node.tag,tuple(sorted(node.attrib.items())),tuple(canonical(child) for child in node))
+            self.assertEqual(canonical(original.find(tag)),canonical(alternate.find(tag)))
+
+    def test_random_plan_rejects_changed_or_skipped_targets(self):
+        generator=load('ci-random-plan.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);scheme=root/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            scheme.parent.mkdir(parents=True)
+            source=(ROOT/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme').read_text()
+            scheme.write_text(source.replace('skipped="NO"','skipped="YES"',1))
+            with self.assertRaises(ValueError):generator.generate(root)
+            self.assertFalse((root/'KinRandomOrder.xctestplan').exists())
+            self.assertFalse(scheme.with_name('KinRandomOrder.xcscheme').exists())
+
     def test_allowlist_drops_private_payloads(self):
         m=load('ci-observe.py');ids={'KinUITests/KinUITests/testFoo'}
         self.assertEqual(m.parse("Test Case '-[KinUITests.KinUITests testFoo]' started. SECRET",ids),{'kind':'test','id':'KinUITests/KinUITests/testFoo','event':'started'})
