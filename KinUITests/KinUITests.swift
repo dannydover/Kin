@@ -232,15 +232,8 @@ final class KinUITests: XCTestCase {
         app.navigationBars.buttons["People"].tap(); openAllPeople(app)
         XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].exists); XCTAssertTrue(app.staticTexts["Parent 3"].exists)
     }
-    @MainActor func testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted() throws {
-        try checkParentContactsReview(useNativePicker: true)
-    }
     @MainActor func testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted() throws {
-        try checkParentContactsReview(useNativePicker: false)
-    }
-    @MainActor private func checkParentContactsReview(useNativePicker: Bool) throws {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        if !useNativePicker { app.launchArguments.append("--kin-ui-synthetic-contact") }
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-synthetic-contact"]
         app.launch(); addPerson(app,name: "Synthetic Child")
         app.staticTexts["Synthetic Child"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
         app.buttons["Create new person"].tap()
@@ -248,17 +241,8 @@ final class KinUITests: XCTestCase {
         app.buttons["gender-choice"].tap(); app.buttons["Unspecified"].tap()
         func selectSample() throws {
             app.buttons["Import from Contacts"].tap()
-            if useNativePicker {
-                XCTAssertTrue(waitForNativeContactsPicker(app))
-                guard app.cells["John Appleseed"].waitForExistence(timeout: 5) else {
-                    app.navigationBars["Contacts"].buttons["Cancel"].tap()
-                    throw XCTSkip("Use an isolated simulator with the standard synthetic Contacts sample card.")
-                }
-                app.cells["John Appleseed"].tap()
-            } else {
-                let selection = app.buttons["synthetic-contact-selection"]
-                XCTAssertTrue(selection.waitForExistence(timeout: 5)); selection.tap()
-            }
+            let selection = app.buttons["synthetic-contact-selection"]
+            XCTAssertTrue(selection.waitForExistence(timeout: 5)); selection.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
             XCTAssertFalse(app.staticTexts["contact-current-draft"].exists)
             XCTAssertFalse(app.staticTexts["Person 0"].exists)

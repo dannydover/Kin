@@ -105,15 +105,15 @@ All four chooser tests remain required. The existing `ExistingPersonChoicesTests
 | `testAddParentsDuplicateRejectionPreservesBothPeople` | Re-selecting a linked parent displays an error, retains the labeled parent/child review and permits cancellation back through the flow. |
 | `testAddParentsReverseCycleRejectionAndDraftCancellation` | A reverse parent link displays the ancestor-cycle explanation and cancellation returns to the original young profile. |
 | `testAddParentsCreatePersistNavigateAndUnlink` | Creating a Step parent and the existing biological parent survives relaunch; cancelling unlink retains the edit flow, confirmed unlink removes that relationship without deleting either person. |
-| `testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | A real Contacts review preserves explicit Unspecified gender across Cancel and re-import, saves the parent linked to the child, and keeps the parent out of People but present once in All people after relaunch. |
-| `testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | A synthetic-picker candidate executes the same shared parent review, Cancel, re-import, save, relationship and unlisted assertions. It passed in run 41323390261. It does not test the real system picker; the native original remains required pending further review. |
+| `testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | Replaced by the synthetic parent-route matrix below after both paths passed in run 41323390261 and the synthetic path passed again in 41329534941. The real native picker is no longer exercised specifically from the Add parent route; other required native selection and review/cancel journeys remain. Validate the migrated head. |
+| `testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | The required synthetic-picker test executes the same shared parent review, Cancel, re-import, save, relationship and unlisted assertions. It passed in runs 41323390261 and 41329534941. It does not test the real system picker. |
 | `testSharedEditorUnlistedRecoveryCancelAndRelaunch` | Parent and unlisted child have distinct actionable edit identities; Cancel discards a child rename, a later Save preserves its new name, and relaunch shows it in All people without adding a main-list row. |
 | `testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | Editing a partner relationship opens its editor; Cancel keeps unlink confirmation in that flow; confirmed unlink and deleting one person preserve the other after relaunch. |
 | `testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | New partner drafts default to Current; cancelling a selected existing person does not save a relationship; Former and Unknown choices are displayed on their saved relationships and Former survives relaunch. |
 | `testSharedChildReuseAndRenameAcrossBothParents` | A child reused by two parents is visible from both; renaming it updates both previews with one stable child identity and one All people entry after relaunch. |
 | `testAllPeopleOpensProfilesAndReturnsToSameIndex` | Listed and unlisted people open the selected profile and return to All people; opening a filtered result returns to the filtered index, and dismissing search restores its navigation. |
 
-Relationship, cycle and import integration tests support the underlying graph and persistence but do not prove these route-specific labels, error messages, accessibility geometry or native picker transitions. Every listed UI test remains required.
+Relationship, cycle and import integration tests support the underlying graph and persistence but do not prove these route-specific labels, error messages, accessibility geometry or native picker transitions. The mapped retained UI tests remain required.
 
 ### Relationship action UI assertion inventory
 
@@ -250,8 +250,8 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testAddParentsDuplicateRejectionPreservesBothPeople` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAddParentsReverseCycleRejectionAndDraftCancellation` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAddParentsCreatePersistNavigateAndUnlink` | app UI, integration | Retain; assertions mapped above. |
-| `KinUITests.testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | native, app UI, integration | Retain; assertions mapped above. |
-| `KinUITests.testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | app UI, integration | Passed once in 41323390261; native original retained pending review. |
+| `KinUITests.testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | native, app UI, integration | Replaced by the synthetic parent-route test; native Add-parent picker presentation is no longer covered. Validate the migrated head. |
+| `KinUITests.testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | app UI, integration | Passed in 41323390261 and 41329534941; remains required. |
 | `KinUITests.testSharedEditorUnlistedRecoveryCancelAndRelaunch` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | app UI, integration | Retain; assertions mapped above. |
@@ -296,6 +296,6 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 ## Release gate and acceptance
 
 - Keep the mapped UI tests and `validate` required; migrate an old assertion only after its replacement is recorded and validated. No skip, retry-to-green, or passing status for a failed native journey.
-- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The import and unnamed-review migrations remove seven repeated native picker invocations; the preservation migration removes five more while retaining real native journeys, with the unnamed-identity and yearless-payload tradeoffs documented above. The complete map and remaining suite composition still require review.
+- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The import and unnamed-review migrations remove seven repeated native picker invocations; the preservation migration removes five more; the parent-route migration removes two more. Real native journeys remain, with the unnamed-identity, yearless-payload and native Add-parent-route tradeoffs documented above. The complete map and remaining suite composition still require review.
 - Validate lower-level replacements first, then any UI change on the exact commit. Exercise bounded repeated full suites and relevant order variation; report every failure and retain artifacts. A single green run is not a reliability guarantee.
 - Historical native focus, picker readiness, Friend switch, Clear restoration and accessibility query stalls remain unresolved. Resource free/inactive counters are not a direct memory-pressure measurement.
