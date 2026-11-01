@@ -1,7 +1,5 @@
 import XCTest
-import Contacts
-
-/// Test runner creates only uniquely named synthetic contacts; app uses selection-only access.
+/// Fixed in-memory Contacts snapshots exercise existing-record review without system data.
 final class ExistingContactPreservationUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     @MainActor private func reveal(_ item: XCUIElement,in app: XCUIApplication) {
@@ -12,56 +10,17 @@ final class ExistingContactPreservationUITests: XCTestCase {
                 .press(forDuration: 0.1,thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.55)))
         }
     }
-    @MainActor func testExistingBirthInformationSurvivesMissingAndYearlessContactsReview() throws {
-        try verifyPreservation(useNativePicker: true)
-    }
     @MainActor func testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview() throws {
-        try verifyPreservation(useNativePicker: false)
-    }
-    @MainActor private func verifyPreservation(useNativePicker: Bool) throws {
-        #if targetEnvironment(simulator)
         executionTimeAllowance = 600
-        if useNativePicker {
-            try XCTUnwrap(CNContactStore.authorizationStatus(for: .contacts) == .authorized ? true : nil,
-                          "Synthetic fixture access is required only for the isolated test runner.")
-        }
-        let contacts = CNContactStore(); let suffix = useNativePicker ? " " + String(UUID().uuidString.prefix(8)) : ""
-        var fixtures: [CNMutableContact] = []
-        var creationUncertain = false
-        // Register before creation so partially created fixtures are included.
-        if useNativePicker {
-            addTeardownBlock { try cleanupOwnedSyntheticContacts(fixtures, store: contacts, scope: .preservation, creationUncertain: creationUncertain) }
-        }
-        for index in 0..<4 {
-            let card = CNMutableContact(); card.givenName = "Kin Synthetic Keep \(index)\(suffix)"
-            if index == 1 { card.birthday = DateComponents(month: 3,day: 14) }
-            if index == 3 { card.birthday = DateComponents(year: 1995,month: 6,day: 23) }
-            if useNativePicker {
-                let save = CNSaveRequest(); save.add(card,toContainerWithIdentifier: nil)
-                creationUncertain = true
-                try contacts.execute(save)
-                creationUncertain = false
-            }
-            fixtures.append(card)
-        }
+        let fixtures = (0..<4).map { "Kin Synthetic Keep \($0)" }
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-preview","import-preservation","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryL","-UIAccessibilityBoldTextEnabled","NO"]
-        if !useNativePicker { app.launchArguments.append("--kin-ui-preservation-contacts") }
+        app.launchArguments = ["--kin-preview","import-preservation","--kin-ui-preservation-contacts","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryL","-UIAccessibilityBoldTextEnabled","NO"]
         app.launch(); defer { app.terminate() }
         func select(_ name: String) throws {
             let action = app.buttons["Import from Contacts"]; reveal(action,in: app); action.tap()
-            if useNativePicker {
-                XCTAssertTrue(waitForNativeContactsPicker(app))
-                let search = try requireNativeContactsSearch(app); search.tap()
-                if search.buttons["Clear text"].exists { search.buttons["Clear text"].tap() }
-                app.typeText(name)
-                let card = app.collectionViews["Search results"].cells[name].firstMatch
-                XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
-            } else {
-                let index = try XCTUnwrap(fixtures.firstIndex { $0.givenName == name })
-                let card = app.buttons["synthetic-preservation-contact-\(index)"]
-                XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
-            }
+            let index = try XCTUnwrap(fixtures.firstIndex(of: name))
+            let card = app.buttons["synthetic-preservation-contact-\(index)"]
+            XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         }
         let originals = ["Synthetic Exact","Synthetic Estimate","Synthetic Unknown"]
@@ -71,7 +30,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts[originals[index]].waitForExistence(timeout: 10)); app.staticTexts[originals[index]].tap()
             let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@","edit-person-")).firstMatch
             identities.append(edit.identifier); edit.tap()
-            try select(fixtures[index].givenName)
+            try select(fixtures[index])
             XCTAssertTrue(app.staticTexts["contact-birth-preservation"].exists)
             let kind = app.buttons["contact-birth-information"]; reveal(kind,in: app); XCTAssertTrue(kind.label.contains(kinds[index]))
             if index < 2 {
@@ -81,27 +40,24 @@ final class ExistingContactPreservationUITests: XCTestCase {
             if index == 0 {
                 app.buttons["contact-cancel"].tap()
                 XCTAssertEqual(app.textFields["First name (optional)"].value as? String,originals[index])
-                try select(fixtures[index].givenName)
+                try select(fixtures[index])
                 let noPhoto = app.buttons["Continue without importing photo"]; reveal(noPhoto,in: app); noPhoto.tap()
             } else { app.buttons["contact-import"].tap() }
             XCTAssertTrue(app.navigationBars["Edit person"].waitForExistence(timeout: 5))
             let kept = app.buttons["birth-information"]; reveal(kept,in: app); XCTAssertTrue(kept.label.contains(kinds[index]))
             app.navigationBars["Edit person"].buttons["Save"].tap()
-            XCTAssertTrue(app.navigationBars[fixtures[index].givenName].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.navigationBars[fixtures[index]].waitForExistence(timeout: 5))
             XCTAssertTrue(app.buttons[identities[index]].exists)
             app.navigationBars.buttons["People"].tap()
         }
-        app.staticTexts[fixtures[0].givenName].tap(); app.navigationBars.buttons["Edit"].tap()
-        try select(fixtures[3].givenName)
+        app.staticTexts[fixtures[0]].tap(); app.navigationBars.buttons["Edit"].tap()
+        try select(fixtures[3])
         XCTAssertFalse(app.staticTexts["contact-birth-preservation"].exists)
         app.buttons["contact-import"].tap()
         app.navigationBars["Edit person"].buttons["Save"].tap()
-        XCTAssertTrue(app.navigationBars[fixtures[3].givenName].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars[fixtures[3]].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons[identities[0]].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@","Birthday:","1995")).firstMatch.exists)
         app.navigationBars.buttons["People"].tap(); XCTAssertEqual(app.cells.count,3)
-        #else
-        throw XCTSkip("Synthetic Contacts fixtures must run on an isolated simulator.")
-        #endif
     }
 }
