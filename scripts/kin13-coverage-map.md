@@ -11,13 +11,13 @@ Baseline: 59 UI test methods and the existing KinTests suite. The import-route m
 | Picker delivers a real synthetic Contacts selection; edited review saves to profile and survives relaunch | Native end-to-end: `NativeContactsTests.testNativeFullBirthdayAndPhotoImportForAdultAndMinor` and `KinUITests.testNativeImportSavesReviewedName` | Retained; the latter runs the direct-entry path once instead of invoking the same system picker four times. All four app routes retain their review, save, relaunch, relationship and list assertions in the synthetic test. |
 
 
-## Next candidate: unnamed draft review and cancellation
+## Unnamed draft review and cancellation
 
 | Existing assertion or behavior | Candidate or retained layer | Status |
 |---|---|---|
 | Every creation route opens review without a current-draft label or temporary Person/Parent/Child/Partner identity; the selected synthetic name is shown | App UI: `testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | Passed once in run 41240567374 with the original assertions; exact migrated head still needs full validation. |
 | Cancelling review leaves the draft blank, does not create a person, and does not consume the next reference | The same synthetic app-UI candidate, plus the existing store cancellation and reference-identity integration tests | Candidate passed once in run 41240567374; exact migrated head still needs validation. |
-| Native picker actually selects a Contacts card and hands it to the review flow | `testNativeUnnamedDraftReviewOmitsTemporaryIdentity` and other native Contacts tests | One native direct-entry review remains; the synthetic test retains all four route assertions. Three repeated native invocations are removed. |
+| Native picker actually selects a Contacts card and hands it to the review flow | `testNativeImportSavesReviewedName`, `testContactMissingBirthdayPromptCancellationAndEstimatedImport`, and `NativeContactsTests` | These required native journeys retain actual selection, review, saving and cancellation. The native unnamed-draft duplicate is removed after the synthetic four-route test passed; the exact unnamed-draft identity presentation is now asserted through the synthetic adapter rather than a real picker. Validate the migrated head. |
 
 
 ## Reviewed deletion and filtering coverage (no UI retirement)
@@ -36,7 +36,7 @@ These lower-level tests do not exercise the UI control wiring. They are not grou
 
 The three original deletion UI tests remain required while the candidates are validated. This inventory makes their distinct contracts explicit.
 
-Two split-test candidates use separate persisted synthetic notebooks: one exercises confirmation Cancel, sheet dismissal and interruption; the other confirms deletion and verifies listed and hidden people remain absent after relaunch. Their assertions and synthetic scope/confirmation screenshots map to the compound original below. Both candidates and the original passed in run 41277476779; the overall run failed a different Clear UI query (196/197 passed, zero skips). The original remains required pending review of the tradeoff: the two candidates took about 123 seconds combined versus 114 seconds for the original on separate shards in that run. The split is intended to isolate independent user journeys within the existing per-test allowance, not to establish the cause of the four-minute timeout in run 41275059980 or to replace lower-level deletion and failure tests.
+Two split-test candidates use separate persisted synthetic notebooks: one exercises confirmation Cancel, sheet dismissal and interruption; the other confirms deletion and verifies listed and hidden people remain absent after relaunch. Their assertions and synthetic scope/confirmation screenshots map to the compound original below. Both candidates and the original passed in runs 41277476779 and 41323390261; the earlier run failed a different Clear UI query (196/197 passed, zero skips), while the latter passed 198/198. The original remains required pending review of the tradeoff: the two candidates took about 123 seconds combined versus 114 seconds for the original on separate shards in the earlier run. The split is intended to isolate independent user journeys within the existing per-test allowance, not to establish the cause of the four-minute timeout in run 41275059980 or to replace lower-level deletion and failure tests.
 
 | Existing assertion | Required owner | Supporting lower-level coverage |
 |---|---|---|
@@ -106,7 +106,7 @@ All four chooser tests remain required. The existing `ExistingPersonChoicesTests
 | `testAddParentsReverseCycleRejectionAndDraftCancellation` | A reverse parent link displays the ancestor-cycle explanation and cancellation returns to the original young profile. |
 | `testAddParentsCreatePersistNavigateAndUnlink` | Creating a Step parent and the existing biological parent survives relaunch; cancelling unlink retains the edit flow, confirmed unlink removes that relationship without deleting either person. |
 | `testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | A real Contacts review preserves explicit Unspecified gender across Cancel and re-import, saves the parent linked to the child, and keeps the parent out of People but present once in All people after relaunch. |
-| `testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | A new synthetic-picker candidate executes the same shared parent review, Cancel, re-import, save, relationship and unlisted assertions. It does not test the real system picker; the native original remains required until the candidate is validated and reviewed. |
+| `testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | A synthetic-picker candidate executes the same shared parent review, Cancel, re-import, save, relationship and unlisted assertions. It passed in run 41323390261. It does not test the real system picker; the native original remains required pending further review. |
 | `testSharedEditorUnlistedRecoveryCancelAndRelaunch` | Parent and unlisted child have distinct actionable edit identities; Cancel discards a child rename, a later Save preserves its new name, and relaunch shows it in All people without adding a main-list row. |
 | `testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | Editing a partner relationship opens its editor; Cancel keeps unlink confirmation in that flow; confirmed unlink and deleting one person preserve the other after relaunch. |
 | `testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | New partner drafts default to Current; cancelling a selected existing person does not save a relationship; Former and Unknown choices are displayed on their saved relationships and Former survives relaunch. |
@@ -222,8 +222,8 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | Existing UI test | Candidate lowest layers to review | Decision |
 |---|---|---|
 | `DeleteAllPeopleUITests.testConfirmationCancelDismissInterruptionAndDeletionIncludeHiddenPeople` | app UI, integration | Retain; assertions mapped above. |
-| `DeleteAllPeopleUITests.testCandidateDeletionCancelDismissAndInterruptedConfirmation` | app UI, integration | Passed once in 41277476779; compound original retained. |
-| `DeleteAllPeopleUITests.testCandidateDeletionPersistsForListedAndHiddenPeople` | app UI, integration | Passed once in 41277476779; compound original retained. |
+| `DeleteAllPeopleUITests.testCandidateDeletionCancelDismissAndInterruptedConfirmation` | app UI, integration | Passed in 41277476779 and 41323390261; compound original retained. |
+| `DeleteAllPeopleUITests.testCandidateDeletionPersistsForListedAndHiddenPeople` | app UI, integration | Passed in 41277476779 and 41323390261; compound original retained. |
 | `DeleteAllPeopleUITests.testEmptyDeletionAtLargestTextHasSafeDisabledActionAndCancel` | app UI, integration | Retain; assertions mapped above. |
 | `DeleteAllPeopleUITests.testFailedDeletionRetainsPeopleAndNeverShowsSuccess` | app UI, integration | Retain; assertions mapped above. |
 | `ExistingContactPreservationUITests.testExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | native, app UI, integration | Replaced by the synthetic review matrix and payload-conversion test above; validate the migrated head. Real picker journeys remain required. |
@@ -241,9 +241,9 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `IndexMembershipUITests.testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated in-memory fixture and retains all shared assertions. The migrated head needs validation. |
 | `IndexMembershipUITests.testClearSearchAndFiltersOnEmptyNotebookAtLargestText` | app UI, integration, unit | Retain; assertions mapped above. |
 | `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | app UI, integration | Retain; assertions mapped above. |
-| `KinUITests.testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | app UI, integration | Passed once in run 41240567374; all four unnamed-draft routes remain required. The one-route native smoke also remains required. |
+| `KinUITests.testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | app UI, integration | Passed in run 41277476779; all four unnamed-draft routes remain required. Other real-picker review and cancellation journeys remain required. |
 | `KinUITests.testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow` | native, app UI, integration | Replaced by the synthetic four-route test and one native direct-route smoke above; validate the migrated head. |
-| `KinUITests.testNativeUnnamedDraftReviewOmitsTemporaryIdentity` | native, app UI | One real Contacts review remains required. |
+| `KinUITests.testNativeUnnamedDraftReviewOmitsTemporaryIdentity` | native, app UI | Replaced by the synthetic four-route assertions and retained native review/cancel journeys; validate the migrated head. |
 | `KinUITests.testRelationshipRoleLabelsFromBothDirectionsAndForPartners` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testRelationshipRoleLabelsWrapLongNamesAtLargestDynamicType` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAddParentsReuseAndCancel` | app UI, integration | Retain; assertions mapped above. |
@@ -251,7 +251,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testAddParentsReverseCycleRejectionAndDraftCancellation` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAddParentsCreatePersistNavigateAndUnlink` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | native, app UI, integration | Retain; assertions mapped above. |
-| `KinUITests.testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | app UI, integration | Unvalidated candidate; native original retained. |
+| `KinUITests.testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | app UI, integration | Passed once in 41323390261; native original retained pending review. |
 | `KinUITests.testSharedEditorUnlistedRecoveryCancelAndRelaunch` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | app UI, integration | Retain; assertions mapped above. |
@@ -296,6 +296,6 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 ## Release gate and acceptance
 
 - Keep the mapped UI tests and `validate` required; migrate an old assertion only after its replacement is recorded and validated. No skip, retry-to-green, or passing status for a failed native journey.
-- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The import and unnamed-review migrations remove six repeated native picker invocations; the preservation migration removes five more while retaining real native journeys, with the yearless-payload tradeoff documented above. Other membership and cadence still require assertion-level review.
+- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The import and unnamed-review migrations remove seven repeated native picker invocations; the preservation migration removes five more while retaining real native journeys, with the unnamed-identity and yearless-payload tradeoffs documented above. The complete map and remaining suite composition still require review.
 - Validate lower-level replacements first, then any UI change on the exact commit. Exercise bounded repeated full suites and relevant order variation; report every failure and retain artifacts. A single green run is not a reliability guarantee.
 - Historical native focus, picker readiness, Friend switch, Clear restoration and accessibility query stalls remain unresolved. Resource free/inactive counters are not a direct memory-pressure measurement.
