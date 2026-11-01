@@ -1,36 +1,6 @@
 import Contacts
 import XCTest
 
-/// Test-only cleanup primitive. It only receives identifiers owned by the test.
-enum SyntheticContactsCleanupError: Error, Equatable {
-    case invalidIdentifiers
-    case remainingOwnedContacts
-    case cleanupFailed
-    case creationUncertain
-}
-
-func verifyOwnedFixtureCleanup<Item>(
-    _ items: [Item], identifier: (Item) -> String,
-    remove: ([Item]) throws -> Void,
-    remainingIdentifiers: ([String]) throws -> [String], creationUncertain: Bool = false
-) throws {
-    if items.isEmpty {
-        if creationUncertain { throw SyntheticContactsCleanupError.creationUncertain }
-        return
-    }
-    let ids = items.map(identifier)
-    guard ids.allSatisfy({ !$0.isEmpty }), Set(ids).count == ids.count else {
-        throw SyntheticContactsCleanupError.invalidIdentifiers
-    }
-    try remove(items)
-    // The query is constrained to identifiers created by this test. Never delete
-    // or inspect unrelated Contacts and fail if any owned fixture remains.
-    guard try remainingIdentifiers(ids).isEmpty else {
-        throw SyntheticContactsCleanupError.remainingOwnedContacts
-    }
-    if creationUncertain { throw SyntheticContactsCleanupError.creationUncertain }
-}
-
 enum SyntheticContactsCleanupScope: String {
     case nativeFull = "native-full"
     case preservation = "preservation"

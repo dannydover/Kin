@@ -4,6 +4,18 @@ ROOT=pathlib.Path(__file__).resolve().parents[2]
 def load(name):
     spec=importlib.util.spec_from_file_location('observe',ROOT/'scripts'/name); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 class ObservabilityTests(unittest.TestCase):
+    def test_real_contact_fixture_journeys_keep_distinct_required_cleanup_scopes(self):
+        observer = load('ci-observe.py')
+        required = {
+            'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdultAndMinor': 'native-full',
+            'KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport': 'missing-birthday',
+        }
+        discovered = set(observer.shards.discover())
+        self.assertTrue(set(required).issubset(discovered))
+        for ident, scope in required.items():
+            self.assertEqual(observer.CLEANUP_SCOPES.get(ident), scope)
+        self.assertEqual(len(set(required.values())), len(required))
+
     def test_release_guard_rejects_synthetic_contacts_adapter_markers(self):
         release = load('check-release.py')
         for marker in (b'--kin-ui-synthetic-contact', b'synthetic-contact-selection', b'--kin-ui-preservation-contacts', b'synthetic-preservation-contact-'):

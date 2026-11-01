@@ -17,7 +17,17 @@ class DevIdentityTests(unittest.TestCase):
         original = project(subprocess.check_output(['git', 'show', f'{BASE}:{path}'], cwd=ROOT))
         current = project((ROOT / path).read_bytes())
         for key, value in original.items():
-            if value['isa'] == 'XCConfigurationList':
+            if key == '3B43AC822FC54638005B9DB1':
+                # The UI test target explicitly includes a source already inside
+                # the synchronized KinTests tree. App Sources remains at baseline.
+                expected = json.loads(json.dumps(value))
+                expected['files'].append('A01300000000000000000002')
+                self.assertEqual(current[key], expected, key)
+            elif key == '3B43AC662FC54637005B9DB1':
+                expected = json.loads(json.dumps(value))
+                expected['children'].insert(0, 'A01300000000000000000003')
+                self.assertEqual(current[key], expected, key)
+            elif value['isa'] == 'XCConfigurationList':
                 self.assertEqual(current[key]['buildConfigurations'][:2], value['buildConfigurations'])
                 for field in ('defaultConfigurationName', 'defaultConfigurationIsVisible'):
                     self.assertEqual(current[key].get(field), value.get(field))
@@ -30,6 +40,11 @@ class DevIdentityTests(unittest.TestCase):
                 self.assertEqual(current[key], expected, key)
             else:
                 self.assertEqual(current[key], value, key)
+        source = current['A01300000000000000000003']
+        self.assertEqual(source, {'isa': 'PBXFileReference', 'lastKnownFileType': 'sourcecode.swift',
+                                  'path': 'KinTests/Shared/SyntheticContactsCleanup.swift', 'sourceTree': '<group>'})
+        for build_id in ('A01300000000000000000002',):
+            self.assertEqual(current[build_id], {'isa': 'PBXBuildFile', 'fileRef': 'A01300000000000000000003'})
         changed = subprocess.check_output(['git', 'diff', BASE, '--name-only', '--', 'Kin/Core/NotebookProtection.swift', 'Kin/PrivacyInfo.xcprivacy'], cwd=ROOT).decode().splitlines()
         # Post-v1 UI and explicit list membership are authorized on this branch.
         # The approved icon selector changes; protection, schema, privacy and bundle identity stay frozen.
