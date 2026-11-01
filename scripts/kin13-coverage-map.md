@@ -36,7 +36,7 @@ These lower-level tests do not exercise the UI control wiring. They are not grou
 
 The three original deletion UI tests remain required while the candidates are validated. This inventory makes their distinct contracts explicit.
 
-Two local split-test candidates use separate persisted synthetic notebooks: one exercises confirmation Cancel, sheet dismissal and interruption; the other confirms deletion and verifies listed and hidden people remain absent after relaunch. Their assertions and synthetic scope/confirmation screenshots map to the compound original below. They have not yet been run; the original remains required. The split is intended to isolate independent user journeys within the existing per-test allowance, not to establish the cause of the four-minute timeout in run 41275059980 or to replace lower-level deletion and failure tests.
+Two split-test candidates use separate persisted synthetic notebooks: one exercises confirmation Cancel, sheet dismissal and interruption; the other confirms deletion and verifies listed and hidden people remain absent after relaunch. Their assertions and synthetic scope/confirmation screenshots map to the compound original below. Both candidates and the original passed in run 41277476779; the overall run failed a different Clear UI query (196/197 passed, zero skips). The original remains required pending review of the tradeoff: the two candidates took about 123 seconds combined versus 114 seconds for the original on separate shards in that run. The split is intended to isolate independent user journeys within the existing per-test allowance, not to establish the cause of the four-minute timeout in run 41275059980 or to replace lower-level deletion and failure tests.
 
 | Existing assertion | Required owner | Supporting lower-level coverage |
 |---|---|---|
@@ -78,6 +78,8 @@ These rows identify supported lower-level coverage and the UI assertions it does
 
 The separate `NativeContactsTests.testNativeFullBirthdayAndPhotoImportForAdultAndMinor` remains required: it selects adult and minor synthetic Contacts cards, checks the native birthday/photo review, edited gender, the Friend control, age-appropriate photo behavior, and saved birthday after relaunch. Its two selections exercise distinct eligibility outcomes but also repeat picker setup; lower-level photo eligibility tests alone do not establish the native payload, preview, rendered control, or saved UI journey.
 
+Its retained assertions include a full-birthday explanation for each native card; the adult's explicit gender survives a subsequent name edit; an actionable Friend switch changes to on; the adult photo preview exists while the minor's is absent; exact birthday remains selectable; the saved birthday survives relaunch; and the editor offers Change photo only for the eligible adult. Synthetic preview screenshots are retained. The native picker search and exact selected result are also asserted. Lower-level age and photo tests cannot prove those platform and rendered outcomes.
+
 The retained `KinUITests.testContactMissingBirthdayPromptCancellationAndEstimatedImport` checks a separate real-system journey: a saved estimated-age adult receives a Photos image; a missing-birthday Contacts review shows the current draft and both exact/unknown choices; Cancel restores the draft; explicitly choosing Unknown followed by an unsaved estimated-age edit and Cancel preserves the earlier saved age; a subsequent import with a confirmed estimate saves and survives relaunch. Its real Photos picker, native Contacts selection, visible age controls and cancel/save navigation are not covered by the synthetic preservation candidate. The `ExistingContactBirthPreservationTests` and `ContactPhotoReviewTests` cases support the underlying age, opt-in and cancellation rules, but do not replace these UI assertions. This journey remains required.
 
 The shared native-search helper's failure-only diagnostic records the last observed total search fields, in-bounds fields, and hittable in-bounds fields. It records no names or coordinates and performs no new accessibility query after failure. This can distinguish some failed uniqueness, bounds and hit-testing preconditions; it does not establish why a native search field was inaccessible or repair the failure. The existing five-second assertion and exact-result checks remain unchanged.
@@ -92,6 +94,26 @@ All four chooser tests remain required. The existing `ExistingPersonChoicesTests
 | Duplicate names display distinct notebook references; empty search has no choices and clearing it restores them; Back and Cancel retain Step detail without saving; saving the selected identity leads to one matching relationship and edit control, with five people in All people | `testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` |
 | Empty chooser has no selectable people, Back preserves Former partner status, and Cancel creates no relationship | `testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` |
 | Synthetic screenshots capture options, selectable person, empty search and the accessibility-size chooser; the test also checks the synthetic fixture and key controls | `testSyntheticRelationshipReviewScreenshots` |
+
+### Parent and relationship role UI assertion inventory
+
+| Retained UI test | Assertions that remain at the UI layer |
+|---|---|
+| `testRelationshipRoleLabelsFromBothDirectionsAndForPartners` | Adding and editing from both profiles labels parent and child in order; partner labels are symmetric and do not expose parent/child rows. |
+| `testRelationshipRoleLabelsWrapLongNamesAtLargestDynamicType` | Long parent and child labels have the correct full accessibility text, wrap into visible hittable rows, and expose usable Save/Cancel; cancelling does not add the relationship. |
+| `testAddParentsReuseAndCancel` | A young person has no Add child/partner controls; cancelling an existing-parent draft makes no relationship, while saving the selected biological parent shows its role. |
+| `testAddParentsDuplicateRejectionPreservesBothPeople` | Re-selecting a linked parent displays an error, retains the labeled parent/child review and permits cancellation back through the flow. |
+| `testAddParentsReverseCycleRejectionAndDraftCancellation` | A reverse parent link displays the ancestor-cycle explanation and cancellation returns to the original young profile. |
+| `testAddParentsCreatePersistNavigateAndUnlink` | Creating a Step parent and the existing biological parent survives relaunch; cancelling unlink retains the edit flow, confirmed unlink removes that relationship without deleting either person. |
+| `testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | A real Contacts review preserves explicit Unspecified gender across Cancel and re-import, saves the parent linked to the child, and keeps the parent out of People but present once in All people after relaunch. |
+| `testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | A new synthetic-picker candidate executes the same shared parent review, Cancel, re-import, save, relationship and unlisted assertions. It does not test the real system picker; the native original remains required until the candidate is validated and reviewed. |
+| `testSharedEditorUnlistedRecoveryCancelAndRelaunch` | Parent and unlisted child have distinct actionable edit identities; Cancel discards a child rename, a later Save preserves its new name, and relaunch shows it in All people without adding a main-list row. |
+| `testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | Editing a partner relationship opens its editor; Cancel keeps unlink confirmation in that flow; confirmed unlink and deleting one person preserve the other after relaunch. |
+| `testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | New partner drafts default to Current; cancelling a selected existing person does not save a relationship; Former and Unknown choices are displayed on their saved relationships and Former survives relaunch. |
+| `testSharedChildReuseAndRenameAcrossBothParents` | A child reused by two parents is visible from both; renaming it updates both previews with one stable child identity and one All people entry after relaunch. |
+| `testAllPeopleOpensProfilesAndReturnsToSameIndex` | Listed and unlisted people open the selected profile and return to All people; opening a filtered result returns to the filtered index, and dismissing search restores its navigation. |
+
+Relationship, cycle and import integration tests support the underlying graph and persistence but do not prove these route-specific labels, error messages, accessibility geometry or native picker transitions. Every listed UI test remains required.
 
 ### Relationship action UI assertion inventory
 
@@ -127,6 +149,34 @@ No accessibility, visible-copy, or layout test is retired by this map.
 | `verifyCancelBackground`, standard and largest text | Settled toolbar geometry contains one rendered Cancel label with horizontal inset, a minimum 44-point hit target, no Save overlap, and both controls hittable; Cancel returns to the profile. | Model tests cannot prove native toolbar layout or rendered glyph bounds. |
 | `verifyFeatureReferences`, standard and largest text | Guidance appears and remains hittable in bounds as one exact accessibility sentence without raw styling markers; navigation returns to the profile. | No model test proves accessibility grouping and rendered layout. |
 
+### Startup, empty-state and editor UI assertion inventory
+
+| Retained UI test | Assertions that remain at the UI layer |
+|---|---|
+| `testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | A normal isolated-simulator launch without test-store flags opens the notebook, saves a synthetic person, and shows that person and profile after cold relaunch without a locked-notebook message. |
+| `testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | At both sizes the policy link is hittable, its bottom is within the viewport, it is at least 44 points high and follows the developer section; synthetic geometry and screenshots are retained. |
+| `testIllustratedEmptyStateMenuAndSearchRecovery` | Empty-state copy and first-person action, menu/About navigation, unlisted-person recovery through All people, no-match search and the empty main-list state after relaunch are visible. |
+| `testBlankNameEditsCancelAndLaterNamingPreserveEntry` | Cancel retains a named entry; saving whitespace yields the stable unnamed entry; naming it after relaunch opens the renamed profile. |
+| `testEmptyStateAtLargestDynamicType` | Menu, Add person and first-person actions remain hittable at largest text, and the first-person action opens the editor. |
+| `testFormSurfacesAndDestructiveControls` | Delete-person confirmation offers a hittable Cancel; the edit form's optional field is hittable and Cancel returns to the profile; synthetic surface screenshots are retained. |
+
+Storage and model tests support identity and persistence rules but do not establish these real launch, accessibility, layout and navigation outcomes. All listed UI tests remain required.
+
+### Age, photo and import-review UI assertion inventory
+
+| Retained UI test | Assertions that remain at the UI layer |
+|---|---|
+| `testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot` | A young profile retains Parents while hiding partner/child sections and add actions; changing age to Unknown exposes those add actions. |
+| `testEstimatedAgeWheelBoundariesAndCancel` | The wheel starts at 80, accepts boundary ages 120 and 0, and Cancel preserves the previously saved estimate. |
+| `testEstimatedAgeWheelAtLargestDynamicType` | The age control and native wheel are reachable at largest text, Done and Cancel are hittable, and the wheel starts at 80. |
+| `testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto` | A real Photos selection can be saved; changing to Unknown offers a visible Cancel; cancellation preserves the saved estimated age and photo after relaunch. |
+| `testChildSurnameIsEditableClearableAndNeverReapplied` | The suggested child surname can be cleared, the unnamed child and parentage remain visible, and the cleared surname is not reapplied when editing. |
+| `testImportReviewRetainsFailedEditsAndAccessibilityHelpersWrap` | A native import review retains overlong input after failed Save; a verified replacement can be saved once; at largest text, review actions and helper copy remain reachable and wrap. |
+| `testCompactUnknownAgeWithLongNamesAtStandardAndAccessibilitySizes` | Unknown-age labels fit their bounds at standard and accessibility sizes while the related parent remains visible. |
+| `testBabyMonthLabelsFitIndexAndDetail` | Expected infant age labels fit the index and detail; the test also checks the specified month labels are absent. |
+
+Age, contact-import and photo-gate tests support the calculations and persistence but do not prove native controls, rendered layout, review correction, or real Photos selection. These UI tests remain required.
+
 
 
 
@@ -155,6 +205,8 @@ The in-memory fixture does not prove disk persistence. No failed wait is convert
 
 The remaining Clear scenarios and their record-preservation assertions are mapped immediately above. No membership or filtering UI assertion is retired by these rows.
 
+`SyntheticContactsCleanupTests.testOwnedFixtureCleanupHandlesEmptyPartialAndFailures` remains a required integration-level harness check: it verifies empty and partially created fixtures, owned-identifier deletion and verification, uncertain creation, duplicate or empty identifiers, delete/query errors, and remaining owned contacts. Its synthetic identifiers do not access the address book.
+
 ## Filter-state extraction candidate
 
 `PeopleFilterState` holds the exact display scope, query, category, and search-presentation state previously owned individually by `ContentView`. `PeopleFilterStateTests` checks Clear across 36 input combinations, idempotence, listed/hidden results and unchanged people, scope switching while preserving search presentation, Search all behavior, and whitespace handling. The view still wires the real Clear button, menu, search field and keyboard; the existing UI tests remain required until the refactor and mapped replacements pass hosted validation. The extracted state does not test SwiftUI animation, accessibility snapshots, or native controls.
@@ -169,76 +221,77 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 
 | Existing UI test | Candidate lowest layers to review | Decision |
 |---|---|---|
-| `DeleteAllPeopleUITests.testConfirmationCancelDismissInterruptionAndDeletionIncludeHiddenPeople` | app UI, integration | Retain; assertion-level review pending. |
-| `DeleteAllPeopleUITests.testCandidateDeletionCancelDismissAndInterruptedConfirmation` | app UI, integration | Unvalidated candidate; compound original retained. |
-| `DeleteAllPeopleUITests.testCandidateDeletionPersistsForListedAndHiddenPeople` | app UI, integration | Unvalidated candidate; compound original retained. |
-| `DeleteAllPeopleUITests.testEmptyDeletionAtLargestTextHasSafeDisabledActionAndCancel` | app UI, integration | Retain; assertion-level review pending. |
-| `DeleteAllPeopleUITests.testFailedDeletionRetainsPeopleAndNeverShowsSuccess` | app UI, integration | Retain; assertion-level review pending. |
+| `DeleteAllPeopleUITests.testConfirmationCancelDismissInterruptionAndDeletionIncludeHiddenPeople` | app UI, integration | Retain; assertions mapped above. |
+| `DeleteAllPeopleUITests.testCandidateDeletionCancelDismissAndInterruptedConfirmation` | app UI, integration | Passed once in 41277476779; compound original retained. |
+| `DeleteAllPeopleUITests.testCandidateDeletionPersistsForListedAndHiddenPeople` | app UI, integration | Passed once in 41277476779; compound original retained. |
+| `DeleteAllPeopleUITests.testEmptyDeletionAtLargestTextHasSafeDisabledActionAndCancel` | app UI, integration | Retain; assertions mapped above. |
+| `DeleteAllPeopleUITests.testFailedDeletionRetainsPeopleAndNeverShowsSuccess` | app UI, integration | Retain; assertions mapped above. |
 | `ExistingContactPreservationUITests.testExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | native, app UI, integration | Replaced by the synthetic review matrix and payload-conversion test above; validate the migrated head. Real picker journeys remain required. |
 | `ExistingContactPreservationUITests.testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | app UI, integration | Passed in runs 41271020900, 41273073951 and migrated-head 41275059980; remains required. The latter full run failed other tests. |
-| `IndexMembershipUITests.testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `IndexMembershipUITests.testDirectFailedSaveAndCancelDoNotCreatePeopleAndLinkedCreationStaysUnlisted` | app UI, integration | Retain; assertion-level review pending. |
-| `IndexMembershipUITests.testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel` | app UI, integration, unit | Retain; assertion-level review pending. |
+| `IndexMembershipUITests.testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch` | app UI, integration, unit | Retain; assertions mapped above. |
+| `IndexMembershipUITests.testDirectFailedSaveAndCancelDoNotCreatePeopleAndLinkedCreationStaysUnlisted` | app UI, integration | Retain; assertions mapped above. |
+| `IndexMembershipUITests.testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel` | app UI, integration, unit | Retain; assertions mapped above. |
 | `IndexMembershipUITests.testPreviewClearSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41245990817; shared assertions move to the original test name. |
 | `IndexMembershipUITests.testClearSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated in-memory fixture and retains the original shared assertions. The migrated head needs validation. |
 | `IndexMembershipUITests.testPreviewClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41240567374; its assertions move to the original test name below. |
 | `IndexMembershipUITests.testClearEmptyCategoryRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated synthetic fixture instead of three UI-only setup creations. Validate the migrated head. |
 | `IndexMembershipUITests.testPreviewClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` | app UI, integration, unit | Failed in run 41245990817: the original five-second restoration waiter timed out; afterward all fixed-field restoration observations were true. Cause unresolved; original test remains required. |
-| `IndexMembershipUITests.testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` | app UI, integration, unit | Retain; assertion-level review pending. |
+| `IndexMembershipUITests.testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` | app UI, integration, unit | Retain; assertions mapped above. |
 | `IndexMembershipUITests.testPreviewClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41245990817; shared assertions move to the original test name. |
 | `IndexMembershipUITests.testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated in-memory fixture and retains all shared assertions. The migrated head needs validation. |
-| `IndexMembershipUITests.testClearSearchAndFiltersOnEmptyNotebookAtLargestText` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | app UI, integration | Retain; assertion-level review pending. |
+| `IndexMembershipUITests.testClearSearchAndFiltersOnEmptyNotebookAtLargestText` | app UI, integration, unit | Retain; assertions mapped above. |
+| `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | app UI, integration | Passed once in run 41240567374; all four unnamed-draft routes remain required. The one-route native smoke also remains required. |
 | `KinUITests.testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow` | native, app UI, integration | Replaced by the synthetic four-route test and one native direct-route smoke above; validate the migrated head. |
 | `KinUITests.testNativeUnnamedDraftReviewOmitsTemporaryIdentity` | native, app UI | One real Contacts review remains required. |
-| `KinUITests.testRelationshipRoleLabelsFromBothDirectionsAndForPartners` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testRelationshipRoleLabelsWrapLongNamesAtLargestDynamicType` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testAddParentsReuseAndCancel` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testAddParentsDuplicateRejectionPreservesBothPeople` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testAddParentsReverseCycleRejectionAndDraftCancellation` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testAddParentsCreatePersistNavigateAndUnlink` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | native, app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testSharedEditorUnlistedRecoveryCancelAndRelaunch` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testSharedChildReuseAndRenameAcrossBothParents` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testAllPeopleOpensProfilesAndReturnsToSameIndex` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | app UI | Retain; assertion-level review pending. |
-| `KinUITests.testIllustratedEmptyStateMenuAndSearchRecovery` | app UI, unit | Retain; assertion-level review pending. |
-| `KinUITests.testBlankNameEditsCancelAndLaterNamingPreserveEntry` | app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testEmptyStateAtLargestDynamicType` | app UI | Retain; assertion-level review pending. |
-| `KinUITests.testFormSurfacesAndDestructiveControls` | app UI | Retain; assertion-level review pending. |
-| `KinUITests.testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `KinUITests.testEstimatedAgeWheelBoundariesAndCancel` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `KinUITests.testEstimatedAgeWheelAtLargestDynamicType` | app UI, unit | Retain; assertion-level review pending. |
-| `KinUITests.testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto` | native, app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testContactMissingBirthdayPromptCancellationAndEstimatedImport` | native, app UI, integration, unit | Retain; assertion-level review pending. |
+| `KinUITests.testRelationshipRoleLabelsFromBothDirectionsAndForPartners` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testRelationshipRoleLabelsWrapLongNamesAtLargestDynamicType` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testAddParentsReuseAndCancel` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testAddParentsDuplicateRejectionPreservesBothPeople` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testAddParentsReverseCycleRejectionAndDraftCancellation` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testAddParentsCreatePersistNavigateAndUnlink` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | native, app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | app UI, integration | Unvalidated candidate; native original retained. |
+| `KinUITests.testSharedEditorUnlistedRecoveryCancelAndRelaunch` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testSharedChildReuseAndRenameAcrossBothParents` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testAllPeopleOpensProfilesAndReturnsToSameIndex` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
+| `KinUITests.testIllustratedEmptyStateMenuAndSearchRecovery` | app UI, unit | Retain; assertions mapped above. |
+| `KinUITests.testBlankNameEditsCancelAndLaterNamingPreserveEntry` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testEmptyStateAtLargestDynamicType` | app UI | Retain; assertions mapped above. |
+| `KinUITests.testFormSurfacesAndDestructiveControls` | app UI | Retain; assertions mapped above. |
+| `KinUITests.testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot` | app UI, integration, unit | Retain; assertions mapped above. |
+| `KinUITests.testEstimatedAgeWheelBoundariesAndCancel` | app UI, integration, unit | Retain; assertions mapped above. |
+| `KinUITests.testEstimatedAgeWheelAtLargestDynamicType` | app UI, unit | Retain; assertions mapped above. |
+| `KinUITests.testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto` | native, app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testContactMissingBirthdayPromptCancellationAndEstimatedImport` | native, app UI, integration, unit | Retain; assertions mapped above. |
 | `KinUITests.testSyntheticImportSavesReviewedNamesForEveryEntryPoint` | app UI, integration | Passed once in run 41230972213; retains all four route assertions. |
 | `KinUITests.testNewImportSavesReviewedNamesForEveryEntryPoint` | app UI, integration, native | Replaced by the synthetic four-route test and one native direct-route smoke above; verify the new exact head before accepting this migration. |
 | `KinUITests.testNativeImportSavesReviewedName` | native, app UI | New one-route native smoke; required. |
-| `KinUITests.testChildSurnameIsEditableClearableAndNeverReapplied` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `KinUITests.testImportReviewRetainsFailedEditsAndAccessibilityHelpersWrap` | native, app UI, integration | Retain; assertion-level review pending. |
-| `KinUITests.testCompactUnknownAgeWithLongNamesAtStandardAndAccessibilitySizes` | app UI, unit | Retain; assertion-level review pending. |
-| `KinUITests.testBabyMonthLabelsFitIndexAndDetail` | app UI, unit | Retain; assertion-level review pending. |
-| `NativeContactsTests.testNativeFullBirthdayAndPhotoImportForAdultAndMinor` | native, app UI, integration, unit | Retain; assertion-level review pending. |
-| `NextVersionUITests.testOfflineAutomaticGenderManualUnspecifiedAndSavedEditPreservation` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `NextVersionUITests.testPeopleFilterAndGenderControlsAtLargestTextWithUnfilteredAudit` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `NextVersionUITests.testEditConnectionFollowsPhotoAtStandardText` | native, app UI, integration | Retain; assertion-level review pending. |
-| `NextVersionUITests.testEditConnectionFollowsPhotoAtLargestText` | native, app UI, integration | Retain; assertion-level review pending. |
-| `NextVersionUITests.testEditorCancelBackgroundContainsLabelAtStandardText` | app UI, integration | Retain; assertion-level review pending. |
-| `NextVersionUITests.testEditorCancelBackgroundContainsLabelAtLargestText` | app UI, integration | Retain; assertion-level review pending. |
-| `NextVersionUITests.testFeatureReferencesReadAsOneSentenceAtStandardText` | app UI | Retain; assertion-level review pending. |
-| `NextVersionUITests.testFeatureReferencesReadAsOneSentenceAtLargestText` | app UI | Retain; assertion-level review pending. |
-| `RelationshipActionTests.testRelationshipActionsAtStandardSize` | app UI, integration | Retain; assertion-level review pending. |
-| `RelationshipActionTests.testRelationshipActionsAtLargestSize` | app UI, integration | Retain; assertion-level review pending. |
-| `RelationshipActionTests.testSharedActionAuditAtStandardSize` | app UI | Retain; assertion-level review pending. |
-| `RelationshipActionTests.testSharedActionAuditAtLargestSize` | app UI | Retain; assertion-level review pending. |
-| `RelationshipChooserTests.testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `RelationshipChooserTests.testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` | app UI, integration, unit | Retain; assertion-level review pending. |
-| `RelationshipChooserTests.testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` | app UI, integration | Retain; assertion-level review pending. |
-| `RelationshipChooserTests.testSyntheticRelationshipReviewScreenshots` | app UI, integration | Retain; assertion-level review pending. |
-| `SyntheticContactsCleanupTests.testOwnedFixtureCleanupHandlesEmptyPartialAndFailures` | integration | Retain; assertion-level review pending. |
+| `KinUITests.testChildSurnameIsEditableClearableAndNeverReapplied` | app UI, integration, unit | Retain; assertions mapped above. |
+| `KinUITests.testImportReviewRetainsFailedEditsAndAccessibilityHelpersWrap` | native, app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testCompactUnknownAgeWithLongNamesAtStandardAndAccessibilitySizes` | app UI, unit | Retain; assertions mapped above. |
+| `KinUITests.testBabyMonthLabelsFitIndexAndDetail` | app UI, unit | Retain; assertions mapped above. |
+| `NativeContactsTests.testNativeFullBirthdayAndPhotoImportForAdultAndMinor` | native, app UI, integration, unit | Retain; assertions mapped above. |
+| `NextVersionUITests.testOfflineAutomaticGenderManualUnspecifiedAndSavedEditPreservation` | app UI, integration, unit | Retain; assertions mapped above. |
+| `NextVersionUITests.testPeopleFilterAndGenderControlsAtLargestTextWithUnfilteredAudit` | app UI, integration, unit | Retain; assertions mapped above. |
+| `NextVersionUITests.testEditConnectionFollowsPhotoAtStandardText` | native, app UI, integration | Retain; assertions mapped above. |
+| `NextVersionUITests.testEditConnectionFollowsPhotoAtLargestText` | native, app UI, integration | Retain; assertions mapped above. |
+| `NextVersionUITests.testEditorCancelBackgroundContainsLabelAtStandardText` | app UI, integration | Retain; assertions mapped above. |
+| `NextVersionUITests.testEditorCancelBackgroundContainsLabelAtLargestText` | app UI, integration | Retain; assertions mapped above. |
+| `NextVersionUITests.testFeatureReferencesReadAsOneSentenceAtStandardText` | app UI | Retain; assertions mapped above. |
+| `NextVersionUITests.testFeatureReferencesReadAsOneSentenceAtLargestText` | app UI | Retain; assertions mapped above. |
+| `RelationshipActionTests.testRelationshipActionsAtStandardSize` | app UI, integration | Retain; assertions mapped above. |
+| `RelationshipActionTests.testRelationshipActionsAtLargestSize` | app UI, integration | Retain; assertions mapped above. |
+| `RelationshipActionTests.testSharedActionAuditAtStandardSize` | app UI | Retain; assertions mapped above. |
+| `RelationshipActionTests.testSharedActionAuditAtLargestSize` | app UI | Retain; assertions mapped above. |
+| `RelationshipChooserTests.testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` | app UI, integration, unit | Retain; assertions mapped above. |
+| `RelationshipChooserTests.testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` | app UI, integration, unit | Retain; assertions mapped above. |
+| `RelationshipChooserTests.testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` | app UI, integration | Retain; assertions mapped above. |
+| `RelationshipChooserTests.testSyntheticRelationshipReviewScreenshots` | app UI, integration | Retain; assertions mapped above. |
+| `SyntheticContactsCleanupTests.testOwnedFixtureCleanupHandlesEmptyPartialAndFailures` | integration | Retain; assertions mapped above. |
 
 ## Release gate and acceptance
 
