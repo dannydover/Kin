@@ -39,6 +39,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
             }
             if index == 0 {
                 app.buttons["contact-cancel"].tap()
+                requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
                 XCTAssertEqual(app.textFields["First name (optional)"].value as? String,originals[index])
                 try select(fixtures[index])
                 let noPhoto = app.buttons["Continue without importing photo"]; reveal(noPhoto,in: app); noPhoto.tap()

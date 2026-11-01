@@ -58,6 +58,7 @@ final class KinUITests: XCTestCase {
             XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "contact-selected-contact").firstMatch.label.contains("John Appleseed"))
             if route == "Add parent" { capture(app,"New unnamed parent import review has no temporary identity") }
             app.buttons["contact-cancel"].tap()
+            requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Add person"].buttons["Cancel"])
             XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"First name")
             app.navigationBars["Add person"].buttons["Cancel"].tap()
             if route != "Add person" {
@@ -250,6 +251,7 @@ final class KinUITests: XCTestCase {
             XCTAssertEqual(gender.value as? String,"Unspecified", "An explicit earlier draft choice survives import review")
         }
         try selectSample(); app.buttons["contact-cancel"].tap()
+        requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Add person"].buttons["Cancel"])
         XCTAssertEqual(app.buttons["gender-choice"].value as? String,"Unspecified")
         XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"First name")
         try selectSample(); reveal(app.buttons["Import and Save without photo"],in: app)
@@ -720,6 +722,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Exact birthday"].exists)
         XCTAssertTrue(app.buttons["Unknown"].exists); app.buttons["Unknown"].tap()
         app.buttons["contact-cancel"].tap()
+        requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
         XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic Existing Draft")
         try selectSample()
         // Missing source data retains the saved estimate. Unknown is now a
@@ -973,7 +976,10 @@ final class KinUITests: XCTestCase {
         }
         verifyContactLowerRowsReachable(app, largest: true)
         app.buttons["contact-cancel"].tap()
+        requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Add person"].buttons["Cancel"])
         app.navigationBars["Add person"].buttons["Cancel"].tap()
+        requireDismissal(app.navigationBars["Add person"], destination: app.buttons["people-menu"])
+        XCTAssertTrue(app.staticTexts["Synthetic Retry Appleseed"].exists)
         XCTAssertEqual(app.cells.count,1)
     }
     @MainActor func testCompactUnknownAgeWithLongNamesAtStandardAndAccessibilitySizes() {

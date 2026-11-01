@@ -81,5 +81,9 @@ import Testing
         #expect(throws: NotebookAccessError.locked) { try store.deleteAllPeople() }
         state.unlocked = true; try store.resume()
         #expect(store.people == people && store.parentLinks == parents && store.partnerLinks == partners)
+        // An interrupted, unconfirmed deletion must not prevent a later
+        // explicit deletion from committing and remaining deleted on reopen.
+        try store.deleteAllPeople(); try store.close(); try store.resume()
+        #expect(store.people.isEmpty && store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
     }
 }

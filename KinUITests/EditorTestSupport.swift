@@ -1,5 +1,25 @@
 import XCTest
 
+/// Require both sides of a dismissal before interacting with the destination.
+/// A background screen may already exist while a sheet still owns the tap.
+@MainActor func requireDismissal(_ source: XCUIElement, destination: XCUIElement,
+                                 file: StaticString = #filePath, line: UInt = #line) {
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        !source.exists && destination.exists && destination.isHittable
+    }, object: nil)
+    let result = XCTWaiter.wait(for: [ready], timeout: 5)
+    if result != .completed {
+        let state = "sourceExists=\(source.exists); destinationExists=\(destination.exists); destinationHittable=\(destination.isHittable)"
+        XCTContext.runActivity(named: "Screen dismissal readiness") { activity in
+            let attachment = XCTAttachment(string: state)
+            attachment.name = "Synthetic dismissal state"
+            attachment.lifetime = .keepAlways
+            activity.add(attachment)
+        }
+    }
+    XCTAssertEqual(result, .completed, "Dismissed screen must close and destination must be usable", file: file, line: line)
+}
+
 /// Time only the system Contacts picker readiness check. The downstream
 /// selection and import assertions still determine whether the flow works.
 @MainActor func waitForNativeContactsPicker(_ app: XCUIApplication) -> Bool {

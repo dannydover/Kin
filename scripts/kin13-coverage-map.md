@@ -38,6 +38,8 @@ The three original deletion UI tests remain required while the candidates are va
 
 Two split-test candidates use separate persisted synthetic notebooks: one exercises confirmation Cancel, sheet dismissal and interruption; the other confirms deletion and verifies listed and hidden people remain absent after relaunch. Their assertions and synthetic scope/confirmation screenshots map to the compound original below. Both candidates and the original passed in runs 41277476779 and 41323390261; the earlier run failed a different Clear UI query (196/197 passed, zero skips), while the latter passed 198/198. The original remains required pending review of the tradeoff: the two candidates took about 123 seconds combined versus 114 seconds for the original on separate shards in the earlier run. The split is intended to isolate independent user journeys within the existing per-test allowance, not to establish the cause of the four-minute timeout in run 41275059980 or to replace lower-level deletion and failure tests.
 
+The local `DeleteAllPeopleTests.protectedAndInterrupted` extension also checks that a later explicit deletion commits and remains deleted after reopening following the interrupted/unconfirmed state. It passed locally with 86 core tests but has not yet run on hosted CI. It checks the store sequence, not a real UI confirmation or dismissal.
+
 | Existing assertion | Required owner | Supporting lower-level coverage |
 |---|---|---|
 | Menu action is visible and hittable, including at the largest text size, and opens the deletion screen | All three deletion UI tests through `open` | None: rendered menu bounds and navigation need UI. |
@@ -299,3 +301,17 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 - A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The import and unnamed-review migrations remove seven repeated native picker invocations; the preservation migration removes five more; the parent-route migration removes two more. Real native journeys remain, with the unnamed-identity, yearless-payload and native Add-parent-route tradeoffs documented above. The complete map and remaining suite composition still require review.
 - Validate lower-level replacements first, then any UI change on the exact commit. Exercise bounded repeated full suites and relevant order variation; report every failure and retain artifacts. A single green run is not a reliability guarantee.
 - Historical native focus, picker readiness, Friend switch, Clear restoration and accessibility query stalls remain unresolved. Resource free/inactive counters are not a direct memory-pressure measurement.
+
+### Screen transition readiness audit
+
+The retained repeatability failure in run 41348457586 counted global cells while
+Add person was still visible after two cancellation taps. The recording does
+not distinguish a missed tap from a transition still in progress. Contact-review
+cancellation now requires the review to disappear and the editor Cancel control
+to be hittable; the affected return to People additionally requires the editor
+to disappear, the People menu to be hittable, and the saved synthetic person to
+exist before the original one-cell assertion. Deletion cancellation uses the
+same screen contract before its existing count. These are test preconditions,
+not evidence that event delivery or the underlying intermittent issues are fixed.
+Other global cell queries remain in the suite and require case-by-case review;
+there is no verified unique People-list accessibility identifier to scope them.

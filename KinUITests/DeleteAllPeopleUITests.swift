@@ -60,6 +60,7 @@ final class DeleteAllPeopleUITests: XCTestCase {
         #endif
         XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@","backups")).firstMatch.exists)
         app.alerts.buttons["Cancel"].tap(); app.navigationBars["Delete all people"].buttons["Cancel"].tap()
+        requireDismissal(app.navigationBars["Delete all people"], destination: app.buttons["people-menu"])
         XCTAssertEqual(app.cells.count,1)
         open(app)
         let handle = app.navigationBars["Delete all people"].coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.5))
@@ -100,6 +101,7 @@ final class DeleteAllPeopleUITests: XCTestCase {
         #endif
         XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@","backups")).firstMatch.exists)
         app.alerts.buttons["Cancel"].tap(); app.navigationBars["Delete all people"].buttons["Cancel"].tap()
+        requireDismissal(app.navigationBars["Delete all people"], destination: app.buttons["people-menu"])
         XCTAssertEqual(app.cells.count,1)
         open(app)
         let handle = app.navigationBars["Delete all people"].coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.5))
