@@ -6,7 +6,7 @@ def load(name):
 class ObservabilityTests(unittest.TestCase):
     def test_release_guard_rejects_synthetic_contacts_adapter_markers(self):
         release = load('check-release.py')
-        for marker in (b'--kin-ui-synthetic-contact', b'synthetic-contact-selection'):
+        for marker in (b'--kin-ui-synthetic-contact', b'synthetic-contact-selection', b'--kin-ui-preservation-contacts', b'synthetic-preservation-contact-'):
             self.assertIsNotNone(re.search(release.DEBUG_PATTERN, marker))
 
     def test_coverage_map_accounts_for_every_current_ui_method(self):

@@ -87,7 +87,16 @@ struct PersonEditor: View {
                     }
                 } else {
                     #if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains("--kin-ui-synthetic-contact") {
+                    if ProcessInfo.processInfo.arguments.contains("--kin-ui-preservation-contacts") {
+                        VStack {
+                            ForEach(0..<4) { index in
+                                Button("Use synthetic contact \(index)") {
+                                    let birth: ContactBirthInformation = index == 1 ? .yearless : index == 3 ? .exact(CivilDate(year: 1995, month: 6, day: 23)) : .missing
+                                    pendingContact = ContactSnapshot(firstName: "Kin Synthetic Keep \(index)", lastName: "", birthInformation: birth)
+                                }.accessibilityIdentifier("synthetic-preservation-contact-\(index)")
+                            }
+                        }
+                    } else if ProcessInfo.processInfo.arguments.contains("--kin-ui-synthetic-contact") {
                         Button("Use synthetic contact") {
                             pendingContact = ContactSnapshot(firstName: "John", lastName: "Appleseed")
                         }.accessibilityIdentifier("synthetic-contact-selection")

@@ -32,6 +32,20 @@ Baseline: 59 UI test methods and the existing KinTests suite. The import-route m
 
 These lower-level tests do not exercise the UI control wiring. They are not grounds to retire the listed UI assertions until a deterministic UI replacement is mapped and validated.
 
+### Deletion UI assertion inventory
+
+The three deletion UI tests remain required. This inventory makes their distinct contracts explicit; it does not propose retiring or replacing them.
+
+| Existing assertion | Required owner | Supporting lower-level coverage |
+|---|---|---|
+| Menu action is visible and hittable, including at the largest text size, and opens the deletion screen | All three deletion UI tests through `open` | None: rendered menu bounds and navigation need UI. |
+| A listed person and hidden linked child produce one People row and a two-person deletion count | `testConfirmationCancelDismissInterruptionAndDeletionIncludeHiddenPeople` | `DeleteAllPeopleTests.allPeopleAndMedia` verifies deletion of listed and hidden records. |
+| Confirmation names backup implications and offers a hittable Cancel; cancelling either confirmation or sheet preserves the listed person | Same UI test through `review` and cancel paths | Store deletion tests do not establish the confirmation copy or control behavior. |
+| Interactive sheet dismissal and terminating while confirmation is open preserve records, including the hidden child after relaunch | Same UI test | `DeleteAllPeopleTests.protectedAndInterrupted` checks unconfirmed interruption at the storage boundary, not the actual sheet or app relaunch. |
+| Confirming deletion produces an empty People screen and no listed or hidden records after relaunch | Same UI test | `DeleteAllPeopleTests.allPeopleAndMedia` additionally verifies notes, links and managed media after reopening. |
+| Empty notebook shows its count, disables the destructive action, offers usable Cancel at largest text, and does not show a confirmation | `testEmptyDeletionAtLargestTextHasSafeDisabledActionAndCancel` | `DeleteAllPeopleTests.empty` checks empty deletion is idempotent and does not save. |
+| A failed deletion reports its error on both attempts, leaves the deletion sheet open with the five-person count, and retains all people | `testFailedDeletionRetainsPeopleAndNeverShowsSuccess` | `DeleteAllPeopleTests.failure` verifies consistent reopened state for failures before and after commit; it does not cover the UI error or sheet. Success dismisses the sheet; there is no separate success message in the current view. |
+
 
 ## Reviewed relationship, photo and picker boundaries
 
@@ -45,6 +59,21 @@ These lower-level tests do not exercise the UI control wiring. They are not grou
 | Existing birthday precision, unknown/missing/yearless source handling, edited gender and identity after failed save or relaunch | Integration: `ExistingContactBirthPreservationTests` and `ContactBirthInformationTests` | Actual native selection, review controls, cancellation, visible values, photo choice and edit/save navigation remain in `ExistingContactPreservationUITests` |
 
 These rows identify supported lower-level coverage and the UI assertions it does not replace. No test in these domains is retired by this map.
+
+### Existing-contact preservation candidate
+
+`testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` runs the same review, cancel, save, identity and birthday assertions as the native preservation test using four fixed DEBUG-only snapshots. It does not access the simulator address book. It is a candidate, not a validated replacement: the native original remains required. The existing integration suite separately checks unusable birthday variants, photo gating, saved identity, failure, relaunch and links. If the candidate is validated, a later review can decide whether the five native selections in this one business-rule matrix are redundant; the retained native smoke and native birthday/photo journey must still exercise real picker presentation, selection, and payload conversion. The synthetic candidate cannot establish that the system picker returns the expected birthday or that native presentation and selection work.
+
+### Relationship chooser UI assertion inventory
+
+All four chooser tests remain required. The existing `ExistingPersonChoicesTests` can validate choice data and identity independently; it does not validate any of the following rendered or navigation behavior.
+
+| Existing assertion | Required UI owner |
+|---|---|
+| Parent, child and partner routes place relationship details after the link action, start without a hittable search field or keyboard, show a selectable person, and navigate to one saved relationship and the same person's edit control | `testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` |
+| Duplicate names display distinct notebook references; empty search has no choices and clearing it restores them; Back and Cancel retain Step detail without saving; saving the selected identity leads to one matching relationship and edit control, with five people in All people | `testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` |
+| Empty chooser has no selectable people, Back preserves Former partner status, and Cancel creates no relationship | `testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` |
+| Synthetic screenshots capture options, selectable person, empty search and the accessibility-size chooser; the test also checks the synthetic fixture and key controls | `testSyntheticRelationshipReviewScreenshots` |
 
 
 ## Next candidate: deterministic filter fixture
@@ -99,6 +128,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `DeleteAllPeopleUITests.testEmptyDeletionAtLargestTextHasSafeDisabledActionAndCancel` | app UI, integration | Retain; assertion-level review pending. |
 | `DeleteAllPeopleUITests.testFailedDeletionRetainsPeopleAndNeverShowsSuccess` | app UI, integration | Retain; assertion-level review pending. |
 | `ExistingContactPreservationUITests.testExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | native, app UI, integration | Retain; assertion-level review pending. |
+| `ExistingContactPreservationUITests.testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | app UI, integration | New candidate; original native test retained pending validation and review. |
 | `IndexMembershipUITests.testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testDirectFailedSaveAndCancelDoNotCreatePeopleAndLinkedCreationStaysUnlisted` | app UI, integration | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel` | app UI, integration, unit | Retain; assertion-level review pending. |
