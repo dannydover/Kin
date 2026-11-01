@@ -65,9 +65,29 @@ These rows identify supported lower-level coverage and the UI assertions it does
 No accessibility, visible-copy, or layout test is retired by this map.
 
 
+
+
+## Clear-flow assertion mapping
+
+| Original assertion | Current or proposed owner | Migration status |
+|---|---|---|
+| Search-only shows the exact no-matches explanation and a hittable Clear action | `testClearSearchRestoresPeopleWithoutChangingRecords` app UI | Retained with synthetic setup after its matching candidate passed; validate the current head. |
+| Empty category shows its explanation before Clear | `testClearEmptyCategoryRestoresPeopleWithoutChangingRecords` app UI | Retained with synthetic setup after its matching candidate passed; validate the current head. |
+| Combined category/search shows no matches and can Clear twice | Original `testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` app UI | Retained with original setup. Its preview candidate failed the restoration wait and is not an approved replacement. |
+| All people scope is entered before clearing search | `testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` app UI | Retained with synthetic setup after its matching candidate passed; validate the current head. |
+| Clear returns to People, category All, three rows, visible Alex and no Clear action; keyboard closes | Shared `assertClearSearchRestored` app-UI assertions remain on every scenario | Retained. The local `PeopleFilterStateTests.clear` separately checks the reset rules for 36 combinations but cannot prove these rendered results or keyboard dismissal. |
+| Jamie's Friend category survives Clear and edit/cancel | Shared `assertClearSearchPreservedCategory` app UI | Retained for every scenario. Existing store/category tests cover record semantics separately. |
+| Three people can be created, saved and navigated to from the editor | Existing direct-save and membership UI and integration tests | No longer repeated solely as setup in the migrated search-only, empty-category, and All people cases; combined-filter original still performs its original setup. The fixture integrity test checks the synthetic setup itself. |
+
+The in-memory fixture does not prove disk persistence. No failed wait is converted into a passing result.
+
+## Filter-state extraction candidate
+
+`PeopleFilterState` holds the exact display scope, query, category, and search-presentation state previously owned individually by `ContentView`. `PeopleFilterStateTests` checks Clear across 36 input combinations, idempotence, listed/hidden results and unchanged people, scope switching while preserving search presentation, Search all behavior, and whitespace handling. The view still wires the real Clear button, menu, search field and keyboard; the existing UI tests remain required until the refactor and mapped replacements pass hosted validation. The extracted state does not test SwiftUI animation, accessibility snapshots, or native controls.
+
 ## Further filter fixture candidates
 
-The search-only, combined search/category, and All people Clear tests each had a separate preview-fixture candidate calling the same assertion helper as the original. The search-only and All people candidates passed in run 41245990817 and are mapped back to their original test names. The combined-filter candidate failed; its creation-through-UI original remains required. If each candidate passes, the original test name can use the validated fixture and the duplicate candidate can be removed; the keyboard, no-results copy, repeated Clear, scope, category, identity and edit/cancel assertions stay intact. This moves setup only, not the UI behavior under test. The fixture is in-memory and is not evidence of disk persistence. The combined-filter candidate failed in run 41245990817 and is not a validated replacement; a late observation does not turn its failure into a pass.
+The search-only, combined search/category, and All people Clear tests each had a separate preview-fixture candidate calling the same assertion helper as the original. The search-only and All people candidates passed in run 41245990817 and are mapped back to their original test names. The combined-filter candidate failed; its creation-through-UI original remains required. If each candidate passes, the original test name can use the validated fixture and the duplicate candidate can be removed; the keyboard, no-results copy, repeated Clear, scope, category, identity and edit/cancel assertions stay intact. This moves setup only, not the UI behavior under test. The fixture is in-memory and is not evidence of disk persistence. The combined-filter candidate failed in run 41245990817 and is not a validated replacement; a late observation does not turn its failure into a pass. In run 41248595158 the same candidate exceeded four minutes during repeated XCTest animation-idle waits around menu taps; the cause is unresolved. Both original and candidate stay required.
 
 ## UI baseline inventory
 
