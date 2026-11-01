@@ -34,6 +34,50 @@ final class DeleteAllPeopleUITests: XCTestCase {
         action.tap(); XCTAssertTrue(app.alerts["Delete all people?"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.alerts.buttons["Cancel"].isHittable)
     }
+    /// Keep each candidate independent with its own persisted synthetic notebook.
+    @MainActor private func launchDeletionFixture(_ app: XCUIApplication) {
+        app.launchArguments = ["--kin-test-notebook",UUID().uuidString]; app.launch()
+        app.buttons["Add person"].tap()
+        app.textFields["First name (optional)"].tap(); app.textFields["First name (optional)"].typeText("Synthetic Delete Source")
+        app.buttons["Save"].tap(); XCTAssertTrue(app.navigationBars["Synthetic Delete Source"].waitForExistence(timeout: 5))
+        app.buttons["Add child"].tap(); app.buttons["Create new person"].tap()
+        app.textFields["First name (optional)"].tap(); app.textFields["First name (optional)"].typeText("Synthetic Hidden Child")
+        app.buttons["Save"].tap(); XCTAssertTrue(app.buttons["Edit relationship with Synthetic Hidden Child"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons["People"].tap(); XCTAssertEqual(app.cells.count,1)
+    }
+    @MainActor func testCandidateDeletionCancelDismissAndInterruptedConfirmation() {
+        let app = XCUIApplication(); launchDeletionFixture(app); defer { app.terminate() }
+        open(app); XCTAssertTrue(app.staticTexts["2 people saved in this notebook."].exists)
+        #if targetEnvironment(simulator)
+        XCTAssertTrue(app.launchArguments.contains("--kin-test-notebook"))
+        let scope = XCTAttachment(screenshot: app.screenshot())
+        scope.name = "Delete all people scope - synthetic"; scope.lifetime = .keepAlways; add(scope)
+        #endif
+        review(app)
+        #if targetEnvironment(simulator)
+        let confirmation = XCTAttachment(screenshot: app.screenshot())
+        confirmation.name = "Delete all people confirmation - synthetic"; confirmation.lifetime = .keepAlways; add(confirmation)
+        #endif
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@","backups")).firstMatch.exists)
+        app.alerts.buttons["Cancel"].tap(); app.navigationBars["Delete all people"].buttons["Cancel"].tap()
+        XCTAssertEqual(app.cells.count,1)
+        open(app)
+        let handle = app.navigationBars["Delete all people"].coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.5))
+        handle.press(forDuration: 0.1,thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.92)))
+        XCTAssertTrue(app.navigationBars["Delete all people"].waitForNonExistence(timeout: 5)); XCTAssertEqual(app.cells.count,1)
+        open(app); review(app); app.terminate(); app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Delete Source"].waitForExistence(timeout: 5))
+        app.buttons["people-menu"].tap(); app.buttons["All people"].tap(); XCTAssertEqual(app.cells.count,2)
+    }
+    @MainActor func testCandidateDeletionPersistsForListedAndHiddenPeople() {
+        let app = XCUIApplication(); launchDeletionFixture(app); defer { app.terminate() }
+        open(app); XCTAssertTrue(app.staticTexts["2 people saved in this notebook."].exists); review(app)
+        app.alerts.buttons.matching(identifier: "confirm-delete-all").allElementsBoundByIndex.last!.doubleTap()
+        XCTAssertTrue(app.staticTexts["Keep your people close."].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.cells.count,0)
+        app.terminate(); app.launch(); XCTAssertTrue(app.staticTexts["Keep your people close."].waitForExistence(timeout: 5))
+        app.buttons["people-menu"].tap(); app.buttons["All people"].tap(); XCTAssertEqual(app.cells.count,0)
+    }
     @MainActor func testConfirmationCancelDismissInterruptionAndDeletionIncludeHiddenPeople() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook",UUID().uuidString]; app.launch()
         app.buttons["Add person"].tap()

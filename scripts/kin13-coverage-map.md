@@ -34,7 +34,9 @@ These lower-level tests do not exercise the UI control wiring. They are not grou
 
 ### Deletion UI assertion inventory
 
-The three deletion UI tests remain required. This inventory makes their distinct contracts explicit; it does not propose retiring or replacing them.
+The three original deletion UI tests remain required while the candidates are validated. This inventory makes their distinct contracts explicit.
+
+Two local split-test candidates use separate persisted synthetic notebooks: one exercises confirmation Cancel, sheet dismissal and interruption; the other confirms deletion and verifies listed and hidden people remain absent after relaunch. Their assertions and synthetic scope/confirmation screenshots map to the compound original below. They have not yet been run; the original remains required. The split is intended to isolate independent user journeys within the existing per-test allowance, not to establish the cause of the four-minute timeout in run 41275059980 or to replace lower-level deletion and failure tests.
 
 | Existing assertion | Required owner | Supporting lower-level coverage |
 |---|---|---|
@@ -62,7 +64,7 @@ These rows identify supported lower-level coverage and the UI assertions it does
 
 ### Existing-contact preservation candidate
 
-`testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` runs the same review, cancel, save, identity and birthday assertions as the former native preservation test using four fixed DEBUG-only snapshots. It does not access the simulator address book. Both paths passed in runs 41271020900 and 41273073951, and the coordinator payload conversion test passed in 41273073951. The five repeated native selections in this business-rule matrix are now removed; the retained native smoke, missing-birthday journey, and adult/minor birthday/photo journey still exercise real picker presentation, selection and payload conversion. The synthetic test cannot establish that the system picker returns a yearless birthday: that variant is checked through an in-memory Contacts payload and the coordinator, a documented reduction in native-system coverage. The migrated head still needs full validation and repeatability assessment.
+`testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` runs the same review, cancel, save, identity and birthday assertions as the former native preservation test using four fixed DEBUG-only snapshots. It does not access the simulator address book. Both paths passed in runs 41271020900 and 41273073951, and the coordinator payload conversion test passed in 41273073951. The five repeated native selections in this business-rule matrix are now removed; the retained native smoke, missing-birthday journey, and adult/minor birthday/photo journey still exercise real picker presentation, selection and payload conversion. The synthetic test cannot establish that the system picker returns a yearless birthday: that variant is checked through an in-memory Contacts payload and the coordinator, a documented reduction in native-system coverage. On the migrated head, the synthetic test passed in run 41275059980, but the full run failed three other UI tests (192/195 passed, zero skips). Full validation and repeatability remain unresolved.
 
 | Existing assertion | Required owner and lower-level boundary |
 |---|---|
@@ -78,6 +80,8 @@ The separate `NativeContactsTests.testNativeFullBirthdayAndPhotoImportForAdultAn
 
 The retained `KinUITests.testContactMissingBirthdayPromptCancellationAndEstimatedImport` checks a separate real-system journey: a saved estimated-age adult receives a Photos image; a missing-birthday Contacts review shows the current draft and both exact/unknown choices; Cancel restores the draft; explicitly choosing Unknown followed by an unsaved estimated-age edit and Cancel preserves the earlier saved age; a subsequent import with a confirmed estimate saves and survives relaunch. Its real Photos picker, native Contacts selection, visible age controls and cancel/save navigation are not covered by the synthetic preservation candidate. The `ExistingContactBirthPreservationTests` and `ContactPhotoReviewTests` cases support the underlying age, opt-in and cancellation rules, but do not replace these UI assertions. This journey remains required.
 
+The shared native-search helper's failure-only diagnostic records the last observed total search fields, in-bounds fields, and hittable in-bounds fields. It records no names or coordinates and performs no new accessibility query after failure. This can distinguish some failed uniqueness, bounds and hit-testing preconditions; it does not establish why a native search field was inaccessible or repair the failure. The existing five-second assertion and exact-result checks remain unchanged.
+
 ### Relationship chooser UI assertion inventory
 
 All four chooser tests remain required. The existing `ExistingPersonChoicesTests` can validate choice data and identity independently; it does not validate any of the following rendered or navigation behavior.
@@ -88,6 +92,12 @@ All four chooser tests remain required. The existing `ExistingPersonChoicesTests
 | Duplicate names display distinct notebook references; empty search has no choices and clearing it restores them; Back and Cancel retain Step detail without saving; saving the selected identity leads to one matching relationship and edit control, with five people in All people | `testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` |
 | Empty chooser has no selectable people, Back preserves Former partner status, and Cancel creates no relationship | `testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` |
 | Synthetic screenshots capture options, selectable person, empty search and the accessibility-size chooser; the test also checks the synthetic fixture and key controls | `testSyntheticRelationshipReviewScreenshots` |
+
+### Relationship action UI assertion inventory
+
+`testRelationshipActionsAtStandardSize` and `testRelationshipActionsAtLargestSize` both remain required. For partner, child and parent they check the action's visible hit target and bounds, the corresponding Add target, navigation to the correct editor, rendered relationship roles and parent/child directions, and Cancel preserving the action. They also open and cancel the Add route and verify the deletion screen still reports five people and the expected scope wording. The largest-text case additionally checks expanded height; the standard case checks both actions are simultaneously hittable for one fixture. Store and relationship tests support identity and persistence rules but cannot establish these rendered or navigation assertions.
+
+`testSharedActionAuditAtStandardSize` and `testSharedActionAuditAtLargestSize` remain required. Each checks the fixed synthetic control is present, hittable and at least 44 points high, then runs the unfiltered contrast, hit-region, clipping and trait audit and retains a screenshot. These are accessibility/rendered contracts; model color calculations do not replace them.
 
 
 ## Next candidate: deterministic filter fixture
@@ -107,6 +117,16 @@ All four chooser tests remain required. The existing `ExistingPersonChoicesTests
 
 No accessibility, visible-copy, or layout test is retired by this map.
 
+### Next-version UI assertion inventory
+
+| Retained UI test or shared helper | Assertions that remain at the UI layer | Lower-level support and limit |
+|---|---|---|
+| `testOfflineAutomaticGenderManualUnspecifiedAndSavedEditPreservation` | Automatic gender follows recognized and unrecognized names; explicit Unspecified and Other remain sticky through later name edits; Save displays Other and Cancel preserves the saved person. | `NameAssociationsTests` and `DraftGenderDefault` cover mappings and sticky state, not control binding or Save/Cancel navigation. |
+| `testPeopleFilterAndGenderControlsAtLargestTextWithUnfilteredAudit` | Filter and gender controls are hittable and at least 44 points; full rows are revealed; unfiltered contrast, hit-region, clipping and trait audits pass; Cancel returns to People. | No lower-level test proves rendered accessibility or layout. |
+| `verifyEditorOrder`, standard and largest text | Scrolling encounters Photo before Your connection in visual and accessibility reading order; Cancel returns to the same profile. | Store/photo rules do not prove visual ordering. |
+| `verifyCancelBackground`, standard and largest text | Settled toolbar geometry contains one rendered Cancel label with horizontal inset, a minimum 44-point hit target, no Save overlap, and both controls hittable; Cancel returns to the profile. | Model tests cannot prove native toolbar layout or rendered glyph bounds. |
+| `verifyFeatureReferences`, standard and largest text | Guidance appears and remains hittable in bounds as one exact accessibility sentence without raw styling markers; navigation returns to the profile. | No model test proves accessibility grouping and rendered layout. |
+
 
 
 
@@ -124,6 +144,17 @@ No accessibility, visible-copy, or layout test is retired by this map.
 
 The in-memory fixture does not prove disk persistence. No failed wait is converted into a passing result.
 
+### Membership and filtering UI assertion inventory
+
+| Retained UI test | UI assertions and lower-level boundary |
+|---|---|
+| `testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch` | Direct Save without a category opens the listed profile; membership survives category edit, Cancel and relaunch; removing membership hides the person from People while preserving All people. `IndexMembershipTests` supports membership persistence but not this navigation and rendered state. |
+| `testDirectFailedSaveAndCancelDoNotCreatePeopleAndLinkedCreationStaysUnlisted` | Failed long-name Save retains the edit and Cancel creates no person; a linked child defaults unlisted, remains accessible from its relationship and All people, and the main list remains unchanged after relaunch. Store failure and inclusion tests do not prove these screen transitions. |
+| `testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel` | Friend filtering, search with no matches, empty category, restoring All and an uncategorized person, and preserving the selected category after edit/Cancel remain visible. `CategoryFilterTests` covers result selection without proving control wiring. |
+| `testClearSearchAndFiltersOnEmptyNotebookAtLargestText` | The Clear action is hittable and at least 44 points, both ends of the recovery explanation can be revealed, and clearing from empty search or category restores an empty People screen and All category. No model test proves text readability or interaction at this size. |
+
+The remaining Clear scenarios and their record-preservation assertions are mapped immediately above. No membership or filtering UI assertion is retired by these rows.
+
 ## Filter-state extraction candidate
 
 `PeopleFilterState` holds the exact display scope, query, category, and search-presentation state previously owned individually by `ContentView`. `PeopleFilterStateTests` checks Clear across 36 input combinations, idempotence, listed/hidden results and unchanged people, scope switching while preserving search presentation, Search all behavior, and whitespace handling. The view still wires the real Clear button, menu, search field and keyboard; the existing UI tests remain required until the refactor and mapped replacements pass hosted validation. The extracted state does not test SwiftUI animation, accessibility snapshots, or native controls.
@@ -139,10 +170,12 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | Existing UI test | Candidate lowest layers to review | Decision |
 |---|---|---|
 | `DeleteAllPeopleUITests.testConfirmationCancelDismissInterruptionAndDeletionIncludeHiddenPeople` | app UI, integration | Retain; assertion-level review pending. |
+| `DeleteAllPeopleUITests.testCandidateDeletionCancelDismissAndInterruptedConfirmation` | app UI, integration | Unvalidated candidate; compound original retained. |
+| `DeleteAllPeopleUITests.testCandidateDeletionPersistsForListedAndHiddenPeople` | app UI, integration | Unvalidated candidate; compound original retained. |
 | `DeleteAllPeopleUITests.testEmptyDeletionAtLargestTextHasSafeDisabledActionAndCancel` | app UI, integration | Retain; assertion-level review pending. |
 | `DeleteAllPeopleUITests.testFailedDeletionRetainsPeopleAndNeverShowsSuccess` | app UI, integration | Retain; assertion-level review pending. |
 | `ExistingContactPreservationUITests.testExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | native, app UI, integration | Replaced by the synthetic review matrix and payload-conversion test above; validate the migrated head. Real picker journeys remain required. |
-| `ExistingContactPreservationUITests.testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | app UI, integration | Passed in runs 41271020900 and 41273073951; remains required and needs validation on the migrated head. |
+| `ExistingContactPreservationUITests.testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | app UI, integration | Passed in runs 41271020900, 41273073951 and migrated-head 41275059980; remains required. The latter full run failed other tests. |
 | `IndexMembershipUITests.testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch` | app UI, integration, unit | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testDirectFailedSaveAndCancelDoNotCreatePeopleAndLinkedCreationStaysUnlisted` | app UI, integration | Retain; assertion-level review pending. |
 | `IndexMembershipUITests.testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel` | app UI, integration, unit | Retain; assertion-level review pending. |

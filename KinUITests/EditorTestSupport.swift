@@ -24,16 +24,34 @@ import XCTest
 @MainActor func requireNativeContactsSearch(_ app: XCUIApplication) throws -> XCUIElement {
     let searches = app.searchFields.matching(identifier: "Search")
     var chosen: XCUIElement?
+    var lastCounts: (total: Int, inBounds: Int, hittable: Int)?
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        let candidates = searches.allElementsBoundByIndex.filter {
+        let elements = searches.allElementsBoundByIndex
+        var inBounds = 0
+        let candidates = elements.filter {
             let frame = $0.frame
-            return frame.minY >= 62 && frame.maxY <= app.frame.maxY - 30 && $0.isHittable
+            guard frame.minY >= 62 && frame.maxY <= app.frame.maxY - 30 else { return false }
+            inBounds += 1
+            return $0.isHittable
         }
+        lastCounts = (elements.count, inBounds, candidates.count)
         guard candidates.count == 1 else { return false }
         chosen = candidates[0]
         return true
     }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+    let outcome = XCTWaiter.wait(for: [ready], timeout: 5)
+    if outcome != .completed {
+        // Fixed aggregate counts only; do not capture labels, contact data,
+        // coordinates, or issue any additional accessibility queries on failure.
+        let counts = lastCounts.map { "total=\($0.total); inBounds=\($0.inBounds); hittableInBounds=\($0.hittable)" } ?? "counts=unavailable"
+        XCTContext.runActivity(named: "Synthetic Contacts search readiness") { activity in
+            let attachment = XCTAttachment(string: counts)
+            attachment.name = "Synthetic Contacts search aggregate state"
+            attachment.lifetime = .keepAlways
+            activity.add(attachment)
+        }
+    }
+    XCTAssertEqual(outcome, .completed,
                    "Require one visible native Contacts search field")
     return try XCTUnwrap(chosen)
 }
