@@ -14,6 +14,14 @@ final class NativeContactsTests: XCTestCase {
         XCTAssertEqual(syntheticCardResolution(20), .ambiguous)
     }
 
+    func testPreciseFormFrameRejectsEmptyAndClippedTargets() {
+        XCTAssertTrue(preciseFormFrameIsVisible(CGRect(x: 1,y: 145,width: 100,height: 40), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 145,width: 0,height: 40), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 145,width: 100,height: 0), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 144,width: 100,height: 40), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 480,width: 100,height: 21), lowerBound: 145, upperBound: 500))
+    }
+
     func testNativeContactRevealRequiresUniqueMovementAndStableVisibleTarget() {
         let deadline = NativeContactRevealDeadline(start: 100, timeout: 10)
         XCTAssertEqual(deadline.remaining(now: 103), 7)

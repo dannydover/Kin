@@ -1,5 +1,10 @@
 import XCTest
 
+/// The caller establishes this frame in the same coordinate space as the form.
+func preciseFormFrameIsVisible(_ frame: CGRect, lowerBound: CGFloat, upperBound: CGFloat) -> Bool {
+    frame.width > 0 && frame.height > 0 && frame.minY >= lowerBound && frame.maxY <= upperBound
+}
+
 enum NativeContactRevealDecision: Equatable {
     case wait, select, scrollUp, scrollDown
 }
@@ -81,12 +86,24 @@ private enum SyntheticCardSelectionError: Error { case unavailable }
 /// A background screen may already exist while a sheet still owns the tap.
 @MainActor func requireDismissal(_ source: XCUIElement, destination: XCUIElement,
                                  file: StaticString = #filePath, line: UInt = #line) {
+    var lastSource: Bool?
+    var lastDestination: Bool?
+    var lastHittable: Bool?
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        !source.exists && destination.exists && destination.isHittable
+        let sourceExists = source.exists
+        lastSource = sourceExists; lastDestination = nil; lastHittable = nil
+        guard !sourceExists else { return false }
+        let destinationExists = destination.exists
+        lastDestination = destinationExists
+        guard destinationExists else { return false }
+        let destinationHittable = destination.isHittable
+        lastHittable = destinationHittable
+        return destinationHittable
     }, object: nil)
     let result = XCTWaiter.wait(for: [ready], timeout: 5)
     if result != .completed {
-        let state = "sourceExists=\(source.exists); destinationExists=\(destination.exists); destinationHittable=\(destination.isHittable)"
+        func text(_ value: Bool?) -> String { value.map(String.init) ?? "not observed" }
+        let state = "sourceExists=\(text(lastSource)); destinationExists=\(text(lastDestination)); destinationHittable=\(text(lastHittable))"
         XCTContext.runActivity(named: "Screen dismissal readiness") { activity in
             let attachment = XCTAttachment(string: state)
             attachment.name = "Synthetic dismissal state"

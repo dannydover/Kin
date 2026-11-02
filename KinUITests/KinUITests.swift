@@ -1233,12 +1233,15 @@ final class KinUITests: XCTestCase {
                 continue
             }
             let frame = element.frame
-            if frame.minY >= 145 && frame.maxY <= formContentBottom(app) { return }
+            if preciseFormFrameIsVisible(frame,lowerBound: 145,upperBound: formContentBottom(app)) { return }
             let movingUp = frame.maxY > formContentBottom(app)
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: movingUp ? 0.72 : 0.38))
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: movingUp ? 0.52 : 0.58))
             start.press(forDuration: 0.05,thenDragTo: end)
         }
+        // The last permitted gesture can expose the target; check it once.
+        if element.exists && preciseFormFrameIsVisible(element.frame,lowerBound: 145,upperBound: formContentBottom(app)) { return }
+        XCTFail("Target did not enter the visible form area within the reveal limit")
     }
     @MainActor private func capture(_ app: XCUIApplication, _ name: String) {
         // Layout assertions provide review evidence without retaining screenshots.
