@@ -89,6 +89,26 @@ import UIKit
         try commit.save(draft,store: store,relationship: .child(of: source.id,parentage: .unspecified))
         #expect(store.people.count == 2 && store.parentLinks.count == 1)
     }
+    @Test("Sequential adult and minor imports coexist after reopening")
+    func sequentialImports() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("sequential-imports.sqlite")
+        let store = try KinStore(storeURL: url)
+        let adult = Person(firstName: "Synthetic adult", birthday: .exact(CivilDate(year: 1990,month: 1,day: 2)), connections: [.friend])
+        let minor = Person(firstName: "Synthetic minor", birthday: .exact(CivilDate(year: 2020,month: 1,day: 2)), connections: [.friend])
+        try NewContactImportCommit().save(adult,store: store,relationship: nil)
+        try NewContactImportCommit().save(minor,store: store,relationship: nil)
+        let savedAdult = try store.person(adult.id)
+        let savedMinor = try store.person(minor.id)
+        #expect(savedAdult.birthday == adult.birthday && savedAdult.connections == [.friend])
+        #expect(savedMinor.birthday == minor.birthday && savedMinor.connections == [.friend])
+        try store.close()
+        let reopened = try KinStore(storeURL: url); defer { try? reopened.close() }
+        #expect(reopened.people.count == 2)
+        #expect(try reopened.person(adult.id) == savedAdult)
+        #expect(try reopened.person(minor.id) == savedMinor)
+    }
     @Test("Validation and missing relationship endpoints leave no partial person")
     func validation() throws {
         let store = try KinStore(inMemory: true); defer { try? store.close() }

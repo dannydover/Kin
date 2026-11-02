@@ -2,7 +2,8 @@ import Contacts
 import XCTest
 
 enum SyntheticContactsCleanupScope: String {
-    case nativeFull = "native-full"
+    case nativeAdult = "native-adult"
+    case nativeMinor = "native-minor"
     case preservation = "preservation"
     case missingBirthday = "missing-birthday"
 }

@@ -7,7 +7,8 @@ spec=importlib.util.spec_from_file_location('shards','scripts/ci-test-shards.py'
 
 # Fixed scope names are attached to synthetic test-owned Contacts only.
 CLEANUP_SCOPES = {
-    'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdultAndMinor': 'native-full',
+    'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdult': 'native-adult',
+    'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForMinor': 'native-minor',
     'KinUITests/ExistingContactPreservationUITests/testExistingBirthInformationSurvivesMissingAndYearlessContactsReview': 'preservation',
     'KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport': 'missing-birthday',
 }
@@ -17,7 +18,7 @@ def parse(line, allowed):
     if m:
         ident=f'{m[1]}/{m[2]}/{m[3]}'
         return {'kind':'test','id':ident,'event':m[4]} if ident in allowed else None
-    m=re.search(r'KIN_CI_CONTACT_CLEANUP (native-full|preservation|missing-birthday) (verified|empty|failed)\b',line)
+    m=re.search(r'KIN_CI_CONTACT_CLEANUP (native-adult|native-minor|preservation|missing-birthday) (verified|empty|failed)\b',line)
     if m:return {'kind':'contact_cleanup','scope':m[1],'status':m[2]}
     m=re.search(r'KIN_CI_AUTH (notDetermined|restricted|denied|authorized|limited|unknown)\b',line)
     if m:return {'kind':'authorization','state':m[1]}

@@ -44,7 +44,6 @@
     "KinUITests/KinUITests/testSharedEditorUnlistedRecoveryCancelAndRelaunch": 47.8,
     "KinUITests/KinUITests/testUnnamedDraftContactsReviewOmitsTemporaryIdentityInEveryCreationFlow": 121.3,
     "KinUITests/KinUITests/testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot": 52.2,
-    "KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdultAndMinor": 157.6,
     "KinUITests/NextVersionUITests/testEditConnectionFollowsPhotoAtLargestText": 47.3,
     "KinUITests/NextVersionUITests/testEditConnectionFollowsPhotoAtStandardText": 18.4,
     "KinUITests/NextVersionUITests/testEditorCancelBackgroundContainsLabelAtLargestText": 32.2,

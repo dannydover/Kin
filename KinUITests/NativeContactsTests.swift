@@ -42,7 +42,15 @@ final class NativeContactsTests: XCTestCase {
         XCTAssertEqual(observe(1, 0, nil, moved, 2), .wait, "Keep the existing reveal limit")
     }
 
-    @MainActor func testNativeFullBirthdayAndPhotoImportForAdultAndMinor() throws {
+    @MainActor func testNativeFullBirthdayAndPhotoImportForAdult() throws {
+        try checkNativeFullBirthdayAndPhotoImport(isAdult: true, scope: .nativeAdult)
+    }
+
+    @MainActor func testNativeFullBirthdayAndPhotoImportForMinor() throws {
+        try checkNativeFullBirthdayAndPhotoImport(isAdult: false, scope: .nativeMinor)
+    }
+
+    @MainActor private func checkNativeFullBirthdayAndPhotoImport(isAdult: Bool, scope: SyntheticContactsCleanupScope) throws {
         #if targetEnvironment(simulator)
         let contacts = CNContactStore()
         try XCTUnwrap(CNContactStore.authorizationStatus(for: .contacts) == .authorized ? true : nil,
@@ -58,7 +66,7 @@ final class NativeContactsTests: XCTestCase {
         var creationUncertain = false
         // XCTest runs teardown even when the test records an earlier failure;
         // a cleanup error is reported separately instead of being discarded.
-        addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: contacts, scope: .nativeFull, creationUncertain: creationUncertain) }
+        addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: contacts, scope: scope, creationUncertain: creationUncertain) }
         for (name,birthYear,_) in fixtures {
             let contact = CNMutableContact(); contact.givenName = name
             contact.birthday = DateComponents(year: birthYear,month: 1,day: 2)
@@ -70,7 +78,7 @@ final class NativeContactsTests: XCTestCase {
         }
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook",UUID().uuidString]
         app.launch(); defer { app.terminate() }
-        for (name,birthYear,isAdult) in fixtures {
+        for (name,birthYear,fixtureIsAdult) in fixtures where fixtureIsAdult == isAdult {
             app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
             XCTAssertTrue(waitForNativeContactsPicker(app))
             let search = try requireNativeContactsSearch(app)

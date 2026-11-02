@@ -44,7 +44,8 @@ print("ready",flush=True); time.sleep(30)
     def test_real_contact_fixture_journeys_keep_distinct_required_cleanup_scopes(self):
         observer = load('ci-observe.py')
         required = {
-            'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdultAndMinor': 'native-full',
+            'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdult': 'native-adult',
+            'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForMinor': 'native-minor',
             'KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport': 'missing-birthday',
         }
         discovered = set(observer.shards.discover())
@@ -52,6 +53,32 @@ print("ready",flush=True); time.sleep(30)
         for ident, scope in required.items():
             self.assertEqual(observer.CLEANUP_SCOPES.get(ident), scope)
         self.assertEqual(len(set(required.values())), len(required))
+
+    def test_both_native_cleanup_markers_are_required_independently(self):
+        observer = load('ci-observe.py')
+        for kind in ('adult', 'minor'):
+            scope = 'native-' + kind
+            parsed = observer.parse(f'KIN_CI_CONTACT_CLEANUP {scope} verified PRIVATE', set())
+            self.assertEqual(parsed, {'kind': 'contact_cleanup', 'scope': scope, 'status': 'verified'})
+            ident = 'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportFor' + kind.capitalize()
+            self.assertEqual(observer.CLEANUP_SCOPES[ident], scope)
+        self.assertIsNone(observer.parse('KIN_CI_CONTACT_CLEANUP native-full verified', set()))
+
+    def test_split_cleanup_rejects_each_missing_or_duplicate_scope(self):
+        observer = load('ci-observe.py')
+        with tempfile.TemporaryDirectory() as d:
+            fake = pathlib.Path(d) / 'xcodebuild'
+            env = dict(os.environ, PATH=d + ':' + os.environ['PATH'], RUNNER_TEMP=d, KIN_CI_SIMULATOR='synthetic')
+            for group in observer.shards.GROUPS[1:]:
+                scopes = sorted(observer.CLEANUP_SCOPES[i] for i in observer.shards.selections(group) if i in observer.CLEANUP_SCOPES)
+                for scope in [s for s in scopes if s in ('native-adult', 'native-minor')]:
+                    for markers in ([s for s in scopes if s != scope], scopes + [scope]):
+                        fake.write_text('#!/bin/sh\necho "KIN_CI_AUTH authorized"\n' + ''.join(
+                            f'echo "KIN_CI_CONTACT_CLEANUP {item} verified"\n' for item in markers) + 'exit 0\n')
+                        fake.chmod(0o755)
+                        result = subprocess.run([sys.executable, str(ROOT/'scripts/ci-observe.py'), group],
+                                                cwd=ROOT, env=env, capture_output=True, text=True)
+                        self.assertNotEqual(result.returncode, 0, (group, scope, markers))
 
     def test_release_guard_rejects_synthetic_contacts_adapter_markers(self):
         release = load('check-release.py')
@@ -133,10 +160,10 @@ print("ready",flush=True); time.sleep(30)
         self.assertEqual(m.parse('KIN_CI_CONTACT count=2 SECRET',ids),{'kind':'contact_candidates','count':2})
     def test_cleanup_markers_are_fixed_and_redacted(self):
         m=load('ci-observe.py')
-        self.assertEqual(m.parse('KIN_CI_CONTACT_CLEANUP native-full failed PRIVATE_PAYLOAD',set()),
-                         {'kind':'contact_cleanup','scope':'native-full','status':'failed'})
+        self.assertEqual(m.parse('KIN_CI_CONTACT_CLEANUP native-adult failed PRIVATE_PAYLOAD',set()),
+                         {'kind':'contact_cleanup','scope':'native-adult','status':'failed'})
         self.assertIsNone(m.parse('KIN_CI_CONTACT_CLEANUP arbitrary failed',set()))
-        self.assertIsNone(m.parse('KIN_CI_CONTACT_CLEANUP native-full unknown',set()))
+        self.assertIsNone(m.parse('KIN_CI_CONTACT_CLEANUP native-adult unknown',set()))
 
     def test_passing_run_requires_exact_verified_cleanup_markers(self):
         m=load('ci-observe.py')
