@@ -1051,57 +1051,56 @@ final class KinUITests: XCTestCase {
                 }
             }
         }
-        func finite(_ target: XCUIElement) -> Bool {
-            guard target.exists else { return false }
-            let f = target.frame
-            return f.minX.isFinite && f.minY.isFinite && f.width > 0 && f.height > 0
-        }
         var chosen: XCUIElement?
-        var previousFrame = CGRect.null
-        var stableSince = Date()
-        var scrolls = 0
+        var policy = NativeContactRevealPolicy()
         var lastCandidateCount = 0
         var lastVisibleCount = 0
-        var sawUnsettledFrame = false
-        let stable = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let candidates = targets().filter(finite)
-            if timeout == 10 {
-                print("KIN_CI_CONTACT count=\(candidates.count)")
-            }
-            let visible = candidates.filter {
-                let frame = $0.frame
-                return frame.minY >= 145 && frame.maxY <= app.frame.maxY - 100 && $0.isHittable
-            }
-            lastCandidateCount = candidates.count
-            lastVisibleCount = visible.count
-            if visible.count == 1 {
-                let target = visible[0], frame = target.frame
-                if abs(frame.minX - previousFrame.minX) > 0.5 || abs(frame.minY - previousFrame.minY) > 0.5
-                    || abs(frame.width - previousFrame.width) > 0.5 || abs(frame.height - previousFrame.height) > 0.5 {
-                    previousFrame = frame; stableSince = Date(); sawUnsettledFrame = true; return false
+        let deadline = NativeContactRevealDeadline(start: ProcessInfo.processInfo.systemUptime, timeout: timeout)
+        var result: XCTWaiter.Result = .timedOut
+        while deadline.remaining(now: ProcessInfo.processInfo.systemUptime) > 0 {
+            var reveal: (up: Bool, frame: CGRect)?
+            let stable = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                let candidates: [(XCUIElement, CGRect)] = targets().compactMap { target in
+                    guard target.exists else { return nil }
+                    let frame = target.frame
+                    guard frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0 else { return nil }
+                    return (target, frame)
                 }
-                guard Date().timeIntervalSince(stableSince) >= 1 else { sawUnsettledFrame = true; return false }
-                chosen = target; return true
-            }
-            previousFrame = .null; stableSince = Date()
-            // Reveal only a unique finite candidate. The largest-text native
-            // privacy guidance can place it below the viewport. Never pick an
-            // arbitrary duplicate or change the native banner/permissions.
-            if visible.isEmpty && candidates.count == 1 && scrolls < 16 {
-                let frame = candidates[0].frame
-                let up = frame.maxY > app.frame.maxY - 100
-                let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: up ? 0.72 : 0.38))
-                let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: up ? 0.42 : 0.65))
-                start.press(forDuration: 0.05,thenDragTo: end); scrolls += 1
-            }
-            return false
-        },object: nil)
-        let result = XCTWaiter.wait(for: [stable],timeout: timeout)
+                if timeout == 10 { print("KIN_CI_CONTACT count=\(candidates.count)") }
+                let lowerBound = app.frame.maxY - 100
+                let visible = candidates.filter { $0.1.minY >= 145 && $0.1.maxY <= lowerBound && $0.0.isHittable }
+                lastCandidateCount = candidates.count
+                lastVisibleCount = visible.count
+                let decision = policy.observe(candidateCount: candidates.count, visibleCount: visible.count,
+                    visibleFrame: visible.count == 1 ? visible[0].1 : nil,
+                    soleFrame: candidates.count == 1 ? candidates[0].1 : nil,
+                    lowerBound: lowerBound, now: ProcessInfo.processInfo.systemUptime)
+                switch decision {
+                case .select: chosen = visible[0].0; return true
+                case .scrollUp, .scrollDown:
+                    reveal = (decision == .scrollUp, candidates[0].1); return true
+                case .wait: return false
+                }
+            },object: nil)
+            let remaining = deadline.remaining(now: ProcessInfo.processInfo.systemUptime)
+            guard remaining > 0 else { break }
+            let observation = XCTWaiter.wait(for: [stable],timeout: remaining)
+            guard observation == .completed else { result = observation; break }
+            guard deadline.remaining(now: ProcessInfo.processInfo.systemUptime) > 0 else { break }
+            if chosen != nil { result = .completed; break }
+            guard let step = reveal, deadline.remaining(now: ProcessInfo.processInfo.systemUptime) > 0 else { break }
+            // Act outside the predicate, only for a unique finite candidate.
+            // A second drag requires an observed change to that candidate's frame.
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: step.up ? 0.72 : 0.38))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: step.up ? 0.42 : 0.65))
+            start.press(forDuration: 0.05,thenDragTo: end)
+            policy.didScroll(from: step.frame)
+        }
         if result != .completed {
             // Fixed numeric/boolean values captured during the existing wait;
             // do not issue another accessibility query or repeat an interaction.
             let observation = "candidates=\(lastCandidateCount) visible=\(lastVisibleCount) "
-                + "scrolls=\(scrolls) unsettled=\(sawUnsettledFrame)"
+                + "scrolls=\(policy.scrolls) unsettled=\(policy.sawUnsettledFrame)"
             XCTContext.runActivity(named: "Synthetic native contact selection failure state") { activity in
                 let attachment = XCTAttachment(string: observation)
                 attachment.name = "Synthetic native contact selection state"
@@ -1111,7 +1110,7 @@ final class KinUITests: XCTestCase {
         }
         XCTAssertEqual(result,.completed,
                        "Require one stable hittable native contact after bounded reveal")
-        guard let largeContactName = chosen else { return }
+        guard result == .completed, let largeContactName = chosen else { return }
         XCTAssertTrue(largeContactName.isHittable)
         XCTAssertGreaterThanOrEqual(largeContactName.frame.minY,145)
         XCTAssertLessThanOrEqual(largeContactName.frame.maxY,app.frame.maxY - 100)

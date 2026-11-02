@@ -14,6 +14,34 @@ final class NativeContactsTests: XCTestCase {
         XCTAssertEqual(syntheticCardResolution(20), .ambiguous)
     }
 
+    func testNativeContactRevealRequiresUniqueMovementAndStableVisibleTarget() {
+        let deadline = NativeContactRevealDeadline(start: 100, timeout: 10)
+        XCTAssertEqual(deadline.remaining(now: 103), 7)
+        XCTAssertEqual(deadline.remaining(now: 110), 0)
+        XCTAssertEqual(deadline.remaining(now: 111), 0)
+        var policy = NativeContactRevealPolicy()
+        let offscreen = CGRect(x: 20, y: 900, width: 200, height: 50)
+        let moved = CGRect(x: 20, y: 800, width: 200, height: 50)
+        let visible = CGRect(x: 20, y: 300, width: 200, height: 50)
+        func observe(_ count: Int, _ visibleCount: Int, _ frame: CGRect?, _ sole: CGRect?, _ now: TimeInterval) -> NativeContactRevealDecision {
+            policy.observe(candidateCount: count, visibleCount: visibleCount, visibleFrame: frame,
+                           soleFrame: sole, lowerBound: 700, now: now)
+        }
+        XCTAssertEqual(observe(0, 0, nil, nil, 0), .wait)
+        XCTAssertEqual(observe(2, 0, nil, nil, 0), .wait)
+        XCTAssertEqual(observe(1, 0, nil, offscreen, 0), .scrollUp)
+        policy.didScroll(from: offscreen)
+        XCTAssertEqual(observe(1, 0, nil, offscreen, 0.1), .wait, "Do not repeat a drag without observed movement")
+        XCTAssertEqual(observe(1, 0, nil, moved, 0.2), .scrollUp)
+        XCTAssertEqual(observe(1, 1, visible, visible, 0.3), .wait)
+        XCTAssertEqual(observe(1, 1, visible, visible, 1.2), .wait)
+        XCTAssertEqual(observe(1, 1, visible, visible, 1.4), .select)
+        XCTAssertEqual(observe(2, 2, nil, nil, 1.5), .wait)
+        for _ in 1..<16 { policy.didScroll(from: offscreen) }
+        XCTAssertEqual(policy.scrolls, 16)
+        XCTAssertEqual(observe(1, 0, nil, moved, 2), .wait, "Keep the existing reveal limit")
+    }
+
     @MainActor func testNativeFullBirthdayAndPhotoImportForAdultAndMinor() throws {
         #if targetEnvironment(simulator)
         let contacts = CNContactStore()
