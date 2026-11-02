@@ -262,6 +262,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
 | `KinUITests.testIllustratedEmptyStateMenuAndSearchRecovery` | app UI, unit | Retain; assertions mapped above. |
 | `KinUITests.testBlankNameEditsCancelAndLaterNamingPreserveEntry` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testDirectFriendTogglePersistsAcrossSaveAndRelaunch` | app UI, integration | Required candidate: direct editor Friend starts off, one real toggle reaches on, Save returns to the named row, and relaunch/edit retains Friend on. This replaces repeated Friend-toggle setup in the two fixture-backed tests only after hosted validation. |
 | `KinUITests.testEmptyStateAtLargestDynamicType` | app UI | Retain; assertions mapped above. |
 | `KinUITests.testFormSurfacesAndDestructiveControls` | app UI | Retain; assertions mapped above. |
 | `KinUITests.testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot` | app UI, integration, unit | Retain; assertions mapped above. |

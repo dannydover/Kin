@@ -58,6 +58,12 @@ private struct NotebookRoot: View {
     private func load() {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        let fixtureSelection: String?
+        do { fixtureSelection = try SyntheticNotebookFixture.selection(arguments: arguments) }
+        catch {
+            loadError = "Kin couldn’t open this test notebook. Your saved notebook hasn’t been opened."
+            return
+        }
         if arguments.contains("--kin-preview") {
             do {
                 if let index = arguments.firstIndex(of: "--kin-preview"), arguments.indices.contains(index + 1) {
@@ -85,6 +91,9 @@ private struct NotebookRoot: View {
                 let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
                 let url = root.appendingPathComponent("KinTestNotebooks").appendingPathComponent(token.uuidString).appendingPathComponent("Kin.sqlite")
                 let notebook = try KinStore(storeURL: url, protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+                if let fixtureSelection {
+                    try SyntheticNotebookFixture.seed(fixtureSelection, token: token, store: notebook)
+                }
                 store = notebook; lifecycle.store = notebook; loadError = nil
             } catch { loadError = UserFacingError.message(error, opening: true) }
             return

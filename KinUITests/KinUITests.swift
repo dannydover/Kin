@@ -536,8 +536,8 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Your main list is empty"].exists)
     }
     @MainActor func testBlankNameEditsCancelAndLaterNamingPreserveEntry() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app, name: "Synthetic Named")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
+        app.launch(); XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Named"].tap(); app.navigationBars.buttons["Edit"].tap()
         XCTAssertFalse(app.staticTexts["Name unknown"].exists)
         let first = app.textFields["First name (optional)"]
@@ -983,10 +983,10 @@ final class KinUITests: XCTestCase {
         XCTAssertEqual(app.cells.count,1)
     }
     @MainActor func testCompactUnknownAgeWithLongNamesAtStandardAndAccessibilitySizes() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "long-friend"]
         let parent = "Synthetic Parent With A Long Compound Family Name"
         let child = "Synthetic Child With A Long Compound Family Name"
-        app.launch(); addPerson(app,name: parent)
+        app.launch(); XCTAssertTrue(app.staticTexts[parent].waitForExistence(timeout: 10))
         app.staticTexts[parent].tap(); reveal(app.buttons["Add child"],in: app); app.buttons["Add child"].tap()
         app.buttons["Create new person"].tap()
         let first = app.textFields["First name (optional)"]; first.tap(); first.typeText(child)
@@ -1003,6 +1003,19 @@ final class KinUITests: XCTestCase {
         XCTAssertLessThanOrEqual(status.frame.width,app.frame.width)
         XCTAssertGreaterThan(status.frame.height,25)
         XCTAssertTrue(app.staticTexts[parent].exists)
+    }
+    @MainActor func testDirectFriendTogglePersistsAcrossSaveAndRelaunch() {
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launch(); defer { app.terminate() }
+        addPerson(app, name: "Synthetic Friend Toggle")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Friend Toggle"].waitForExistence(timeout: 10))
+        app.staticTexts["Synthetic Friend Toggle"].tap()
+        XCTAssertTrue(app.navigationBars["Synthetic Friend Toggle"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons["Edit"].tap()
+        XCTAssertEqual(editorSwitchWrapper("Friend", in: app).value as? String, "1")
+        app.navigationBars["Edit person"].buttons["Cancel"].tap()
+        XCTAssertTrue(app.navigationBars["Synthetic Friend Toggle"].waitForExistence(timeout: 5))
     }
     @MainActor func testBabyMonthLabelsFitIndexAndDetail() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-preview","babies"]
