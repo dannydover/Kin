@@ -371,8 +371,9 @@ final class KinUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Synthetic A"].exists)
     }
     @MainActor func testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app, name: "Synthetic A"); addPerson(app, name: "Synthetic B")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
+        app.launch(); XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic A"].tap(); app.buttons["Add partner"].tap()
         XCTAssertTrue(app.buttons["Partner status, Current"].exists)
         chooseExistingPerson(app,name: "Synthetic B")

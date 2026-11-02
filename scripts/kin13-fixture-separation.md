@@ -33,7 +33,7 @@ frequency of Friend failure. It adds a UI method rather than removing coverage.
 `SyntheticNotebookFixture.selection` requires exactly one `--kin-ui-fixture`
 flag, one valid `--kin-test-notebook` UUID, and no preview mode. Invalid arguments
 fail before normal notebook opening. `KinApp` seeds only inside the existing
-DEBUG isolated-test-notebook branch. Only two fixed fixture names are accepted;
+DEBUG isolated-test-notebook branch. Only three fixed fixture names are accepted;
 seeding fails for an unrelated nonempty notebook, does not overwrite a record
 with the fixture identity on relaunch, and uses no personal data or permissions.
 The DEBUG-only core seeder and argument marker are covered by the Release binary
@@ -76,7 +76,7 @@ flakiness or app-launch behavior has been resolved.
 
 The helper checks direct Friend off-to-on, Save and return to the exact row in
 every caller. This table identifies its role before any wider fixture migration;
-only the two marked candidates change in this batch.
+only the marked candidates change in this batch.
 
 | Caller | Friend's role and disposition |
 |---|---|
@@ -85,7 +85,8 @@ only the two marked candidates change in this batch.
 | Relationship role labels, and long-role labels | Listed source people for relationship creation and rendered labels; retain pending identity/order and accessibility-fixture review. |
 | `prepareYoungPersonAndExistingParent` | Two listed people, later relationship and age setup; shared by multiple parent tests; retain pending branch-by-branch fixture validation. |
 | Synthetic Add parent import | Listed child is a source for review, Save, relationship and relaunch assertions; retain pending route-specific validation. |
-| Existing partner/unlink/delete; new partner status; shared child/rename | Listed people and relationships are created and later persisted; retain pending fixture identity and relaunch equivalence. |
+| Existing partner/unlink/delete; shared child/rename | Listed people and relationships are created and later persisted; retain pending fixture identity and relaunch equivalence. |
+| New partner status | **Candidate:** two persisted Friend-on listed people with original names/references; all partner-status, Cancel, Save and relaunch assertions remain. Direct creation and Friend/Save are covered by the separate retained journey rather than repeated here. |
 | All people profile navigation | Listed source and unlisted linked child are contrasted; retain setup until both membership states and navigation are mapped to a replacement. |
 | Illustrated empty state/search recovery | Friend is later toggled off before list membership is turned off; retain this real toggle path and setup. |
 | Blank-name cancellation/rename | Friend is setup only; **candidate:** same Friend-on persisted fixture, with creation/toggle/Save retained in the dedicated test. |
@@ -100,3 +101,43 @@ new explicit Friend persistence test. This audit does not assert that other
 callers need the Friend category for their business outcome; it leaves them
 unchanged until each replacement has independently validated setup and
 assertion ownership. No native system journey or UI method is removed.
+
+
+## Follow-up after hosted run 41385195567
+
+This additional local candidate changes the partner-status test's two-person
+setup to `partner-friends`: two distinct deterministic IDs, original synthetic
+names, references 1 and 2, Friend on, listed, and unknown age. Its status
+selection, cancellation, save, relationship and relaunch assertions are
+unchanged. As in the earlier two fixtures, those two initial direct-creation
+journeys move out of this particular test; the dedicated real Friend/Save/
+relaunch UI test remains required and passed in run 41385195567. No UI test or
+native picker journey is removed. Core tests verify exact fields and references,
+reopen and link preservation, and fail closed when only one owned fixture
+exists after a partial setup. The test-only seeder is not atomic across its two
+initial saves; a partial first save causes a later seed attempt to fail closed,
+not silently complete or overwrite a notebook. Release marker checks include
+all three fixture case strings. Hosted validation is still required.
+
+The partner failure's retained recording shows the Add person screen and Friend
+off, with the keyboard present; fixed-field before/after records both show the
+uniquely located control hittable and off. Other failures have occurred with a
+dismissed keyboard. The editor's binding inserts/removes Friend synchronously,
+but the recording cannot prove event delivery or rule out app/state issues.
+
+The relationship-chooser recording shows the selected Blair profile partway
+through its navigation transition when the immediate exact edit-ID existence
+assertion failed. A sibling test already waits five seconds for the same exact
+identity. A targeted readiness wait could preserve that identity check, but
+would add a new wait to a previously immediate assertion; it is not implemented
+under the existing no-timeout-increase constraint. Review the timing semantics
+explicitly before making such a change. It does not explain the Friend failure.
+
+For the Photos failure, the recording shows the native picker remaining on its
+loading screen through the failing wait and displaying the grid later. The app
+accessibility-hierarchy attachment did not contain Photos anchors, so it cannot
+establish whether the final selector was exposed at the relevant instant. The
+existing 15-second navigation-bar assertion, asset selection and image-save
+assertions remain unchanged; no timeout increase or alternate picker is used.
+This evidence supports slow readiness as an observation, not a proven app,
+framework or runner root cause.

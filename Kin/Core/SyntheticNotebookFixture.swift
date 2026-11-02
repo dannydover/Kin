@@ -18,21 +18,28 @@ enum SyntheticNotebookFixture {
     }
 
     @MainActor static func seed(_ selection: String, token: UUID, store: KinStore) throws {
-        let name: String
+        let records: [(UUID, String)]
         switch selection {
-        case "named-friend": name = "Synthetic Named"
-        case "long-friend": name = "Synthetic Parent With A Long Compound Family Name"
+        case "named-friend": records = [(token, "Synthetic Named")]
+        case "long-friend": records = [(token, "Synthetic Parent With A Long Compound Family Name")]
+        case "partner-friends":
+            var bytes = token.uuid
+            bytes.15 ^= 0xff
+            records = [(token, "Synthetic A"), (UUID(uuid: bytes), "Synthetic B")]
         default: throw FixtureError.unsupported
         }
         // A relaunch may follow edits or creation of linked people. Never
         // overwrite an existing fixture or mix it into another notebook.
-        if store.people.contains(where: { $0.id == token }) { return }
+        let existing = Set(store.people.map(\.id))
+        if records.allSatisfy({ existing.contains($0.0) }) { return }
         guard store.people.isEmpty && store.parentLinks.isEmpty && store.partnerLinks.isEmpty else {
             throw FixtureError.nonemptyNotebook
         }
-        var friend = Person(id: token, firstName: name, connections: [.friend])
-        friend.isListed = true
-        try store.savePerson(friend)
+        for (id, name) in records {
+            var friend = Person(id: id, firstName: name, connections: [.friend])
+            friend.isListed = true
+            try store.savePerson(friend)
+        }
     }
 }
 #endif

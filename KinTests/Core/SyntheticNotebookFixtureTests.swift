@@ -66,5 +66,44 @@ import Testing
         }
         #expect(store.people == before && store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
     }
+
+    @Test("Two Friend fixtures retain identities, references and later links on reopen")
+    func partnerFixtures() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let token = UUID()
+        let store = try KinStore(storeURL: directory.appendingPathComponent("fixture.sqlite"))
+        defer { try? store.close() }
+        try SyntheticNotebookFixture.seed("partner-friends", token: token, store: store)
+        let first = try #require(store.people.first(where: { $0.firstName == "Synthetic A" }))
+        let second = try #require(store.people.first(where: { $0.firstName == "Synthetic B" }))
+        #expect(store.people.count == 2 && first.id == token && second.id != token)
+        #expect(first.reference == 1 && second.reference == 2)
+        #expect(first.isListed && second.isListed && first.connections == [.friend] && second.connections == [.friend])
+        #expect(first.birthday == .unknown && second.birthday == .unknown)
+        #expect(first.gender == .unknown && second.gender == .unknown && first.lastName == nil && second.lastName == nil)
+        #expect(first.notes.isEmpty && second.notes.isEmpty && first.photo == nil && second.photo == nil)
+        #expect(store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
+        try store.savePartnerLink(PartnerLink(firstID: first.id, secondID: second.id, status: .former))
+        try store.close(); try store.resume()
+        let people = store.people, links = store.partnerLinks
+        try SyntheticNotebookFixture.seed("partner-friends", token: token, store: store)
+        #expect(store.people == people && store.partnerLinks == links && links.count == 1)
+        #expect(links.first?.status == .former)
+    }
+
+    @Test("Partial two-person setup fails closed rather than silently completing or overwriting")
+    func partialPartnerFixture() throws {
+        let store = try KinStore(inMemory: true); defer { try? store.close() }
+        let token = UUID()
+        var first = Person(id: token, firstName: "Synthetic A", connections: [.friend])
+        first.isListed = true
+        try store.savePerson(first)
+        let before = store.people
+        #expect(throws: SyntheticNotebookFixture.FixtureError.nonemptyNotebook) {
+            try SyntheticNotebookFixture.seed("partner-friends", token: token, store: store)
+        }
+        #expect(store.people == before && store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
+    }
 }
 #endif
