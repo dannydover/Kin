@@ -1,5 +1,36 @@
 import XCTest
 
+enum SyntheticCardResolution: Equatable {
+    case absent, unique, ambiguous
+}
+
+func syntheticCardResolution(_ count: Int) -> SyntheticCardResolution {
+    if count == 0 { return .absent }
+    return count == 1 ? .unique : .ambiguous
+}
+
+/// Resolve one exact synthetic card; never select an arbitrary duplicate.
+@MainActor func requireSyntheticContactCard(_ app: XCUIApplication, name: String) throws -> XCUIElement {
+    let cards = app.cells.containing(.staticText, identifier: name)
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        syntheticCardResolution(cards.count) != .absent
+    }, object: nil)
+    let outcome = XCTWaiter.wait(for: [ready], timeout: 5)
+    let resolution = syntheticCardResolution(cards.count)
+    guard outcome == .completed, resolution == .unique else {
+        XCTFail("Expected exactly one synthetic Contacts card; none or multiple were found")
+        throw SyntheticCardSelectionError.unavailable
+    }
+    let card = cards.element
+    guard card.isHittable else {
+        XCTFail("The unique synthetic Contacts card is not visible and hittable")
+        throw SyntheticCardSelectionError.unavailable
+    }
+    return card
+}
+
+private enum SyntheticCardSelectionError: Error { case unavailable }
+
 /// Require both sides of a dismissal before interacting with the destination.
 /// A background screen may already exist while a sheet still owns the tap.
 @MainActor func requireDismissal(_ source: XCUIElement, destination: XCUIElement,

@@ -7,6 +7,13 @@ import UIKit
 final class NativeContactsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    func testSyntheticCardResolutionFailsClosedForMissingAndAmbiguousMatches() {
+        XCTAssertEqual(syntheticCardResolution(0), .absent)
+        XCTAssertEqual(syntheticCardResolution(1), .unique)
+        XCTAssertEqual(syntheticCardResolution(2), .ambiguous)
+        XCTAssertEqual(syntheticCardResolution(20), .ambiguous)
+    }
+
     @MainActor func testNativeFullBirthdayAndPhotoImportForAdultAndMinor() throws {
         #if targetEnvironment(simulator)
         let contacts = CNContactStore()

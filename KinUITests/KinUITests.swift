@@ -709,10 +709,8 @@ final class KinUITests: XCTestCase {
             let appeared = waitForNativeContactsPicker(app)
             if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
             XCTAssertTrue(appeared)
-            let search = try requireNativeContactsSearch(app)
-            search.tap(); app.typeText(contactName)
-            let card = app.collectionViews["Search results"].cells[contactName].firstMatch
-            XCTAssertTrue(card.waitForExistence(timeout: 5)); card.tap()
+            let card = try requireSyntheticContactCard(app, name: contactName)
+            card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         }
         try selectSample()
