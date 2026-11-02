@@ -164,8 +164,9 @@ final class KinUITests: XCTestCase {
     }
     // Separate complete scenarios keep the unchanged per-test runtime bound meaningful.
     @MainActor private func prepareYoungPersonAndExistingParent() -> XCUIApplication {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app,name: "Synthetic Young"); addPerson(app,name: "Synthetic Existing Parent")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "young-parent-friends"]
+        app.launch(); XCTAssertTrue(app.staticTexts["Synthetic Young"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
         let birth = app.buttons["Birth information, Unknown"]
         reveal(birth,in: app); birth.tap(); app.buttons["Estimated age"].tap()

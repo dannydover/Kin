@@ -22,10 +22,11 @@ enum SyntheticNotebookFixture {
         switch selection {
         case "named-friend": records = [(token, "Synthetic Named")]
         case "long-friend": records = [(token, "Synthetic Parent With A Long Compound Family Name")]
-        case "partner-friends":
+        case "partner-friends", "young-parent-friends":
             var bytes = token.uuid
             bytes.15 ^= 0xff
-            records = [(token, "Synthetic A"), (UUID(uuid: bytes), "Synthetic B")]
+            let names = selection == "partner-friends" ? ("Synthetic A", "Synthetic B") : ("Synthetic Young", "Synthetic Existing Parent")
+            records = [(token, names.0), (UUID(uuid: bytes), names.1)]
         default: throw FixtureError.unsupported
         }
         // A relaunch may follow edits or creation of linked people. Never

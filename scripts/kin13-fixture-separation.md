@@ -33,7 +33,7 @@ frequency of Friend failure. It adds a UI method rather than removing coverage.
 `SyntheticNotebookFixture.selection` requires exactly one `--kin-ui-fixture`
 flag, one valid `--kin-test-notebook` UUID, and no preview mode. Invalid arguments
 fail before normal notebook opening. `KinApp` seeds only inside the existing
-DEBUG isolated-test-notebook branch. Only three fixed fixture names are accepted;
+DEBUG isolated-test-notebook branch. Only four fixed fixture names are accepted;
 seeding fails for an unrelated nonempty notebook, does not overwrite a record
 with the fixture identity on relaunch, and uses no personal data or permissions.
 The DEBUG-only core seeder and argument marker are covered by the Release binary
@@ -83,7 +83,7 @@ only the marked candidates change in this batch.
 | Normal cold launch | Real startup and Save are part of the behavior; retain the UI setup. |
 | Synthetic unnamed-draft four-route review | Existing listed source for parent/child/partner routes; retain pending route-specific fixture validation. |
 | Relationship role labels, and long-role labels | Listed source people for relationship creation and rendered labels; retain pending identity/order and accessibility-fixture review. |
-| `prepareYoungPersonAndExistingParent` | Two listed people, later relationship and age setup; shared by multiple parent tests; retain pending branch-by-branch fixture validation. |
+| `prepareYoungPersonAndExistingParent` | **Candidate:** two persisted Friend-on listed people with original names and references; all four parent scenarios retain their UI age edit, duplicate/cycle/cancel/relationship and relaunch assertions. Initial direct creation and Friend toggling are exercised separately. |
 | Synthetic Add parent import | Listed child is a source for review, Save, relationship and relaunch assertions; retain pending route-specific validation. |
 | Existing partner/unlink/delete; shared child/rename | Listed people and relationships are created and later persisted; retain pending fixture identity and relaunch equivalence. |
 | New partner status | **Candidate:** two persisted Friend-on listed people with original names/references; all partner-status, Cancel, Save and relaunch assertions remain. Direct creation and Friend/Save are covered by the separate retained journey rather than repeated here. |
@@ -117,7 +117,7 @@ reopen and link preservation, and fail closed when only one owned fixture
 exists after a partial setup. The test-only seeder is not atomic across its two
 initial saves; a partial first save causes a later seed attempt to fail closed,
 not silently complete or overwrite a notebook. Release marker checks include
-all three fixture case strings. Hosted validation is still required.
+all four fixture case strings. Hosted validation is still required.
 
 The partner failure's retained recording shows the Add person screen and Friend
 off, with the keyboard present; fixed-field before/after records both show the
@@ -141,3 +141,28 @@ existing 15-second navigation-bar assertion, asset selection and image-save
 assertions remain unchanged; no timeout increase or alternate picker is used.
 This evidence supports slow readiness as an observation, not a proven app,
 framework or runner root cause.
+
+
+## Shared parent setup follow-up after run 41388703644
+
+The partner fixture, dedicated Friend journey and prior fixture-backed tests
+passed in that run, but the overall run failed 206/207: the duplicate-parent
+test hit the same Friend-on setup failure in `prepareYoungPersonAndExistingParent`.
+The preserved before/after records show the uniquely hittable Friend control off
+with the keyboard present. The shared helper serves four parent tests; their
+Friend selection is setup, while their actual contracts include the age edit,
+biological/step relationships, duplicate and cycle rejection, cancellation,
+relaunch and unlink. The local `young-parent-friends` fixture starts with the
+same Friend-on listed names and references 1 and 2, and leaves the age edit and
+all four tests' downstream assertions unchanged. Those methods no longer each
+perform the initial direct-creation/toggle/Save sequence; the dedicated real
+Friend/Save/relaunch UI test remains required. No UI or native journey is
+removed.
+
+The two-person fixture uses the same distinct ID derivation and fail-closed
+partial-setup rule as `partner-friends`. Parameterized core tests check exact
+fields, reference ordering, linked-record preservation on reopen, and failure
+without mutation if only one fixture exists. Local Xcode/SwiftPM tests do not
+replace normal hosted Release, UI and cleanup checks. This candidate has not
+yet been validated on hosted CI. A pass would not prove that Friend interaction,
+Photos readiness or other UI failures are resolved.
