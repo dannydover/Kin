@@ -123,10 +123,27 @@ if __name__=='__main__':
     resource_spec.loader.exec_module(resource)
     sampler = resource.ResourceSampler(os.environ['RUNNER_TEMP'])
     sampler.start()
+    lifecycle = None
+    if sys.argv[1] != 'unit':
+        try:
+            lifecycle_spec = importlib.util.spec_from_file_location('lifecycle_sampler', 'scripts/ci-lifecycle.py')
+            lifecycle_module = importlib.util.module_from_spec(lifecycle_spec)
+            lifecycle_spec.loader.exec_module(lifecycle_module)
+            lifecycle = lifecycle_module.LifecycleSampler(os.environ['RUNNER_TEMP'], os.environ['KIN_CI_SIMULATOR'])
+            lifecycle.start()
+        except Exception:
+            lifecycle = None
+            print('CI lifecycle observer unavailable', file=sys.stderr, flush=True)
     failed = True
     try:
         result = main()
         failed = result != 0
     finally:
+        if lifecycle is not None:
+            try:
+                if not lifecycle.finish(failed):
+                    print('CI lifecycle observer cleanup unconfirmed', file=sys.stderr, flush=True)
+            except Exception:
+                print('CI lifecycle observer unavailable', file=sys.stderr, flush=True)
         sampler.finish(failed)
     sys.exit(result)
