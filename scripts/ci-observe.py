@@ -37,7 +37,11 @@ def parse(line, allowed):
     return None
 
 def append(out, record):
-    out.write(json.dumps(record,separators=(',',':'))+'\n');out.flush();os.fsync(out.fileno())
+    out.write(json.dumps(record,separators=(',',':'))+'\n');out.flush()
+    # Every action is flushed immediately for interruption recovery. Avoid a
+    # synchronous disk barrier for each high-volume accessibility action;
+    # test outcomes, heartbeats, cleanup and exit still establish barriers.
+    if record.get('kind') != 'action':os.fsync(out.fileno())
 
 def test_scheme(group, order):
     if order not in ('standard', 'random'):
@@ -123,27 +127,10 @@ if __name__=='__main__':
     resource_spec.loader.exec_module(resource)
     sampler = resource.ResourceSampler(os.environ['RUNNER_TEMP'])
     sampler.start()
-    lifecycle = None
-    if sys.argv[1] != 'unit':
-        try:
-            lifecycle_spec = importlib.util.spec_from_file_location('lifecycle_sampler', 'scripts/ci-lifecycle.py')
-            lifecycle_module = importlib.util.module_from_spec(lifecycle_spec)
-            lifecycle_spec.loader.exec_module(lifecycle_module)
-            lifecycle = lifecycle_module.LifecycleSampler(os.environ['RUNNER_TEMP'], os.environ['KIN_CI_SIMULATOR'])
-            lifecycle.start()
-        except Exception:
-            lifecycle = None
-            print('CI lifecycle observer unavailable', file=sys.stderr, flush=True)
     failed = True
     try:
         result = main()
         failed = result != 0
     finally:
-        if lifecycle is not None:
-            try:
-                if not lifecycle.finish(failed):
-                    print('CI lifecycle observer cleanup unconfirmed', file=sys.stderr, flush=True)
-            except Exception:
-                print('CI lifecycle observer unavailable', file=sys.stderr, flush=True)
         sampler.finish(failed)
     sys.exit(result)

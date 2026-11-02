@@ -22,7 +22,7 @@ if result.is_dir():
         except (OSError,ValueError,AttributeError):pass
     except (OSError,ValueError,zipfile.BadZipFile) as e:
         dest.unlink(missing_ok=True);manifest['error_type']=type(e).__name__
-for name in ('KinTests-progress.jsonl','KinTests-summary.json','KinTests-setup.json','KinTests-cleanup.json','KinTests-resource.json','KinTests-lifecycle.json'):
+for name in ('KinTests-progress.jsonl','KinTests-summary.json','KinTests-setup.json','KinTests-cleanup.json','KinTests-resource.json'):
     p=root/name
     if p.is_file(): (out/name).write_bytes(p.read_bytes())
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

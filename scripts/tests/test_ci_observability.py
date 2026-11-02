@@ -1,9 +1,46 @@
 import importlib.util, json, os, pathlib, re, subprocess, sys, tempfile, unittest, zipfile
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 def load(name):
     spec=importlib.util.spec_from_file_location('observe',ROOT/'scripts'/name); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 class ObservabilityTests(unittest.TestCase):
+    def test_progress_flushes_actions_and_syncs_critical_records(self):
+        observer = load('ci-observe.py')
+        with tempfile.TemporaryDirectory() as root:
+            path = pathlib.Path(root) / 'progress.jsonl'
+            with path.open('w') as out, patch.object(observer.os, 'fsync') as sync:
+                observer.append(out, {'kind': 'action', 'stage': 'exists'})
+                self.assertEqual(json.loads(path.read_text())['stage'], 'exists')
+                sync.assert_not_called()
+                observer.append(out, {'kind': 'test', 'event': 'failed'})
+                observer.append(out, {'kind': 'heartbeat', 'elapsed': 1})
+                observer.append(out, {'kind': 'contact_cleanup', 'status': 'verified'})
+                observer.append(out, {'kind': 'exit', 'code': 65})
+                self.assertEqual(sync.call_count, 4)
+
+    def test_flushed_action_survives_terminated_writer(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = pathlib.Path(root) / 'progress.jsonl'
+            child_code = '''
+import importlib.util, pathlib, sys, time
+spec=importlib.util.spec_from_file_location("observer","scripts/ci-observe.py"); m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+out=pathlib.Path(sys.argv[1]).open("w"); m.append(out,{"kind":"action","stage":"exists"})
+print("ready",flush=True); time.sleep(30)
+'''
+            child = subprocess.Popen([sys.executable, '-c', child_code, str(path)], cwd=ROOT,
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            try:
+                import select
+                readable, _, _ = select.select([child.stdout], [], [], 5)
+                self.assertTrue(readable, 'writer did not flush')
+                self.assertEqual(child.stdout.readline().strip(), 'ready')
+            finally:
+                child.kill()
+                child.wait(timeout=3)
+                child.stdout.close()
+            self.assertEqual(json.loads(path.read_text()), {'kind': 'action', 'stage': 'exists'})
+
     def test_real_contact_fixture_journeys_keep_distinct_required_cleanup_scopes(self):
         observer = load('ci-observe.py')
         required = {
