@@ -1,0 +1,50 @@
+name: Synthetic lifecycle identity preflight
+on:
+  push:
+    branches: [diagnostic/kin13-lifecycle-identity]
+permissions:
+  contents: read
+jobs:
+  identity:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify existing toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          python3 -m unittest discover -s scripts/tests -p test_ci_lifecycle_preflight.py -q
+      - name: Build synthetic simulator app
+        run: |
+          xcodebuild -project Kin.xcodeproj -scheme Kin -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/KinIdentityBuild" CODE_SIGNING_ALLOWED=NO build > /dev/null 2>&1
+      - name: Create and boot owned simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin identity ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR" > /dev/null 2>&1
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b > /dev/null 2>&1
+      - name: Install and verify synthetic process identity
+        run: |
+          xcrun simctl install "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinIdentityBuild/Build/Products/Debug-iphonesimulator/Kin.app" > /dev/null 2>&1
+          python3 scripts/ci-lifecycle-preflight.py
+      - name: Remove owned simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
+            python3 scripts/ci-simulator.py cleanup
+          else
+            echo 'No simulator was recorded.'
+          fi
+      - name: Retain cleanup outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-identity-cleanup
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          if-no-files-found: warn
+          retention-days: 7
