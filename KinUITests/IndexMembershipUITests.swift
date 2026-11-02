@@ -118,36 +118,11 @@ final class IndexMembershipUITests: XCTestCase {
 
     @MainActor private func assertClearSearchRestored(_ app: XCUIApplication) {
         let clear = app.buttons["clear-search-and-filters"]
-        // The failing trace had already restored these values before XCTest
-        // waited on animation notifications at the next menu transition.
-        // Gate the next transition on that exact functional outcome, within
-        // the existing five-second bound. A first-match cell frame is not a
-        // recovery invariant: CI showed the correct restored screen while
-        // that additional geometry condition failed to settle.
-        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            app.navigationBars["People"].exists
-                && app.buttons["category-filter"].value as? String == "All"
-                && app.cells.count == 3 && app.staticTexts["Alex Morgan"].exists
-                && !clear.exists
-        },object: nil)
-        let result = XCTWaiter.wait(for: [restored],timeout: 5)
-        if result != .completed {
-            // Preserve fixed-field evidence before the original assertion stops
-            // the test; do not repeat the tap or relax the readiness bound.
-            let people = app.navigationBars["People"].exists
-            let categoryAll = (app.buttons["category-filter"].value as? String) == "All"
-            let threeCells = app.cells.count == 3
-            let alexVisible = app.staticTexts["Alex Morgan"].exists
-            let state = "people=\(people) categoryAll=\(categoryAll) threeCells=\(threeCells) "
-                + "alexVisible=\(alexVisible) clearVisible=\(clear.exists)"
-            XCTContext.runActivity(named: "Synthetic clear restoration failure state") { activity in
-                let attachment = XCTAttachment(string: state)
-                attachment.name = "Synthetic clear restoration state"
-                attachment.lifetime = .keepAlways
-                activity.add(attachment)
-            }
-        }
-        XCTAssertEqual(result,.completed)
+        // One transition observation keeps the original five-second bound.
+        // The exact restored screen and record assertions remain below; polling
+        // all five remote properties in one waiter exhausted that bound even
+        // when the retained failure snapshot showed every condition restored.
+        XCTAssertTrue(clear.waitForNonExistence(timeout: 5), "Clear action must leave the no-results screen")
         XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["category-filter"].value as? String,"All")
         XCTAssertEqual(app.cells.count,3)
