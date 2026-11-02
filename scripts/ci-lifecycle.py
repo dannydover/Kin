@@ -97,8 +97,22 @@ class LifecycleSampler:
     def _run(self):
         while not self.stopped.is_set() and time.monotonic() - self.started < self.max_seconds:
             self.samples.append(self._sample())
+            try:
+                self._write_checkpoint(False)
+            except OSError:
+                pass
             self.stopped.wait(self.interval)
         self.deadline_reached = not self.stopped.is_set()
+
+    def _write_checkpoint(self, complete):
+        temporary = self.path.with_suffix('.tmp')
+        try:
+            temporary.write_text(json.dumps({'version': 1, 'interval_seconds': self.interval,
+                'deadline_reached': self.deadline_reached, 'complete': complete,
+                'samples': list(self.samples)}, separators=(',', ':')) + '\n')
+            os.replace(temporary, self.path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def start(self):
         self.path.unlink(missing_ok=True)
@@ -114,9 +128,8 @@ class LifecycleSampler:
                 self.cleanup_ok = False
             self.thread.join(timeout=2)
         complete = not self.thread.is_alive() and self.cleanup_ok
-        if failed:
-            self.path.write_text(json.dumps({'version': 1, 'interval_seconds': self.interval,
-                'deadline_reached': self.deadline_reached,
-                'complete': complete, 'samples': list(self.samples)},
-                separators=(',', ':')) + '\n')
+        if failed and not self.thread.is_alive():
+            self._write_checkpoint(complete)
+        elif complete:
+            self.path.unlink(missing_ok=True)
         return complete

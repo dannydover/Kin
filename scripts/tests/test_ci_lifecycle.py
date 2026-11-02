@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -74,6 +76,62 @@ class LifecycleTests(unittest.TestCase):
             self.assertFalse(sampler.thread.is_alive())
             self.assertFalse(sampler.path.exists())
 
+    def test_checkpoint_survives_interruption_and_success_removes_it(self):
+        with tempfile.TemporaryDirectory() as root:
+            sampler = LIFECYCLE.LifecycleSampler(root, DEVICE, interval=0.01, max_seconds=1)
+            with patch.object(sampler, '_inventory', return_value='42 0 application<com.intriguingideas.Kin>\nPRIVATE'):
+                sampler.start()
+                for _ in range(100):
+                    if sampler.path.exists():
+                        break
+                    LIFECYCLE.time.sleep(0.01)
+                partial = json.loads(sampler.path.read_text())
+                self.assertFalse(partial['complete'])
+                self.assertEqual(partial['samples'][0]['state'], 'present')
+                self.assertNotIn('PRIVATE', sampler.path.read_text())
+                # The existing retention step must preserve this checkpoint
+                # even when XCTest never finalized its result bundle.
+                retain = FILE.parents[0] / 'ci-retain.py'
+                subprocess.run([sys.executable, str(retain)],
+                               env=dict(os.environ, RUNNER_TEMP=root), check=True)
+                retained = pathlib.Path(root) / 'KinCI-retained'
+                self.assertEqual(json.loads((retained / 'manifest.json').read_text())['status'], 'partial')
+                self.assertFalse(json.loads((retained / sampler.path.name).read_text())['complete'])
+                self.assertTrue(sampler.finish(False))
+            self.assertFalse(sampler.path.exists())
+
+    def test_killed_observer_leaves_partial_checkpoint_for_retention(self):
+        with tempfile.TemporaryDirectory() as root:
+            child_code = '''
+import importlib.util, pathlib, sys, time
+spec=importlib.util.spec_from_file_location("sampler",sys.argv[1]); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+s=m.LifecycleSampler(sys.argv[2],sys.argv[3],interval=0.01,max_seconds=10)
+s._inventory=lambda: "42 0 application<com.intriguingideas.Kin>\\nPRIVATE"
+s.start()
+while not s.path.exists(): time.sleep(0.01)
+print("ready",flush=True)
+time.sleep(30)
+'''
+            child = subprocess.Popen([sys.executable, '-c', child_code, str(FILE), root, DEVICE],
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            try:
+                # A timeout bounds the synthetic test process; it never touches XCTest.
+                import select
+                readable, _, _ = select.select([child.stdout], [], [], 5)
+                self.assertTrue(readable, 'checkpoint was not written')
+                self.assertEqual(child.stdout.readline().strip(), 'ready')
+            finally:
+                child.kill()
+                child.wait(timeout=3)
+                child.stdout.close()
+            checkpoint = pathlib.Path(root) / 'KinTests-lifecycle.json'
+            self.assertFalse(json.loads(checkpoint.read_text())['complete'])
+            subprocess.run([sys.executable, str(FILE.parent / 'ci-retain.py')],
+                           env=dict(os.environ, RUNNER_TEMP=root), check=True)
+            retained = pathlib.Path(root) / 'KinCI-retained'
+            self.assertEqual(json.loads((retained / 'manifest.json').read_text())['status'], 'partial')
+            self.assertNotIn('PRIVATE', (retained / checkpoint.name).read_text())
+
     def test_overall_deadline_and_invalid_bounds(self):
         with tempfile.TemporaryDirectory() as root:
             sampler = LIFECYCLE.LifecycleSampler(root, DEVICE, interval=0.01, max_seconds=0.03)
@@ -85,6 +143,26 @@ class LifecycleTests(unittest.TestCase):
             for bounds in ({'interval': 0}, {'limit': 201}, {'max_seconds': 2701}):
                 with self.subTest(bounds=bounds), self.assertRaises(ValueError):
                     LIFECYCLE.LifecycleSampler(root, DEVICE, **bounds)
+
+    def test_observer_command_failure_preserves_xcode_failure_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = pathlib.Path(root)
+            fake_xcode = root_path / 'xcodebuild'
+            fake_xcode.write_text('#!/bin/sh\nsleep 0.2\nexit 65\n')
+            fake_xcode.chmod(0o755)
+            fake_xcrun = root_path / 'xcrun'
+            fake_xcrun.write_text('#!/bin/sh\necho PRIVATE >&2\nexit 1\n')
+            fake_xcrun.chmod(0o755)
+            env = dict(os.environ, PATH=root + ':' + os.environ['PATH'],
+                       RUNNER_TEMP=root, KIN_CI_SIMULATOR=DEVICE)
+            outcome = subprocess.run([sys.executable, str(FILE.parent / 'ci-observe.py'), 'ui-0'],
+                                     cwd=FILE.parent.parent, env=env, capture_output=True, text=True, timeout=10)
+            self.assertEqual(outcome.returncode, 65)
+            checkpoint = root_path / 'KinTests-lifecycle.json'
+            evidence = json.loads(checkpoint.read_text())
+            self.assertTrue(evidence['complete'])
+            self.assertTrue(all(s['state'] == 'unknown' for s in evidence['samples']))
+            self.assertNotIn('PRIVATE', outcome.stdout + outcome.stderr + checkpoint.read_text())
 
 
 if __name__ == '__main__':
