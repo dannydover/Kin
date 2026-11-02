@@ -597,8 +597,8 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Add partner"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Add child"].exists)
     }
     @MainActor func testEstimatedAgeWheelBoundariesAndCancel() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addEstimatedAdult(app,name: "Synthetic Older")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-age-boundary"]
+        app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Older")
         app.navigationBars.buttons["Edit"].tap()
         let age = app.buttons["choose-estimated-age"]
         reveal(age,in: app); age.tap()
@@ -615,8 +615,8 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 0 as of")).firstMatch.exists)
     }
     @MainActor func testEstimatedAgeWheelAtLargestDynamicType() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addEstimatedAdult(app,name: "Synthetic Large Age")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-age-largest"]
+        app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Large Age")
         app.terminate(); app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]; app.launch()
         app.staticTexts["Synthetic Large Age"].tap(); app.navigationBars.buttons["Edit"].tap()
         let age = app.buttons["choose-estimated-age"]
@@ -637,8 +637,8 @@ final class KinUITests: XCTestCase {
         app.navigationBars["Edit person"].buttons["Cancel"].tap()
     }
     @MainActor func testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addEstimatedAdult(app, name: "Synthetic Photo")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-photo"]
+        app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Photo")
         app.navigationBars.buttons["Edit"].tap(); app.swipeUp(); app.buttons["Add photo"].tap()
         XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 15))
         let fixture = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
@@ -681,8 +681,8 @@ final class KinUITests: XCTestCase {
         creationUncertain = true
         try fixtureStore.execute(create); created.append(fixtureContact)
         creationUncertain = false
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addEstimatedAdult(app, name: "Synthetic Existing Draft")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-contact-draft"]
+        app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Existing Draft")
         app.navigationBars.buttons["Edit"].tap(); app.swipeUp(); app.buttons["Add photo"].tap()
         XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 15))
         let fixture = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
@@ -756,14 +756,11 @@ final class KinUITests: XCTestCase {
         throw XCTSkip("Synthetic Contacts fixture creation is restricted to isolated simulators.")
         #endif
     }
-    @MainActor private func addEstimatedAdult(_ app: XCUIApplication, name: String) {
-        addPerson(app, name: name); app.staticTexts[name].tap(); app.navigationBars.buttons["Edit"].tap()
-        let birth = app.buttons["birth-information"]
-        reveal(birth,in: app,requireHittable: true); birth.tap()
-        XCTAssertTrue(app.buttons["Estimated age"].waitForExistence(timeout: 5))
-        app.buttons["Estimated age"].tap()
-        XCTAssertFalse(app.buttons["Save"].isEnabled)
-        chooseAge(app,value: 80); app.buttons["Save"].tap()
+    @MainActor private func openEstimatedAdultFixture(_ app: XCUIApplication, name: String) {
+        let row = app.staticTexts[name]
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Estimated 80 as of")).firstMatch.waitForExistence(timeout: 5))
     }
     @MainActor func testNativeImportSavesReviewedName() throws {
         try checkReviewedImportForEveryEntryPoint(useNativePicker: true)

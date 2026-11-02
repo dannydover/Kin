@@ -92,7 +92,7 @@ only the marked candidates change in this batch.
 | Blank-name cancellation/rename | Friend is setup only; **candidate:** same Friend-on persisted fixture, with creation/toggle/Save retained in the dedicated test. |
 | Form surfaces/destructive controls | Source person for real editor/delete-alert interactions; retain pending fixture and alert-flow review. |
 | Young-profile sections | Source person for age and profile behavior; retain pending age/relationship fixture review. |
-| `addEstimatedAdult` | Source for real Photos/Contacts and age-selection journeys; retain native/system setup until its assertions and fixture state are separately reviewed. |
+| `addEstimatedAdult` | **Migrated setup:** four isolated persisted estimated-80 Friend records replace repeated creation, Friend toggling and initial age entry. The photo, missing-birthday and two age-wheel journeys retain their downstream UI actions and assertions; direct Friend/Save/relaunch remains required separately. |
 | Reviewed-import route helper | Listed source for real native smoke and synthetic multi-route matrix; retain pending route and system-coverage review. |
 | Compact unknown-age long names | Friend-on parent is setup only; **candidate:** same persisted parent fixture; child creation and both layout assertions remain UI-driven. |
 
@@ -166,3 +166,32 @@ without mutation if only one fixture exists. Local Xcode/SwiftPM tests do not
 replace normal hosted Release, UI and cleanup checks. This candidate has not
 yet been validated on hosted CI. A pass would not prove that Friend interaction,
 Photos readiness or other UI failures are resolved.
+
+## Estimated-adult setup batch after run 41514316354
+
+Four callers of `addEstimatedAdult` used the same preliminary direct creation,
+Friend-on toggle, Save, profile reopen, Estimated age selection, empty-age Save
+check and age-80 entry. The fixtures use the same name, isolated notebook ID,
+listed/Friend state, unknown gender, empty photo and age 80 as of the current
+civil day. The four journeys still open the named profile and assert the age-80
+label before their original test-specific steps:
+
+| Journey | Retained UI contract |
+|---|---|
+| Estimated age boundaries | Real wheel 120/0, cancellation, Save and relaunch persistence. |
+| Estimated age at largest text | Real largest-text wheel geometry, controls and cancellation. |
+| Photo removal | Real Photos selection, removal warning, Cancel, saved photo and age after relaunch. |
+| Missing-birthday import | Real Photos and Contacts, review/cancel/draft preservation, empty estimated-age Save disabled, age entry, Save and relaunch. |
+
+The setup-specific initial create/Friend/Save/age-80 route is no longer repeated
+in each of these four journeys. Direct creation and Friend/Save/relaunch remain
+required in `testDirectFriendTogglePersistsAcrossSaveAndRelaunch`; the
+missing-birthday journey still checks Save is disabled when estimated age is
+selected without a value. Wheel interactions and their original assertions
+remain in the age journeys. This is an explicit reduction in repeated setup,
+not proof that Friend, Photos, Contacts or XCTest lifecycle failures are fixed.
+
+The other audited `addPerson` call sites in the table above remain unchanged:
+some exercise creation or toggling themselves, and other fixture substitutions
+still need identity, ordering, relationship or navigation equivalence before
+removing setup. No native picker, relationship or deletion journey is retired.

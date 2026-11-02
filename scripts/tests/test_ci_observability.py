@@ -55,7 +55,7 @@ print("ready",flush=True); time.sleep(30)
 
     def test_release_guard_rejects_synthetic_contacts_adapter_markers(self):
         release = load('check-release.py')
-        for marker in (b'--kin-ui-fixture', b'SyntheticNotebookFixture', b'named-friend', b'long-friend', b'partner-friends', b'young-parent-friends', b'--kin-ui-synthetic-contact', b'synthetic-contact-selection', b'--kin-ui-preservation-contacts', b'synthetic-preservation-contact-'):
+        for marker in (b'--kin-ui-fixture', b'SyntheticNotebookFixture', b'named-friend', b'long-friend', b'partner-friends', b'young-parent-friends', b'estimated-age-boundary', b'estimated-age-largest', b'estimated-photo', b'estimated-contact-draft', b'--kin-ui-synthetic-contact', b'synthetic-contact-selection', b'--kin-ui-preservation-contacts', b'synthetic-preservation-contact-'):
             self.assertIsNotNone(re.search(release.DEBUG_PATTERN, marker))
 
     def test_coverage_map_accounts_for_every_current_ui_method(self):

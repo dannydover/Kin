@@ -108,5 +108,46 @@ import Testing
         }
         #expect(store.people == before && store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
     }
+
+    @Test("Estimated adult fixtures preserve exact initial data and later edits on reopen", arguments: [
+        ("estimated-age-boundary", "Synthetic Older"),
+        ("estimated-age-largest", "Synthetic Large Age"),
+        ("estimated-photo", "Synthetic Photo"),
+        ("estimated-contact-draft", "Synthetic Existing Draft")
+    ])
+    func estimatedAdultFixture(_ selection: String, _ name: String) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let token = UUID(), today = CivilDate(year: 2026, month: 10, day: 27)
+        let store = try KinStore(storeURL: directory.appendingPathComponent("fixture.sqlite"))
+        defer { try? store.close() }
+        try SyntheticNotebookFixture.seed(selection, token: token, store: store, today: today)
+        var adult = try #require(store.people.first)
+        #expect(store.people.count == 1 && adult.id == token && adult.firstName == name && adult.reference == 1)
+        #expect(adult.birthday == .estimated(age: 80, referenceDate: today))
+        #expect(adult.connections == [.friend] && adult.isListed && adult.gender == .unknown)
+        #expect(adult.lastName == nil && adult.notes.isEmpty && adult.photo == nil)
+        #expect(AgeRules(calendar: CivilDate.pickerCalendar).allowsPhoto(adult.birthday, on: today.pickerDate))
+        #expect(store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
+        adult.birthday = .estimated(age: 19, referenceDate: today)
+        try store.savePerson(adult); try store.close(); try store.resume()
+        let edited = store.people
+        try SyntheticNotebookFixture.seed(selection, token: token, store: store,
+                                          today: CivilDate(year: 2026, month: 10, day: 28))
+        #expect(store.people == edited && store.people.first?.birthday == .estimated(age: 19, referenceDate: today))
+    }
+
+    @Test("Estimated adult fixtures never overwrite another notebook", arguments: [
+        "estimated-age-boundary", "estimated-age-largest", "estimated-photo", "estimated-contact-draft"
+    ])
+    func estimatedAdultRejectsNonemptyNotebook(_ selection: String) throws {
+        let store = try KinStore(inMemory: true); defer { try? store.close() }
+        try store.savePerson(Person(firstName: "Synthetic Existing"))
+        let before = store.people
+        #expect(throws: SyntheticNotebookFixture.FixtureError.nonemptyNotebook) {
+            try SyntheticNotebookFixture.seed(selection, token: UUID(), store: store)
+        }
+        #expect(store.people == before && store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
+    }
 }
 #endif
