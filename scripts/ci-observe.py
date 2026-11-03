@@ -65,6 +65,7 @@ def main():
     print(f'CI_TEST_ORDER order={order} scheme={scheme}',flush=True)
     cmd=['xcodebuild','-project','Kin.xcodeproj','-scheme',scheme,'-destination','platform=iOS Simulator,id='+os.environ['KIN_CI_SIMULATOR'],'-derivedDataPath','DerivedData','-resultBundlePath',str(result),'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES','-default-test-execution-time-allowance','240','-maximum-test-execution-time-allowance','600']+['-only-testing:'+x for x in ids]+['clean','test','CODE_SIGNING_ALLOWED=NO']
     started=time.monotonic();current=None;authorization=set();cleanup=[];interrupted=False
+    started_tests=set();duplicate_starts=set()
     with progress.open('w') as out:
         proc=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=env,start_new_session=True,bufsize=0)
         def stop(signum,frame):
@@ -83,7 +84,13 @@ def main():
                     while b'\n' in buf:
                         line,buf=buf.split(b'\n',1);event=parse(line.decode('utf-8','replace'),allowed)
                         if event:
-                            if event['kind']=='test':current=event['id'] if event['event']=='started' else None
+                            if event['kind']=='test':
+                                if event['event']=='started':
+                                    if event['id'] in started_tests: duplicate_starts.add(event['id'])
+                                    started_tests.add(event['id'])
+                                    current=event['id']
+                                else:
+                                    current=None
                             if event['kind']=='authorization':authorization.add(event['state'])
                             if event['kind']=='contact_cleanup':cleanup.append((event['scope'],event['status']))
                             event['elapsed']=elapsed
@@ -112,9 +119,14 @@ def main():
             append(out,{'kind':'contact_cleanup_accounting','scope':scope,'status':state,
                         'elapsed':round(time.monotonic()-started,1)})
             if state!='verified': print(f'CI_CONTACT_CLEANUP_ACCOUNTING {scope} {state}',file=sys.stderr,flush=True)
+        for ident in sorted(duplicate_starts):
+            append(out,{'kind':'duplicate_test_start','id':ident,'elapsed':round(time.monotonic()-started,1)})
+            print(f'CI_DUPLICATE_TEST_START {ident}',file=sys.stderr,flush=True)
         append(out,{'kind':'exit','elapsed':round(time.monotonic()-started,1),'code':code,'interrupted':interrupted})
     if interrupted:return 1
     if code:return code if code>0 else 1
+    if duplicate_starts:
+        print('Repeated UI test starts prevent a clean first-attempt result.',file=sys.stderr);return 1
     if group!='unit' and authorization != {'authorized'}:
         print('CI runner Contacts authorization was not verified as authorized.',file=sys.stderr);return 1
     # On an otherwise passing run, every selected test that creates Contacts
