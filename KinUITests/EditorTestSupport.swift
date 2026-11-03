@@ -138,7 +138,8 @@ private enum SyntheticCardSelectionError: Error { case unavailable }
     var chosen: XCUIElement?
     var lastCounts: (total: Int, inBounds: Int, hittable: Int)?
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        let elements = searches.allElementsBoundByIndex
+        // Bind each candidate to the observed accessibility element, not a changing result index.
+        let elements = searches.allElementsBoundByAccessibilityElement
         var inBounds = 0
         let candidates = elements.filter {
             let frame = $0.frame
