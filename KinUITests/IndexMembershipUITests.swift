@@ -6,7 +6,11 @@ final class IndexMembershipUITests: XCTestCase {
         app.launchArguments = ["--kin-test-notebook",UUID().uuidString]; app.launch()
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
     }
-    @MainActor private func inclusion(_ app: XCUIApplication) -> XCUIElement { editorToggle("index-inclusion", in: app) }
+    // Shorter bounded drags reduce overshoot risk for the inclusion row while
+    // the keyboard limits the visible form; the reveal limit is unchanged.
+    @MainActor private func inclusion(_ app: XCUIApplication) -> XCUIElement {
+        editorToggle("index-inclusion", in: app, scrollStep: 120)
+    }
     @MainActor func testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch() {
         let app = XCUIApplication(); launch(app)
         app.buttons["Add person"].tap()
