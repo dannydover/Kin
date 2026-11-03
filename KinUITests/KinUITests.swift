@@ -792,7 +792,7 @@ final class KinUITests: XCTestCase {
         executionTimeAllowance = 600
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
         if !useNativePicker { app.launchArguments.append("--kin-ui-synthetic-contact") }
-        app.launch()
+        addTeardownBlock { app.terminate() }; app.launch()
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         // The native smoke covers real picker selection once. The synthetic
         // app-UI test below exercises all four entry points with the same review,
