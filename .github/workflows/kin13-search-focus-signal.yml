@@ -1,0 +1,59 @@
+name: Synthetic search focus signal (nonshipping)
+on:
+  push:
+    branches: [diagnostic/kin13-search-focus-signal]
+permissions:
+  contents: read
+jobs:
+  focus-signal:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          test "$(uname -m)" = arm64
+      - name: Prepare disposable simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin focus ${GITHUB_RUN_ID}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+      - name: Measure UI focus signal in one synthetic search
+        timeout-minutes: 45
+        run: |
+          xcodebuild -project Kin.xcodeproj -scheme Kin -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR" -derivedDataPath DerivedData -resultBundlePath "$RUNNER_TEMP/KinTests.xcresult" -parallel-testing-enabled NO -collect-test-diagnostics never -test-timeouts-enabled YES -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 600 -only-testing:KinUITests/IndexMembershipUITests/testDiagnosticAllPeopleSearchFocusSignal clean test CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/KinFocus-private.log" 2>&1
+      - name: Verify result and exact selected test
+        if: always()
+        run: |
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
+          python3 -c 'import importlib.util,json,os; s=importlib.util.spec_from_file_location("m","scripts/ci-test-shards.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); m.verify_test_ids(json.load(open(os.environ["RUNNER_TEMP"]+"/KinTests-test-tree.json")),["KinUITests/IndexMembershipUITests/testDiagnosticAllPeopleSearchFocusSignal"])'
+      - name: Retain finalized or partial result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kin-focus-signal-result
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove synthetic simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then python3 scripts/ci-simulator.py cleanup; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kin-focus-signal-cleanup
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: warn

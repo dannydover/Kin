@@ -183,6 +183,32 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
+    // Nonshipping diagnostic: compare XCTest's public UI-focus flag with a
+    // successful real search, without retrying the tap or changing its assertions.
+    @MainActor func testDiagnosticAllPeopleSearchFocusSignal() {
+        let app = clearSearchFixture(usePreview: true); defer { app.terminate() }
+        app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
+        XCTAssertTrue(app.navigationBars["All people"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.searchFields.count, 1)
+        let field = app.searchFields.firstMatch
+        func record(_ stage: String) {
+            let message = "stage=\(stage) exists=\(field.exists) hittable=\(field.isHittable) uiFocus=\(field.hasFocus) keyboardVisible=\(app.keyboards.count > 0)"
+            print("KIN_FOCUS_SIGNAL " + message)
+            let attachment = XCTAttachment(string: message)
+            attachment.name = "Synthetic focus signal " + stage
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        record("beforeTap")
+        field.tap()
+        record("afterTap")
+        field.typeText("NoSuchFictionalPerson")
+        record("afterType")
+        XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5))
+        app.buttons["clear-search-and-filters"].tap()
+        assertClearSearchRestored(app)
+    }
+
     @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: true) }
     @MainActor private func checkClearAllPeopleSearch(usePreview: Bool) {
         let app = clearSearchFixture(usePreview: usePreview); defer { app.terminate() }
