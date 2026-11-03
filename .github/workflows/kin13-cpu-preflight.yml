@@ -1,0 +1,16 @@
+name: Kin aggregate CPU measurement preflight
+on:
+  push:
+    branches: [diagnostic/kin13-cpu-counter-preflight]
+permissions:
+  contents: read
+jobs:
+  counter-preflight:
+    runs-on: xcode-27
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate bounded aggregate CPU measurement
+        run: python3 scripts/kin13-cpu-preflight.py
