@@ -41,16 +41,20 @@ final class RelationshipActionTests: XCTestCase {
         for (index,fixture) in fixtures.enumerated() {
             let action = app.buttons["Edit relationship with " + fixture.0]
             for _ in 0..<18 {
-                if action.exists && action.frame.minY >= 125 && action.frame.maxY <= app.frame.maxY - 65 && action.isHittable { break }
+                if action.exists {
+                    let frame = action.frame
+                    if frame.minY >= 125 && frame.maxY <= app.frame.maxY - 65 && action.isHittable { break }
+                }
                 let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.72))
                 origin.press(forDuration: 0.05,thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.52)))
             }
             XCTAssertTrue(action.isHittable)
-            XCTAssertGreaterThanOrEqual(action.frame.height,44)
-            XCTAssertGreaterThanOrEqual(action.frame.width,44)
-            XCTAssertGreaterThanOrEqual(action.frame.minX,0)
-            XCTAssertLessThanOrEqual(action.frame.maxX,app.frame.maxX)
-            if large { XCTAssertGreaterThan(action.frame.height,44) }
+            let actionFrame = action.frame
+            XCTAssertGreaterThanOrEqual(actionFrame.height,44)
+            XCTAssertGreaterThanOrEqual(actionFrame.width,44)
+            XCTAssertGreaterThanOrEqual(actionFrame.minX,0)
+            XCTAssertLessThanOrEqual(actionFrame.maxX,app.frame.maxX)
+            if large { XCTAssertGreaterThan(actionFrame.height,44) }
             let addTitle = ["Add partner","Add child","Add parent"][index]
             let addAction = app.buttons[addTitle]
             XCTAssertTrue(addAction.exists)
