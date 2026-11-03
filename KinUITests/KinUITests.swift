@@ -73,31 +73,34 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Parent 2"].waitForExistence(timeout: 5))
     }
     @MainActor func testRelationshipRoleLabelsFromBothDirectionsAndForPartners() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app,name: "Synthetic Parent"); addPerson(app,name: "Synthetic Child"); addPerson(app,name: "Synthetic Partner")
-        app.staticTexts["Synthetic Parent"].tap(); app.buttons["Add child"].tap(); chooseExistingPerson(app,name: "Synthetic Child")
-        assertParentRoles(app,parent: "Synthetic Parent",child: "Synthetic Child")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 5))
+        addPerson(app,name: "Synthetic Child")
+        app.staticTexts["Synthetic A"].tap(); app.buttons["Add child"].tap(); chooseExistingPerson(app,name: "Synthetic Child")
+        assertParentRoles(app,parent: "Synthetic A",child: "Synthetic Child")
         capture(app,"Add child clearly labels parent and child")
         app.buttons["Save"].tap(); app.buttons["Edit relationship with Synthetic Child"].tap()
-        assertParentRoles(app,parent: "Synthetic Parent",child: "Synthetic Child")
+        assertParentRoles(app,parent: "Synthetic A",child: "Synthetic Child")
         app.navigationBars["Edit relationship"].buttons["Cancel"].tap()
         app.staticTexts["Synthetic Child"].tap()
-        app.buttons["Edit relationship with Synthetic Parent"].tap()
-        assertParentRoles(app,parent: "Synthetic Parent",child: "Synthetic Child")
+        app.buttons["Edit relationship with Synthetic A"].tap()
+        assertParentRoles(app,parent: "Synthetic A",child: "Synthetic Child")
         app.navigationBars["Edit relationship"].buttons["Cancel"].tap()
-        reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap(); chooseExistingPerson(app,name: "Synthetic Partner")
-        assertParentRoles(app,parent: "Synthetic Partner",child: "Synthetic Child")
+        reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap(); chooseExistingPerson(app,name: "Synthetic B")
+        assertParentRoles(app,parent: "Synthetic B",child: "Synthetic Child")
         capture(app,"Add parent clearly labels selected parent and current child")
         app.navigationBars["Add relationship"].buttons["Cancel"].tap(); backToRelationshipOptions(app,title: "Add parent"); app.navigationBars["Add parent"].buttons["Cancel"].tap()
-        app.navigationBars.buttons["Synthetic Parent"].tap()
-        app.buttons["Add partner"].tap(); chooseExistingPerson(app,name: "Synthetic Partner")
-        assertPartnerRoles(app,names: ["Synthetic Parent","Synthetic Partner"])
+        app.navigationBars.buttons["Synthetic A"].tap()
+        app.buttons["Add partner"].tap(); chooseExistingPerson(app,name: "Synthetic B")
+        assertPartnerRoles(app,names: ["Synthetic A","Synthetic B"])
         capture(app,"Partner labels are symmetric")
-        app.buttons["Save"].tap(); app.buttons["Edit relationship with Synthetic Partner"].tap()
-        assertPartnerRoles(app,names: ["Synthetic Parent","Synthetic Partner"])
+        app.buttons["Save"].tap(); app.buttons["Edit relationship with Synthetic B"].tap()
+        assertPartnerRoles(app,names: ["Synthetic A","Synthetic B"])
         app.navigationBars["Edit relationship"].buttons["Cancel"].tap()
-        app.staticTexts["Synthetic Partner"].tap(); app.buttons["Edit relationship with Synthetic Parent"].tap()
-        assertPartnerRoles(app,names: ["Synthetic Parent","Synthetic Partner"])
+        app.staticTexts["Synthetic B"].tap(); app.buttons["Edit relationship with Synthetic A"].tap()
+        assertPartnerRoles(app,names: ["Synthetic A","Synthetic B"])
     }
     @MainActor func testRelationshipRoleLabelsWrapLongNamesAtLargestDynamicType() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
@@ -343,10 +346,10 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson() {
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch()
-        XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 5))
+        addPerson(app, name: "Synthetic A")
+        addPerson(app, name: "Synthetic B")
         app.staticTexts["Synthetic A"].tap()
         app.buttons["Add partner"].tap()
         chooseExistingPerson(app,name: "Synthetic B")
