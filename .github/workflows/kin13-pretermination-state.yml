@@ -1,0 +1,104 @@
+name: Synthetic pretermination state (nonshipping)
+on:
+  push:
+    branches: [diagnostic/kin13-pretermination-state]
+permissions:
+  contents: read
+jobs:
+  prefix:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          test "$(uname -m)" = arm64
+      - name: Prepare disposable synthetic simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin lifecycle ${GITHUB_RUN_ID}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          export KIN_CI_SIMULATOR
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          python3 scripts/ci-simulator.py grant
+          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+      - name: Run the original ordered prefix once
+        timeout-minutes: 45
+        run: |
+          xcodebuild -project Kin.xcodeproj -scheme Kin -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR" -derivedDataPath DerivedData -resultBundlePath "$RUNNER_TEMP/KinTests.xcresult" -parallel-testing-enabled NO -collect-test-diagnostics never -test-timeouts-enabled YES -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 600 \
+            -only-testing:KinUITests/DeleteAllPeopleUITests/testFailedDeletionRetainsPeopleAndNeverShowsSuccess \
+            -only-testing:KinUITests/IndexMembershipUITests/testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople \
+            -only-testing:KinUITests/IndexMembershipUITests/testClearEmptyCategoryRestoresPeopleWithoutChangingRecords \
+            -only-testing:KinUITests/IndexMembershipUITests/testClearSearchAndFiltersOnEmptyNotebookAtLargestText \
+            -only-testing:KinUITests/IndexMembershipUITests/testClearSearchRestoresPeopleWithoutChangingRecords \
+            clean test CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/KinLifecycle-private.log" 2>&1
+      - name: Capture allowlisted test order
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import importlib.util,json,os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('observe','scripts/ci-observe.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          names=['KinUITests/DeleteAllPeopleUITests/testFailedDeletionRetainsPeopleAndNeverShowsSuccess','KinUITests/IndexMembershipUITests/testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople','KinUITests/IndexMembershipUITests/testClearEmptyCategoryRestoresPeopleWithoutChangingRecords','KinUITests/IndexMembershipUITests/testClearSearchAndFiltersOnEmptyNotebookAtLargestText','KinUITests/IndexMembershipUITests/testClearSearchRestoresPeopleWithoutChangingRecords']
+          root=Path(os.environ['RUNNER_TEMP']); raw=root/'KinLifecycle-private.log'; out=root/'KinTests-progress.jsonl'
+          with out.open('w') as dst:
+              if raw.exists():
+                  for line in raw.open(errors='replace'):
+                      event=m.parse(line,set(names))
+                      if event and event.get('kind')=='test':dst.write(json.dumps(event)+'\n')
+          PY
+      - name: Verify the original prefix order
+        if: always()
+        run: |
+          python3 - <<'PYORDER'
+          import json,os
+          from pathlib import Path
+          names=['KinUITests/DeleteAllPeopleUITests/testFailedDeletionRetainsPeopleAndNeverShowsSuccess','KinUITests/IndexMembershipUITests/testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople','KinUITests/IndexMembershipUITests/testClearEmptyCategoryRestoresPeopleWithoutChangingRecords','KinUITests/IndexMembershipUITests/testClearSearchAndFiltersOnEmptyNotebookAtLargestText','KinUITests/IndexMembershipUITests/testClearSearchRestoresPeopleWithoutChangingRecords']
+          rows=[json.loads(x) for x in (Path(os.environ['RUNNER_TEMP'])/'KinTests-progress.jsonl').read_text().splitlines()]
+          observed=[r['id'] for r in rows if r.get('event')=='started']
+          if observed != names:raise SystemExit('Original prefix order not verified')
+          print('Original prefix order verified')
+          PYORDER
+      - name: Verify finalized result
+        if: always()
+        run: |
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
+      - name: Verify exact selection
+        if: always()
+        run: |
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+          python3 - <<'PY'
+          import importlib.util,json,os
+          s=importlib.util.spec_from_file_location('m','scripts/ci-test-shards.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+          ids=['KinUITests/DeleteAllPeopleUITests/testFailedDeletionRetainsPeopleAndNeverShowsSuccess','KinUITests/IndexMembershipUITests/testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople','KinUITests/IndexMembershipUITests/testClearEmptyCategoryRestoresPeopleWithoutChangingRecords','KinUITests/IndexMembershipUITests/testClearSearchAndFiltersOnEmptyNotebookAtLargestText','KinUITests/IndexMembershipUITests/testClearSearchRestoresPeopleWithoutChangingRecords']
+          m.verify_test_ids(json.load(open(os.environ['RUNNER_TEMP']+'/KinTests-test-tree.json')),ids)
+          PY
+      - name: Retain finalized or partial result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kin-pretermination-result
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove synthetic simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then python3 scripts/ci-simulator.py cleanup; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kin-pretermination-cleanup
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: warn

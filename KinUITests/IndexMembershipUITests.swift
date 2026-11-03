@@ -153,6 +153,14 @@ final class IndexMembershipUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Try another name, such as Alex Morgan. Tap Clear search and filters to return to the People screen."].exists)
         XCTAssertTrue(clear.isHittable); clear.tap(); assertClearSearchRestored(app)
         assertClearSearchPreservedCategory(app)
+        // Diagnostic only: fixed screen/state flags before the original defer
+        // terminates the app. No retry or altered assertion is introduced.
+        let observation = "editorVisible=\(app.navigationBars["Edit person"].exists); "
+            + "profileVisible=\(app.navigationBars["Jamie Patel"].exists); "
+            + "applicationState=\(app.state.rawValue)"
+        let attachment = XCTAttachment(string: observation)
+        attachment.name = "Synthetic pretermination state"
+        attachment.lifetime = .keepAlways; add(attachment)
     }
 
     // The fixture avoids repeating three create-person flows; creation and
