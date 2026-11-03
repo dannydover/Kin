@@ -9,7 +9,7 @@ final class RelationshipActionTests: XCTestCase {
     @MainActor func testSharedActionAuditAtStandardSize() throws { try audit(large: false) }
     @MainActor func testSharedActionAuditAtLargestSize() throws { try audit(large: true) }
     @MainActor private func audit(large: Bool) throws {
-        let app = XCUIApplication(); defer { app.terminate() }
+        let app = XCUIApplication(); addTeardownBlock { app.terminate() }
         app.launchArguments = ["--kin-preview","relationship-action-control"]
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",large ? "UICTContentSizeCategoryAccessibilityXXXL" : "UICTContentSizeCategoryL","-UIAccessibilityBoldTextEnabled",large ? "YES" : "NO"]
         app.launch()
@@ -32,7 +32,7 @@ final class RelationshipActionTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview","relationship-actions"]
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",large ? "UICTContentSizeCategoryAccessibilityXXXL" : "UICTContentSizeCategoryL","-UIAccessibilityBoldTextEnabled",large ? "YES" : "NO"]
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Source"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Source"].tap()
         let fixtures = [("Synthetic Casey Example","Partner status, Former"),

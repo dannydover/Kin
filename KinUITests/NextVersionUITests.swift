@@ -14,7 +14,7 @@ final class NextVersionUITests: XCTestCase {
     }
     @MainActor func testOfflineAutomaticGenderManualUnspecifiedAndSavedEditPreservation() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook",UUID().uuidString]
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10)); app.buttons["Add person"].tap()
         let first = app.textFields["First name (optional)"]
         first.tap(); first.typeText("Michael")
@@ -36,7 +36,7 @@ final class NextVersionUITests: XCTestCase {
     @MainActor func testPeopleFilterAndGenderControlsAtLargestTextWithUnfilteredAudit() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook",UUID().uuidString,"-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL","-UIAccessibilityBoldTextEnabled","YES"]
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
         let filter = app.buttons["category-filter"]
         XCTAssertTrue(filter.isHittable); XCTAssertGreaterThanOrEqual(filter.frame.height,44)
@@ -83,7 +83,7 @@ final class NextVersionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview","relationships"]
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"] }
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Source"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Source"].tap(); app.navigationBars.buttons["Edit"].tap()
         XCTAssertTrue(app.navigationBars["Edit person"].waitForExistence(timeout: 5))
@@ -112,7 +112,7 @@ final class NextVersionUITests: XCTestCase {
         let personName = large ? "Synthetic Cancel Large" : "Synthetic Cancel Standard"
         app.launchArguments = ["--kin-test-notebook",UUID().uuidString]
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"] }
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
         app.buttons["Add person"].tap()
         let first = app.textFields["First name (optional)"]
@@ -209,7 +209,7 @@ final class NextVersionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview","relationships"]
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"] }
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Source"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Source"].tap()
         let addChild = app.buttons["Add child"]

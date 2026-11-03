@@ -15,7 +15,7 @@ final class ExistingContactPreservationUITests: XCTestCase {
         let fixtures = (0..<4).map { "Kin Synthetic Keep \($0)" }
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview","import-preservation","--kin-ui-preservation-contacts","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryL","-UIAccessibilityBoldTextEnabled","NO"]
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         func select(_ name: String) throws {
             let action = app.buttons["Import from Contacts"]; reveal(action,in: app); action.tap()
             let index = try XCTUnwrap(fixtures.firstIndex(of: name))

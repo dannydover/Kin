@@ -372,3 +372,12 @@ Two core tests check the fixture's identities, references, initial data, persist
 ## Additive saved-photo validation
 
 The original missing-birthday test still selects a real Photos item and exercises its complete Contacts review flow. A separate candidate starts from a decodable DEBUG-only stored synthetic PNG, then exercises the same real Contacts selections, review, cancellation, save, and relaunch assertions. Both tests remain required and use distinct owned-Contacts cleanup scopes, each independently checked. The candidate is not equivalent evidence that a real Photos selection immediately followed by Contacts import works; it tests the downstream behavior from a stored photo. The existing real Photos save/removal/relaunch journey remains required. The candidate inherits the original journey's historical 160.8-second scheduling estimate as a placeholder, not a measured runtime or a timeout. Local fixture tests and Release-marker checks passed; hosted validation is needed. No native journey has been retired.
+
+### UI test process ownership
+
+Test-owned app launches use registered XCTest teardown in the covered non-Contacts
+journeys, so an assertion failure can still trigger cleanup. Intermediate restarts
+and assertions remain unchanged. The native Contacts fixture keeps its existing
+teardown order and independently verified owned-Contacts cleanup. A killed test
+runner can still interrupt teardown; this change does not establish a cause or fix
+for the observed accessibility, picker, or simulator delays.

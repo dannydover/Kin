@@ -41,7 +41,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend", "--kin-ui-synthetic-contact"]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         let routes = ["Add person","Add child","Add partner","Add parent"]
         for route in routes {
@@ -74,7 +74,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testRelationshipRoleLabelsFromBothDirectionsAndForPartners() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "role-label-friends"]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Synthetic Child"].waitForExistence(timeout: 5))
@@ -106,7 +106,7 @@ final class KinUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         let parent = "Alexandria Synthetic Parent With A Long Family Name"
         let child = "Christopher Synthetic Child With A Long Family Name"
-        app.launch(); addPerson(app,name: parent); addPerson(app,name: child)
+        app.launch(); addTeardownBlock { app.terminate() }; addPerson(app,name: parent); addPerson(app,name: child)
         app.terminate(); app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]; app.launch()
         app.staticTexts[parent].tap(); reveal(app.buttons["Add child"],in: app); app.buttons["Add child"].tap()
         chooseExistingPerson(app,name: child)
@@ -184,7 +184,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
     }
     @MainActor func testAddParentsReuseAndCancel() throws {
-        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
         app.buttons["Add parent"].tap()
         XCTAssertTrue(app.buttons["relationship-details"].exists)
         XCTAssertFalse(app.buttons["Parent relationship, Unspecified"].exists)
@@ -198,7 +198,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
     }
     @MainActor func testAddParentsDuplicateRejectionPreservesBothPeople() throws {
-        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
         linkExistingBiologicalParent(app)
         // Re-selecting a linked person must reject the duplicate without changing either person.
         app.buttons["Add parent"].tap(); chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
@@ -206,7 +206,7 @@ final class KinUITests: XCTestCase {
         try cancelRelationshipDraft(app, parent: "Synthetic Existing Parent", child: "Synthetic Young"); app.navigationBars["Add parent"].buttons["Cancel"].tap()
     }
     @MainActor func testAddParentsReverseCycleRejectionAndDraftCancellation() throws {
-        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
         linkExistingBiologicalParent(app)
         app.staticTexts["Synthetic Existing Parent"].tap()
         XCTAssertTrue(app.navigationBars["Synthetic Existing Parent"].waitForExistence(timeout: 5))
@@ -221,7 +221,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Synthetic Young"].waitForExistence(timeout: 5))
     }
     @MainActor func testAddParentsCreatePersistNavigateAndUnlink() throws {
-        let app = prepareYoungPersonAndExistingParent(); defer { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
         linkExistingBiologicalParent(app)
         app.buttons["Add parent"].tap(); app.buttons["relationship-details"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Step"].tap()
         app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
@@ -240,7 +240,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend", "--kin-ui-synthetic-contact"]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic Named"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
         app.buttons["Create new person"].tap()
@@ -279,7 +279,7 @@ final class KinUITests: XCTestCase {
     @MainActor func testSharedEditorUnlistedRecoveryCancelAndRelaunch() {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         app.buttons["Add person"].tap()
         XCTAssertTrue(app.buttons["Save"].isEnabled)
         app.textFields["First name (optional)"].tap()
@@ -347,7 +347,7 @@ final class KinUITests: XCTestCase {
     @MainActor func testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson() {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         addPerson(app, name: "Synthetic A")
         addPerson(app, name: "Synthetic B")
         app.staticTexts["Synthetic A"].tap()
@@ -378,7 +378,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
-        app.launch(); XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 10))
+        app.launch(); addTeardownBlock { app.terminate() }; XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic A"].tap(); app.buttons["Add partner"].tap()
         XCTAssertTrue(app.buttons["Partner status, Current"].exists)
@@ -414,7 +414,7 @@ final class KinUITests: XCTestCase {
     @MainActor func testSharedChildReuseAndRenameAcrossBothParents() {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         addPerson(app,name: "Synthetic Parent A"); addPerson(app,name: "Synthetic Parent B")
         app.staticTexts["Synthetic Parent A"].tap()
         app.buttons["Add child"].tap(); app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
@@ -446,7 +446,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testAllPeopleOpensProfilesAndReturnsToSameIndex() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic Named"].tap(); app.buttons["Add child"].tap()
         app.buttons["Create new person"].tap()
@@ -516,7 +516,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testIllustratedEmptyStateMenuAndSearchRecovery() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Keep your people close."].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Add your first person"].isHittable)
         XCTAssertFalse(app.buttons["All people (including unlisted)"].exists)
@@ -545,7 +545,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testBlankNameEditsCancelAndLaterNamingPreserveEntry() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
-        app.launch(); XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 10))
+        app.launch(); addTeardownBlock { app.terminate() }; XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Named"].tap(); app.navigationBars.buttons["Edit"].tap()
         XCTAssertFalse(app.staticTexts["Name unknown"].exists)
         let first = app.textFields["First name (optional)"]
@@ -560,7 +560,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testEmptyStateAtLargestDynamicType() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        app.launch(); XCTAssertTrue(app.buttons["people-menu"].isHittable); XCTAssertTrue(app.buttons["Add person"].isHittable)
+        app.launch(); addTeardownBlock { app.terminate() }; XCTAssertTrue(app.buttons["people-menu"].isHittable); XCTAssertTrue(app.buttons["Add person"].isHittable)
         capture(app, "Largest Dynamic Type illustrated empty state")
         app.swipeUp(); app.swipeUp(); capture(app, "Largest Dynamic Type first person action")
         XCTAssertTrue(app.buttons["Add your first person"].isHittable)
@@ -568,7 +568,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testFormSurfacesAndDestructiveControls() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic Named"].tap(); capture(app, "Profile grouped surfaces")
         app.swipeUp(); XCTAssertTrue(app.buttons["Delete person"].isHittable)
@@ -585,7 +585,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
-        app.launch()
+        app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic Named"].tap(); app.navigationBars.buttons["Edit"].tap()
         let initialBirthday = app.buttons["Birth information, Unknown"]
@@ -606,7 +606,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testEstimatedAgeWheelBoundariesAndCancel() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-age-boundary"]
-        app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Older")
+        app.launch(); addTeardownBlock { app.terminate() }; openEstimatedAdultFixture(app,name: "Synthetic Older")
         app.navigationBars.buttons["Edit"].tap()
         let age = app.buttons["choose-estimated-age"]
         reveal(age,in: app); age.tap()
@@ -624,7 +624,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testEstimatedAgeWheelAtLargestDynamicType() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-age-largest"]
-        app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Large Age")
+        app.launch(); addTeardownBlock { app.terminate() }; openEstimatedAdultFixture(app,name: "Synthetic Large Age")
         app.terminate(); app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]; app.launch()
         app.staticTexts["Synthetic Large Age"].tap(); app.navigationBars.buttons["Edit"].tap()
         let age = app.buttons["choose-estimated-age"]
@@ -646,7 +646,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto() throws {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-photo"]
-        app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Photo")
+        app.launch(); addTeardownBlock { app.terminate() }; openEstimatedAdultFixture(app,name: "Synthetic Photo")
         app.navigationBars.buttons["Edit"].tap(); app.swipeUp(); app.buttons["Add photo"].tap()
         XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 15))
         let fixture = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
@@ -844,7 +844,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testChildSurnameIsEditableClearableAndNeverReapplied() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); app.buttons["Add person"].tap()
+        app.launch(); addTeardownBlock { app.terminate() }; app.buttons["Add person"].tap()
         app.textFields["First name (optional)"].tap(); app.textFields["First name (optional)"].typeText("Synthetic")
         app.textFields["Last name (optional)"].tap(); app.textFields["Last name (optional)"].typeText("Vale-Smith")
         editorToggle("Friend", in: app).tap(); app.buttons["Save"].tap()
@@ -876,7 +876,7 @@ final class KinUITests: XCTestCase {
     @MainActor func testImportReviewRetainsFailedEditsAndAccessibilityHelpersWrap() throws {
         executionTimeAllowance = 600
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
+        app.launch(); addTeardownBlock { app.terminate() }; app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
         selectSettledNativeContact(app,name: "John Appleseed")
         XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         let friends = app.switches.matching(identifier: "contact-connection-friend")
@@ -1004,7 +1004,7 @@ final class KinUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "long-friend"]
         let parent = "Synthetic Parent With A Long Compound Family Name"
         let child = "Synthetic Child With A Long Compound Family Name"
-        app.launch(); XCTAssertTrue(app.staticTexts[parent].waitForExistence(timeout: 10))
+        app.launch(); addTeardownBlock { app.terminate() }; XCTAssertTrue(app.staticTexts[parent].waitForExistence(timeout: 10))
         app.staticTexts[parent].tap(); reveal(app.buttons["Add child"],in: app); app.buttons["Add child"].tap()
         app.buttons["Create new person"].tap()
         let first = app.textFields["First name (optional)"]; first.tap(); first.typeText(child)
@@ -1024,7 +1024,7 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testDirectFriendTogglePersistsAcrossSaveAndRelaunch() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         addPerson(app, name: "Synthetic Friend Toggle")
         app.terminate(); app.launch()
         XCTAssertTrue(app.staticTexts["Synthetic Friend Toggle"].waitForExistence(timeout: 10))

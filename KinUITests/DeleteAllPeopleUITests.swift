@@ -46,7 +46,7 @@ final class DeleteAllPeopleUITests: XCTestCase {
         app.navigationBars.buttons["People"].tap(); XCTAssertEqual(app.cells.count,1)
     }
     @MainActor func testCandidateDeletionCancelDismissAndInterruptedConfirmation() {
-        let app = XCUIApplication(); launchDeletionFixture(app); defer { app.terminate() }
+        let app = XCUIApplication(); launchDeletionFixture(app); addTeardownBlock { app.terminate() }
         open(app); XCTAssertTrue(app.staticTexts["2 people saved in this notebook."].exists)
         #if targetEnvironment(simulator)
         XCTAssertTrue(app.launchArguments.contains("--kin-test-notebook"))
@@ -71,7 +71,7 @@ final class DeleteAllPeopleUITests: XCTestCase {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap(); XCTAssertEqual(app.cells.count,2)
     }
     @MainActor func testCandidateDeletionPersistsForListedAndHiddenPeople() {
-        let app = XCUIApplication(); launchDeletionFixture(app); defer { app.terminate() }
+        let app = XCUIApplication(); launchDeletionFixture(app); addTeardownBlock { app.terminate() }
         open(app); XCTAssertTrue(app.staticTexts["2 people saved in this notebook."].exists); review(app)
         app.alerts.buttons.matching(identifier: "confirm-delete-all").allElementsBoundByIndex.last!.doubleTap()
         XCTAssertTrue(app.staticTexts["Keep your people close."].waitForExistence(timeout: 5))
