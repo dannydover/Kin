@@ -1048,14 +1048,14 @@ final class KinUITests: XCTestCase {
     }
     @MainActor private func selectSettledNativeContact(_ app: XCUIApplication,name: String,timeout: TimeInterval = 45) {
         XCTAssertTrue(waitForNativeContactsPicker(app))
-        // Enumerate indexed native candidates: a relaunch can briefly expose
-        // two picker trees, and a multi-match frame query is ambiguous.
+        // Compose the same list → named cell → named text path before one
+        // indexed resolution. Multiple actual candidates still reach the
+        // existing uniqueness and visibility policy; never choose firstMatch.
         func targets() -> [XCUIElement] {
-            app.otherElements.matching(identifier: "ContactsListView").allElementsBoundByIndex.flatMap { list in
-                list.cells.matching(identifier: name).allElementsBoundByIndex.flatMap { cell in
-                    cell.staticTexts.matching(identifier: name).allElementsBoundByIndex
-                }
-            }
+            app.otherElements.matching(identifier: "ContactsListView")
+                .descendants(matching: .cell).matching(identifier: name)
+                .descendants(matching: .staticText).matching(identifier: name)
+                .allElementsBoundByIndex
         }
         var chosen: XCUIElement?
         var policy = NativeContactRevealPolicy()
