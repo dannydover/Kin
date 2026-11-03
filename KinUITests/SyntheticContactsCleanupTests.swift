@@ -6,6 +6,7 @@ enum SyntheticContactsCleanupScope: String {
     case nativeMinor = "native-minor"
     case preservation = "preservation"
     case missingBirthday = "missing-birthday"
+    case missingBirthdaySavedPhoto = "missing-birthday-saved-photo"
 }
 
 func cleanupOwnedSyntheticContacts(_ items: [CNMutableContact], store: CNContactStore,

@@ -47,12 +47,22 @@ print("ready",flush=True); time.sleep(30)
             'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdult': 'native-adult',
             'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForMinor': 'native-minor',
             'KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport': 'missing-birthday',
+            'KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview': 'missing-birthday-saved-photo',
         }
         discovered = set(observer.shards.discover())
         self.assertTrue(set(required).issubset(discovered))
         for ident, scope in required.items():
             self.assertEqual(observer.CLEANUP_SCOPES.get(ident), scope)
         self.assertEqual(len(set(required.values())), len(required))
+
+    def test_saved_photo_cleanup_marker_is_distinct_and_allowlisted(self):
+        observer = load('ci-observe.py')
+        ident = 'KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview'
+        self.assertEqual(observer.CLEANUP_SCOPES[ident], 'missing-birthday-saved-photo')
+        self.assertEqual(observer.parse('KIN_CI_CONTACT_CLEANUP missing-birthday-saved-photo verified PRIVATE', set()),
+                         {'kind': 'contact_cleanup', 'scope': 'missing-birthday-saved-photo', 'status': 'verified'})
+        self.assertNotEqual(observer.CLEANUP_SCOPES[ident], observer.CLEANUP_SCOPES[
+            'KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport'])
 
     def test_both_native_cleanup_markers_are_required_independently(self):
         observer = load('ci-observe.py')
@@ -71,7 +81,7 @@ print("ready",flush=True); time.sleep(30)
             env = dict(os.environ, PATH=d + ':' + os.environ['PATH'], RUNNER_TEMP=d, KIN_CI_SIMULATOR='synthetic')
             for group in observer.shards.GROUPS[1:]:
                 scopes = sorted(observer.CLEANUP_SCOPES[i] for i in observer.shards.selections(group) if i in observer.CLEANUP_SCOPES)
-                for scope in [s for s in scopes if s in ('native-adult', 'native-minor')]:
+                for scope in scopes:
                     for markers in ([s for s in scopes if s != scope], scopes + [scope]):
                         fake.write_text('#!/bin/sh\necho "KIN_CI_AUTH authorized"\n' + ''.join(
                             f'echo "KIN_CI_CONTACT_CLEANUP {item} verified"\n' for item in markers) + 'exit 0\n')
@@ -82,7 +92,7 @@ print("ready",flush=True); time.sleep(30)
 
     def test_release_guard_rejects_synthetic_contacts_adapter_markers(self):
         release = load('check-release.py')
-        for marker in (b'--kin-ui-fixture', b'SyntheticNotebookFixture', b'named-friend', b'long-friend', b'partner-friends', b'young-parent-friends', b'role-label-friends', b'estimated-age-boundary', b'estimated-age-largest', b'estimated-photo', b'estimated-contact-draft', b'--kin-ui-synthetic-contact', b'synthetic-contact-selection', b'--kin-ui-preservation-contacts', b'synthetic-preservation-contact-'):
+        for marker in (b'--kin-ui-fixture', b'SyntheticNotebookFixture', b'named-friend', b'long-friend', b'partner-friends', b'young-parent-friends', b'role-label-friends', b'estimated-age-boundary', b'estimated-age-largest', b'estimated-photo', b'estimated-contact-draft', b'estimated-contact-photo', b'--kin-ui-synthetic-contact', b'synthetic-contact-selection', b'--kin-ui-preservation-contacts', b'synthetic-preservation-contact-'):
             self.assertIsNotNone(re.search(release.DEBUG_PATTERN, marker))
 
     def test_coverage_map_accounts_for_every_current_ui_method(self):

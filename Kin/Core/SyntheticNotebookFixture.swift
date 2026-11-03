@@ -37,9 +37,10 @@ enum SyntheticNotebookFixture {
             third.14 ^= 0xff
             records = [(token, "Synthetic A"), (UUID(uuid: second), "Synthetic B"), (UUID(uuid: third), "Synthetic Child")]
             birthday = .unknown
-        case "estimated-age-boundary", "estimated-age-largest", "estimated-photo", "estimated-contact-draft":
+        case "estimated-age-boundary", "estimated-age-largest", "estimated-photo", "estimated-contact-draft", "estimated-contact-photo":
             let names = ["estimated-age-boundary": "Synthetic Older", "estimated-age-largest": "Synthetic Large Age",
-                         "estimated-photo": "Synthetic Photo", "estimated-contact-draft": "Synthetic Existing Draft"]
+                         "estimated-photo": "Synthetic Photo", "estimated-contact-draft": "Synthetic Existing Draft",
+                         "estimated-contact-photo": "Synthetic Existing Draft"]
             guard let name = names[selection] else { throw FixtureError.unsupported }
             records = [(token, name)]
             birthday = .estimated(age: 80, referenceDate: today)
@@ -55,6 +56,10 @@ enum SyntheticNotebookFixture {
         for (id, name) in records {
             var friend = Person(id: id, firstName: name, birthday: birthday, connections: [.friend])
             friend.isListed = true
+            if selection == "estimated-contact-photo" {
+                // Deterministic, metadata-free synthetic fixture, isolated to DEBUG notebooks.
+                friend.photo = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAA80lEQVR4nO3QMQ3DAAADwXAp4iApg2IKhDDo0sFf5aRfLVl3HO+PvrV/EG//IN7+Qbz9g3j7B/H2D+LtH8TbP4i3fxBv/yDe/kG8/YN4+wfx9g/i7R/E2z+It38Qb/8g3v5BvF/G1/n6iwABAgQIUDhAgAABAhQOECBAgACFAwQIECBA4QABAgQIUDhAgAABAhQOECBAgACFAwQIECBA4QABAgQIUDhAgAABAhQOECBAgACFmwE9ov2DePsH8fYP4u0fxNs/iLd/EG//IN7+Qbz9g3j7B/H2D+LtH8TbP4i3fxBv/yDe/kG8/YN4+wfx9g/a3YwI+NztabYBAAAAAElFTkSuQmCC")!
+            }
             try store.savePerson(friend)
         }
     }

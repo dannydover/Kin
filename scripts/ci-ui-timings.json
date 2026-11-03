@@ -26,6 +26,7 @@
     "KinUITests/KinUITests/testChildSurnameIsEditableClearableAndNeverReapplied": 59.5,
     "KinUITests/KinUITests/testCompactUnknownAgeWithLongNamesAtStandardAndAccessibilitySizes": 60.5,
     "KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport": 160.8,
+    "KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview": 160.8,
     "KinUITests/KinUITests/testEmptyStateAtLargestDynamicType": 13.3,
     "KinUITests/KinUITests/testEstimatedAgeWheelAtLargestDynamicType": 233.5,
     "KinUITests/KinUITests/testEstimatedAgeWheelBoundariesAndCancel": 64.7,

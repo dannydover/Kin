@@ -671,6 +671,12 @@ final class KinUITests: XCTestCase {
         capture(app, "Visible Cancel preserves saved photo and age after relaunch")
     }
     @MainActor func testContactMissingBirthdayPromptCancellationAndEstimatedImport() throws {
+        try checkMissingBirthdayWithSavedPhoto(useFixturePhoto: false)
+    }
+    @MainActor func testSyntheticSavedPhotoContactMissingBirthdayReview() throws {
+        try checkMissingBirthdayWithSavedPhoto(useFixturePhoto: true)
+    }
+    @MainActor private func checkMissingBirthdayWithSavedPhoto(useFixturePhoto: Bool) throws {
         // Native Photos/Contacts interactions take longer on hosted simulators.
         executionTimeAllowance = 600
         #if targetEnvironment(simulator)
@@ -684,18 +690,24 @@ final class KinUITests: XCTestCase {
         }.pngData()
         var created: [CNMutableContact] = []
         var creationUncertain = false
-        addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: fixtureStore, scope: .missingBirthday, creationUncertain: creationUncertain) }
+        let cleanupScope: SyntheticContactsCleanupScope = useFixturePhoto ? .missingBirthdaySavedPhoto : .missingBirthday
+        addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: fixtureStore, scope: cleanupScope, creationUncertain: creationUncertain) }
         let create = CNSaveRequest(); create.add(fixtureContact,toContainerWithIdentifier: nil)
         creationUncertain = true
         try fixtureStore.execute(create); created.append(fixtureContact)
         creationUncertain = false
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-contact-draft"]
+        let app = XCUIApplication()
+        let notebookFixture = useFixturePhoto ? "estimated-contact-photo" : "estimated-contact-draft"
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", notebookFixture]
         app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Existing Draft")
-        app.navigationBars.buttons["Edit"].tap(); app.swipeUp(); app.buttons["Add photo"].tap()
-        XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 15))
-        let fixture = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-        guard fixture.waitForExistence(timeout: 10) else { throw XCTSkip("Seed an isolated simulator with a synthetic Photos image.") }
-        fixture.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.5)).tap()
+        app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
+        if !useFixturePhoto {
+            app.buttons["Add photo"].tap()
+            XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 15))
+            let fixture = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+            guard fixture.waitForExistence(timeout: 10) else { throw XCTSkip("Seed an isolated simulator with a synthetic Photos image.") }
+            fixture.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.5)).tap()
+        }
         XCTAssertTrue(app.buttons["Change photo"].waitForExistence(timeout: 10))
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"),object: app.buttons["Save"])
         XCTAssertEqual(XCTWaiter.wait(for: [ready],timeout: 10),.completed); app.buttons["Save"].tap()
