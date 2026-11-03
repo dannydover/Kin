@@ -168,7 +168,7 @@ final class KinUITests: XCTestCase {
     }
     // Separate complete scenarios keep the unchanged per-test runtime bound meaningful.
     @MainActor private func prepareYoungPersonAndExistingParent() -> XCUIApplication {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "young-parent-friends"]
+        let app = XCUIApplication(); addTeardownBlock { app.terminate() }; app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "young-parent-friends"]
         app.launch(); XCTAssertTrue(app.staticTexts["Synthetic Young"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
@@ -184,7 +184,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
     }
     @MainActor func testAddParentsReuseAndCancel() throws {
-        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent()
         app.buttons["Add parent"].tap()
         XCTAssertTrue(app.buttons["relationship-details"].exists)
         XCTAssertFalse(app.buttons["Parent relationship, Unspecified"].exists)
@@ -198,7 +198,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Biological parent"].waitForExistence(timeout: 5))
     }
     @MainActor func testAddParentsDuplicateRejectionPreservesBothPeople() throws {
-        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent()
         linkExistingBiologicalParent(app)
         // Re-selecting a linked person must reject the duplicate without changing either person.
         app.buttons["Add parent"].tap(); chooseExistingPerson(app,name: "Synthetic Existing Parent"); app.buttons["Save"].tap()
@@ -206,7 +206,7 @@ final class KinUITests: XCTestCase {
         try cancelRelationshipDraft(app, parent: "Synthetic Existing Parent", child: "Synthetic Young"); app.navigationBars["Add parent"].buttons["Cancel"].tap()
     }
     @MainActor func testAddParentsReverseCycleRejectionAndDraftCancellation() throws {
-        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent()
         linkExistingBiologicalParent(app)
         app.staticTexts["Synthetic Existing Parent"].tap()
         XCTAssertTrue(app.navigationBars["Synthetic Existing Parent"].waitForExistence(timeout: 5))
@@ -221,7 +221,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Synthetic Young"].waitForExistence(timeout: 5))
     }
     @MainActor func testAddParentsCreatePersistNavigateAndUnlink() throws {
-        let app = prepareYoungPersonAndExistingParent(); addTeardownBlock { app.terminate() }
+        let app = prepareYoungPersonAndExistingParent()
         linkExistingBiologicalParent(app)
         app.buttons["Add parent"].tap(); app.buttons["relationship-details"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Step"].tap()
         app.buttons["Create new person"].tap(); app.buttons["Save"].tap()

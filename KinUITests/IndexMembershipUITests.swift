@@ -98,7 +98,7 @@ final class IndexMembershipUITests: XCTestCase {
     }
 
     @MainActor private func clearSearchFixture(usePreview: Bool = false) -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = XCUIApplication(); addTeardownBlock { app.terminate() }
         if usePreview {
             app.launchArguments = ["--kin-preview", "filter-fixture"]
             app.launch()
@@ -145,7 +145,7 @@ final class IndexMembershipUITests: XCTestCase {
 
     @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() { checkClearSearchRestoresPeople(usePreview: true) }
     @MainActor private func checkClearSearchRestoresPeople(usePreview: Bool) {
-        let app = clearSearchFixture(usePreview: usePreview); addTeardownBlock { app.terminate() }
+        let app = clearSearchFixture(usePreview: usePreview)
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         search.tap(); search.typeText("NoSuchFictionalPerson")
@@ -173,7 +173,7 @@ final class IndexMembershipUITests: XCTestCase {
     @MainActor func testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() { checkClearCombinedSearchAndCategory(usePreview: false) }
     @MainActor func testPreviewClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() { checkClearCombinedSearchAndCategory(usePreview: true) }
     @MainActor private func checkClearCombinedSearchAndCategory(usePreview: Bool) {
-        let app = clearSearchFixture(usePreview: usePreview); addTeardownBlock { app.terminate() }
+        let app = clearSearchFixture(usePreview: usePreview)
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         for _ in 0..<2 {
@@ -189,7 +189,7 @@ final class IndexMembershipUITests: XCTestCase {
 
     @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: true) }
     @MainActor private func checkClearAllPeopleSearch(usePreview: Bool) {
-        let app = clearSearchFixture(usePreview: usePreview); addTeardownBlock { app.terminate() }
+        let app = clearSearchFixture(usePreview: usePreview)
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
