@@ -330,3 +330,19 @@ there is no verified unique People-list accessibility identifier to scope them.
 ### Split native adult and minor journeys
 
 The prior combined journey used one notebook and seeded both Contacts before importing adult then minor. It checked the adult after its own relaunch and the minor after its own relaunch; it did not check the adult again after the minor import. The separate native tests each seed both cards, retain the applicable original assertions and independently verify cleanup of both contacts. Each uses a fresh notebook and the unchanged per-test execution allowance. `NewPersonImportTests.sequentialImports` separately verifies two distinct adult/minor reviewed saves coexist after a shared notebook reopens. It does not claim to reproduce the former two-import UI sequence or prove native service stability. New test timings use the shard fallback until measured.
+
+### Incidental Friend-creation setup audit (fixed-product comparison follow-up)
+
+The named-friend fixture has the same saved, listed, unknown-birthday Friend state as `addPerson`, including reference 1; `SyntheticNotebookFixtureTests.persistedAndIdempotent` checks exact fields, isolation and reopen. The two-person fixture is separately checked by `pairedFixtures`. Both are DEBUG-only and require an isolated notebook. The following substitutions remove eight static `addPerson` calls, equivalent to nine setup creations across eight tests (the shared import helper is exercised by two tests); they retain their downstream UI assertions and actions:
+
+| Journey | Setup replaced | Required behavior retained |
+|---|---|---|
+| `testAllPeopleOpensProfilesAndReturnsToSameIndex` | One named Friend | Create the unlisted child through UI; open each listed/unlisted profile; return, filter and dismiss search. |
+| `testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow` | One source Friend | All four routes, review/cancel, no consumed identity and subsequent parent save. |
+| `testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted` | One child Friend | Review, cancel, field state, save, link, unlisted state and relaunch. |
+| `testFormSurfacesAndDestructiveControls` | One named Friend | Delete confirmation/Cancel, editor field and cancel navigation. |
+| `testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot` | One unknown-age Friend | Real estimated-age and unknown-age changes and resulting profile controls. |
+| Native and synthetic `checkReviewedImportForEveryEntryPoint` callers | One source Friend per test | Real native selection on direct route; synthetic four-route review, save, relationships, visibility and relaunch. |
+| `testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson` | Two named Friends | Real partner selection, link, unlink, delete and surviving-person checks. |
+
+`testDirectFriendTogglePersistsAcrossSaveAndRelaunch` still uses the actual off-to-on control, verifies Save and checks persisted state after relaunch. `testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` still creates a person in a normal notebook. `testIllustratedEmptyStateMenuAndSearchRecovery` keeps UI creation because the empty-to-populated transition is part of its contract. Remaining multi-person relationship and long-name setup callers need distinct records that the existing fixtures do not supply; they remain unchanged pending equivalence review. No native picker or navigation assertions were removed. The fixed-product comparison arm 3 failure (run 41553105307) remains evidence that the real Friend interaction can fail; replacing incidental setup does not fix or classify that interaction.

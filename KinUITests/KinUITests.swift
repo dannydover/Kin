@@ -40,13 +40,14 @@ final class KinUITests: XCTestCase {
         #endif
     }
     @MainActor func testSyntheticUnnamedDraftReviewOmitsTemporaryIdentityInEveryCreationFlow() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-synthetic-contact"]
-        app.launch(); addPerson(app,name: "Synthetic Source")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend", "--kin-ui-synthetic-contact"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         let routes = ["Add person","Add child","Add partner","Add parent"]
         for route in routes {
             if route == "Add person" { app.buttons[route].tap() }
             else {
-                app.staticTexts["Synthetic Source"].tap(); reveal(app.buttons[route],in: app); app.buttons[route].tap()
+                app.staticTexts["Synthetic Named"].tap(); reveal(app.buttons[route],in: app); app.buttons[route].tap()
                 app.buttons["Create new person"].tap()
             }
             app.buttons["Import from Contacts"].tap()
@@ -66,7 +67,7 @@ final class KinUITests: XCTestCase {
             }
         }
         openAllPeople(app); XCTAssertEqual(app.cells.count,1)
-        app.staticTexts["Synthetic Source"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
+        app.staticTexts["Synthetic Named"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
         app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
         // Review/cancel never creates an identity or consumes the next saved reference.
         XCTAssertTrue(app.staticTexts["Parent 2"].waitForExistence(timeout: 5))
@@ -235,9 +236,10 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].exists); XCTAssertTrue(app.staticTexts["Parent 3"].exists)
     }
     @MainActor func testSyntheticAddParentUsesSharedContactsReviewAndKeepsNewParentUnlisted() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-synthetic-contact"]
-        app.launch(); addPerson(app,name: "Synthetic Child")
-        app.staticTexts["Synthetic Child"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend", "--kin-ui-synthetic-contact"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
+        app.staticTexts["Synthetic Named"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
         app.buttons["Create new person"].tap()
         XCTAssertTrue(app.buttons["Save"].isEnabled)
         app.buttons["gender-choice"].tap(); app.buttons["Unspecified"].tap()
@@ -262,11 +264,11 @@ final class KinUITests: XCTestCase {
         app.staticTexts["John Appleseed"].tap()
         XCTAssertTrue(app.navigationBars["John Appleseed"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Gender: Unspecified"].exists)
-        XCTAssertTrue(app.staticTexts["Synthetic Child"].exists)
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].exists)
         capture(app,"Imported parent links back to the original child")
         app.terminate(); app.launch()
         XCTAssertFalse(app.staticTexts["John Appleseed"].exists)
-        app.staticTexts["Synthetic Child"].tap(); reveal(app.staticTexts["John Appleseed"],in: app)
+        app.staticTexts["Synthetic Named"].tap(); reveal(app.staticTexts["John Appleseed"],in: app)
         XCTAssertTrue(app.staticTexts["John Appleseed"].exists)
         app.navigationBars.buttons["People"].tap(); openAllPeople(app)
         XCTAssertEqual(app.staticTexts.matching(identifier: "John Appleseed").count,1)
@@ -341,10 +343,10 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson() {
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
         app.launch()
-        addPerson(app, name: "Synthetic A")
-        addPerson(app, name: "Synthetic B")
+        XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic A"].tap()
         app.buttons["Add partner"].tap()
         chooseExistingPerson(app,name: "Synthetic B")
@@ -440,14 +442,15 @@ final class KinUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts.matching(identifier: "Synthetic Shared Child").count,1)
     }
     @MainActor func testAllPeopleOpensProfilesAndReturnsToSameIndex() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app, name: "Synthetic Listed")
-        app.staticTexts["Synthetic Listed"].tap(); app.buttons["Add child"].tap()
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
+        app.staticTexts["Synthetic Named"].tap(); app.buttons["Add child"].tap()
         app.buttons["Create new person"].tap()
         app.textFields["First name (optional)"].tap(); app.textFields["First name (optional)"].typeText("Synthetic Unlisted")
         app.buttons["Save"].tap(); app.navigationBars.buttons["People"].tap()
         openAllPeople(app)
-        for name in ["Synthetic Unlisted", "Synthetic Listed", "Synthetic Unlisted"] {
+        for name in ["Synthetic Unlisted", "Synthetic Named", "Synthetic Unlisted"] {
             app.staticTexts[name].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
             XCTAssertTrue(app.buttons["Edit"].exists)
@@ -464,7 +467,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.searchFields.firstMatch.exists)
         XCTAssertFalse(app.buttons["Edit"].exists)
         XCTAssertTrue(app.staticTexts["Synthetic Unlisted"].exists)
-        XCTAssertFalse(app.staticTexts["Synthetic Listed"].exists)
+        XCTAssertFalse(app.staticTexts["Synthetic Named"].exists)
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         else { app.buttons["close"].tap() }
         XCTAssertTrue(app.navigationBars["All people"].exists)
@@ -561,25 +564,27 @@ final class KinUITests: XCTestCase {
         app.buttons["Add your first person"].tap(); XCTAssertTrue(app.navigationBars["Add person"].waitForExistence(timeout: 5))
     }
     @MainActor func testFormSurfacesAndDestructiveControls() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app, name: "Synthetic Example")
-        app.staticTexts["Synthetic Example"].tap(); capture(app, "Profile grouped surfaces")
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
+        app.staticTexts["Synthetic Named"].tap(); capture(app, "Profile grouped surfaces")
         app.swipeUp(); XCTAssertTrue(app.buttons["Delete person"].isHittable)
         capture(app, "Red delete person")
         app.buttons["Delete person"].tap(); capture(app, "Delete person confirmation")
-        let deletion = app.alerts["Delete Synthetic Example?"]
+        let deletion = app.alerts["Delete Synthetic Named?"]
         XCTAssertTrue(deletion.buttons["Cancel"].isHittable); deletion.buttons["Cancel"].tap()
         app.navigationBars.buttons["Edit"].tap()
         XCTAssertTrue(app.textFields["Last name (optional)"].isHittable)
         capture(app, "Editor adaptive row fill and placeholders")
         app.textFields["Last name (optional)"].tap(); capture(app, "Focused optional name field")
         app.buttons["Cancel"].tap()
-        XCTAssertTrue(app.navigationBars["Synthetic Example"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Synthetic Named"].waitForExistence(timeout: 5))
     }
     @MainActor func testYoungProfileHidesPartnerAndChildSectionsButUnknownAgeDoesNot() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
-        app.launch(); addPerson(app, name: "Synthetic Young")
-        app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
+        app.staticTexts["Synthetic Named"].tap(); app.navigationBars.buttons["Edit"].tap()
         let initialBirthday = app.buttons["Birth information, Unknown"]
         reveal(initialBirthday, in: app); initialBirthday.tap()
         app.buttons["Estimated age"].tap()
@@ -770,9 +775,10 @@ final class KinUITests: XCTestCase {
     }
     @MainActor private func checkReviewedImportForEveryEntryPoint(useNativePicker: Bool) throws {
         executionTimeAllowance = 600
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
         if !useNativePicker { app.launchArguments.append("--kin-ui-synthetic-contact") }
-        app.launch(); addPerson(app,name: "Synthetic Import Source")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         // The native smoke covers real picker selection once. The synthetic
         // app-UI test below exercises all four entry points with the same review,
         // save, relationship, visibility and relaunch assertions.
@@ -780,7 +786,7 @@ final class KinUITests: XCTestCase {
         for (index,route) in routes.enumerated() {
             if index == 0 { app.buttons[route].tap() }
             else {
-                app.staticTexts["Synthetic Import Source"].tap()
+                app.staticTexts["Synthetic Named"].tap()
                 reveal(app.buttons[route],in: app); app.buttons[route].tap()
                 if index == 1 {
                     app.buttons["relationship-details"].tap()
