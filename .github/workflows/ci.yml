@@ -90,14 +90,23 @@ jobs:
       - name: Require finalized results with full fixture coverage
         if: always()
         run: |
-          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
-          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
-          if [ "${{ matrix.shard }}" = unit ]; then
-            python3 scripts/ci-test-shards.py unit "$RUNNER_TEMP/KinTests-summary.json"
-          else
-            xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
-            python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json"
+          if [ ! -d "$RUNNER_TEMP/KinTests.xcresult" ]; then
+            echo "Finalized test results are unavailable; validation failed." >&2
+            exit 1
           fi
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          validation_status=0
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json" || validation_status=1
+          if [ "${{ matrix.shard }}" = unit ]; then
+            python3 scripts/ci-test-shards.py unit "$RUNNER_TEMP/KinTests-summary.json" || validation_status=1
+          else
+            if xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"; then
+              python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json" || validation_status=1
+            else
+              validation_status=1
+            fi
+          fi
+          exit "$validation_status"
       - name: Package synthetic progress and finalized result
         if: always()
         run: python3 scripts/ci-retain.py
