@@ -127,7 +127,9 @@ final class NextVersionUITests: XCTestCase {
         var priorCancel = CGRect.null, priorSave = CGRect.null
         var stableSince = Date()
         let toolbarReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            guard cancel.exists && save.exists && cancel.isHittable && save.isHittable else { return false }
+            // Hittability is false for absent elements, so separate existence
+            // queries add remote lookups without strengthening readiness.
+            guard cancel.isHittable && save.isHittable else { return false }
             let currentCancel = cancel.frame, currentSave = save.frame
             if currentCancel != priorCancel || currentSave != priorSave {
                 priorCancel = currentCancel; priorSave = currentSave; stableSince = Date(); return false

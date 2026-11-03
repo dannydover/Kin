@@ -392,3 +392,10 @@ the same profile. Creation and saving remain tested in other required journeys;
 these two tests no longer exercise creation as an incidental setup step. The
 fixtures preserve the original name, uncategorized connection state and unknown age,
 require unique test notebooks, and are excluded from Release builds.
+
+The Cancel toolbar stability check uses `isHittable` to require both controls
+to exist and accept interaction, avoiding two separate existence queries per
+poll. It retains the one-second stable-frame requirement, the eight-second
+waiter, and all subsequent screenshot and geometry assertions. Apple documents
+that `isHittable` is false for a missing element. This reduces redundant remote
+queries; it does not establish a cause or cure for the broader snapshot stalls.
