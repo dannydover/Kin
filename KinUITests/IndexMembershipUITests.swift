@@ -190,7 +190,16 @@ final class IndexMembershipUITests: XCTestCase {
         let search = app.searchFields.firstMatch
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
         XCTAssertTrue(app.navigationBars["All people"].waitForExistence(timeout: 5))
-        search.tap(); search.typeText("NoSuchFictionalPerson")
+        search.tap()
+        // Fixed booleans describe the existing activation immediately after the
+        // single tap. No additional gesture, focus assumption, or retry is made.
+        let observation = "keyboardVisible=\(app.keyboards.firstMatch.exists); "
+            + "cancelVisible=\(app.buttons["Cancel"].exists); "
+            + "searchExists=\(search.exists); searchHittable=\(search.isHittable)"
+        let attachment = XCTAttachment(string: observation)
+        attachment.name = "Synthetic All people search activation"
+        attachment.lifetime = .keepAlways; add(attachment)
+        search.typeText("NoSuchFictionalPerson")
         clear.tap(); assertClearSearchRestored(app)
         // Clearing display controls must not change a stored category.
         assertClearSearchPreservedCategory(app)
