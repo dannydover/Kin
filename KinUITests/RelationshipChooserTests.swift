@@ -46,10 +46,15 @@ final class RelationshipChooserTests: XCTestCase {
             XCTAssertTrue(app.navigationBars["Add relationship"].waitForExistence(timeout: 5))
             XCTAssertEqual(app.navigationBars.matching(identifier: "Add relationship").count,1)
             app.navigationBars["Add relationship"].buttons["Save"].doubleTap()
+            // Share the existing five-second post-save budget with the profile
+            // transition; the exact selected identity must still be reached.
+            let deadline = ProcessInfo.processInfo.systemUptime + 5
             XCTAssertTrue(app.buttons["Edit relationship with Synthetic Blair Example"].waitForExistence(timeout: 5))
             XCTAssertEqual(app.buttons.matching(identifier: "Edit relationship with Synthetic Blair Example").count,1)
             app.staticTexts["Synthetic Blair Example"].tap()
-            XCTAssertTrue(app.buttons["edit-person-" + identity].exists)
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { XCTFail("Profile transition exceeded the existing five-second budget"); return }
+            XCTAssertTrue(app.buttons["edit-person-" + identity].waitForExistence(timeout: remaining))
             app.terminate()
         }
     }
