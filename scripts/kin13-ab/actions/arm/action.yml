@@ -1,0 +1,108 @@
+name: Fixed-product simulator comparison arm
+inputs:
+  arm:
+    required: true
+  group:
+    required: true
+  toolchain:
+    required: true
+  image:
+    required: true
+  product_sha:
+    required: true
+  manifest_sha:
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Verify image, Xcode and runtime
+      shell: bash
+      run: python3 control/scripts/kin13-ab/control.py env '${{ inputs.toolchain }}' '${{ inputs.image }}'
+    - name: Download immutable build products
+      uses: actions/download-artifact@v4
+      with:
+        name: kin-ab-products
+        path: ${{ runner.temp }}/KinAB-download
+    - name: Verify and unpack build products
+      shell: bash
+      run: |
+        python3 control/scripts/kin13-ab/control.py product "$RUNNER_TEMP/KinAB-download/Products.zip" '${{ inputs.product_sha }}'
+        python3 control/scripts/kin13-ab/control.py product "$RUNNER_TEMP/KinAB-download/KinAB-products.json" '${{ inputs.manifest_sha }}'
+        mkdir -p "$RUNNER_TEMP/KinAB"
+        ditto -x -k "$RUNNER_TEMP/KinAB-download/Products.zip" "$RUNNER_TEMP/KinAB"
+        python3 control/scripts/kin13-ab/product_manifest.py verify "$RUNNER_TEMP/KinAB/Products" "$RUNNER_TEMP/KinAB-download/KinAB-products.json"
+        python3 control/scripts/kin13-ab/product_path.py "$RUNNER_TEMP/KinAB/Products" >> "$GITHUB_ENV"
+    - name: Create fresh isolated simulator and synthetic fixtures
+      shell: bash
+      working-directory: source
+      run: |
+        echo "KIN_AB_SETUP stage=create status=start elapsed=$SECONDS"
+        KIN_CI_SIMULATOR=$(xcrun simctl create "Kin AB $GITHUB_RUN_ID ${{ inputs.arm }} ${{ inputs.group }}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+        echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+        export KIN_CI_SIMULATOR
+        xcrun simctl boot "$KIN_CI_SIMULATOR"
+        echo "KIN_AB_SETUP stage=boot-command status=complete elapsed=$SECONDS"
+        xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+        echo "KIN_AB_SETUP stage=boot-readiness status=complete elapsed=$SECONDS"
+        if [ '${{ inputs.group }}' != unit ]; then
+          python3 scripts/ci-simulator.py grant
+          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+        fi
+        echo "KIN_AB_SETUP stage=fixtures status=complete elapsed=$SECONDS"
+    - name: Run fixed test selection without rebuilding
+      id: run_tests
+      shell: bash
+      working-directory: source
+      run: python3 ../control/scripts/kin13-ab/run_tests.py '${{ inputs.group }}'
+    - name: Export finalized result metadata
+      id: export_result
+      if: always()
+      shell: bash
+      run: |
+        xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+        xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+    - name: Retain finalized or partial synthetic results
+      id: package_result
+      if: always()
+      shell: bash
+      working-directory: source
+      run: python3 scripts/ci-retain.py
+    - name: Upload synthetic result evidence
+      id: upload_result
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: kin-ab-result-${{ inputs.arm }}-${{ inputs.group }}
+        path: ${{ runner.temp }}/KinCI-retained/
+        retention-days: 7
+        if-no-files-found: error
+    - name: Remove the isolated simulator
+      id: cleanup_simulator
+      if: always()
+      shell: bash
+      working-directory: source
+      run: |
+        if [ -n "${KIN_CI_SIMULATOR:-}" ]; then python3 scripts/ci-simulator.py cleanup; fi
+    - name: Record comparison and cleanup status
+      if: always()
+      shell: bash
+      working-directory: source
+      env:
+        KIN_AB_GROUP: ${{ inputs.group }}
+        KIN_AB_ARM: ${{ inputs.arm }}
+        KIN_AB_TOOLCHAIN: ${{ inputs.toolchain }}
+        KIN_AB_IMAGE: ${{ inputs.image }}
+        KIN_AB_PRODUCT_SHA: ${{ inputs.product_sha }}
+        KIN_AB_MANIFEST_SHA: ${{ inputs.manifest_sha }}
+        KIN_AB_EVIDENCE_OK: ${{ steps.export_result.outcome == 'success' && steps.package_result.outcome == 'success' && steps.upload_result.outcome == 'success' && steps.cleanup_simulator.outcome == 'success' }}
+        KIN_AB_TEST_OUTCOME: ${{ steps.run_tests.outcome }}
+      run: python3 ../control/scripts/kin13-ab/results.py
+    - name: Upload comparison status
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: kin-ab-status-${{ inputs.arm }}-${{ inputs.group }}
+        path: ${{ runner.temp }}/KinAB-status.json
+        retention-days: 7
+        if-no-files-found: error

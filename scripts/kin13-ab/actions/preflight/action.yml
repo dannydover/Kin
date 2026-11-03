@@ -1,0 +1,69 @@
+name: Verify fixed products and XCTest compatibility
+inputs:
+  toolchain:
+    required: true
+  image:
+    required: true
+  product_sha:
+    required: true
+  manifest_sha:
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Verify image, Xcode and runtime
+      shell: bash
+      run: python3 control/scripts/kin13-ab/control.py env '${{ inputs.toolchain }}' '${{ inputs.image }}'
+    - name: Download immutable build products
+      uses: actions/download-artifact@v4
+      with:
+        name: kin-ab-products
+        path: ${{ runner.temp }}/KinAB-download
+    - name: Verify and unpack build products
+      shell: bash
+      run: |
+        python3 control/scripts/kin13-ab/control.py product "$RUNNER_TEMP/KinAB-download/Products.zip" '${{ inputs.product_sha }}'
+        python3 control/scripts/kin13-ab/control.py product "$RUNNER_TEMP/KinAB-download/KinAB-products.json" '${{ inputs.manifest_sha }}'
+        mkdir -p "$RUNNER_TEMP/KinAB"
+        ditto -x -k "$RUNNER_TEMP/KinAB-download/Products.zip" "$RUNNER_TEMP/KinAB"
+        python3 control/scripts/kin13-ab/product_manifest.py verify "$RUNNER_TEMP/KinAB/Products" "$RUNNER_TEMP/KinAB-download/KinAB-products.json"
+        python3 control/scripts/kin13-ab/product_path.py "$RUNNER_TEMP/KinAB/Products" >> "$GITHUB_ENV"
+    - name: Create fresh preflight simulator
+      shell: bash
+      run: |
+        KIN_CI_SIMULATOR=$(xcrun simctl create "Kin AB preflight $GITHUB_RUN_ID ${{ inputs.toolchain }}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+        echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+        xcrun simctl boot "$KIN_CI_SIMULATOR"
+        xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+    - name: Verify one fixed synthetic test without rebuilding
+      shell: bash
+      working-directory: source
+      run: python3 ../control/scripts/kin13-ab/preflight.py
+    - name: Retain synthetic preflight evidence
+      if: always()
+      shell: bash
+      working-directory: source
+      run: python3 scripts/ci-retain.py
+    - name: Upload synthetic preflight evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: kin-ab-preflight-${{ inputs.toolchain }}
+        path: ${{ runner.temp }}/KinCI-retained/
+        retention-days: 7
+        if-no-files-found: error
+    - name: Remove isolated preflight simulator
+      if: always()
+      shell: bash
+      working-directory: source
+      run: |
+        if [ -n "${KIN_CI_SIMULATOR:-}" ]; then python3 scripts/ci-simulator.py cleanup; fi
+        python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"KinTests-cleanup.json"; assert json.loads(p.read_text()) == {"shutdown":"success","delete":"success","inventory":"absent"}'
+    - name: Upload preflight cleanup status
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: kin-ab-preflight-cleanup-${{ inputs.toolchain }}
+        path: ${{ runner.temp }}/KinTests-cleanup.json
+        retention-days: 7
+        if-no-files-found: error
