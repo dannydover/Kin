@@ -1,0 +1,28 @@
+name: Kin 1.3 repeated native picker diagnostic
+on:
+  push:
+    branches: [diagnostic/kin13-repeated-picker]
+permissions:
+  contents: read
+jobs:
+  standalone:
+    if: github.repository == 'dannydover/Kin'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: One repeated standalone native picker diagnostic
+        timeout-minutes: 45
+        run: python3 scripts/diagnose-standalone-picker.py
+      - name: Retain synthetic result and sanitized lifecycle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin13-repeated-picker-diagnostic
+          path: ${{ runner.temp }}/StandalonePickerDiagnostic/public/
+          retention-days: 7
+          if-no-files-found: error
