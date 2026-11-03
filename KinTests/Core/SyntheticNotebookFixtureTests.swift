@@ -22,6 +22,26 @@ import Testing
             }
         }
     }
+    @Test("Cancel-rendering fixture matches an uncategorized saved person", arguments: [
+        ("cancel-standard", "Synthetic Cancel Standard"), ("cancel-large", "Synthetic Cancel Large")
+    ])
+    func cancelRenderingFixture(_ selection: String, _ name: String) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let token = UUID()
+        let store = try KinStore(storeURL: directory.appendingPathComponent("fixture.sqlite"))
+        defer { try? store.close() }
+        try SyntheticNotebookFixture.seed(selection, token: token, store: store)
+        let person = try #require(store.people.first)
+        #expect(store.people.count == 1 && person.id == token && person.firstName == name)
+        #expect(person.connections.isEmpty && person.isListed && person.reference == 1)
+        #expect(person.lastName == nil && person.gender == .unknown && person.notes.isEmpty && person.photo == nil)
+        #expect(person.birthday == .unknown && store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
+        try store.close(); try store.resume()
+        #expect(try store.person(token) == person)
+        try SyntheticNotebookFixture.seed(selection, token: token, store: store)
+        #expect(store.people == [person])
+    }
     @Test("Friend fixture retains exact initial data and never overwrites later edits", arguments: [
         ("named-friend", "Synthetic Named"),
         ("long-friend", "Synthetic Parent With A Long Compound Family Name")

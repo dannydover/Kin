@@ -110,13 +110,12 @@ final class NextVersionUITests: XCTestCase {
     @MainActor private func verifyCancelBackground(large: Bool) {
         let app = XCUIApplication()
         let personName = large ? "Synthetic Cancel Large" : "Synthetic Cancel Standard"
-        app.launchArguments = ["--kin-test-notebook",UUID().uuidString]
+        let fixture = large ? "cancel-large" : "cancel-standard"
+        app.launchArguments = ["--kin-test-notebook",UUID().uuidString,"--kin-ui-fixture",fixture]
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launch(); addTeardownBlock { app.terminate() }
-        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
-        app.buttons["Add person"].tap()
-        let first = app.textFields["First name (optional)"]
-        first.tap(); first.typeText(personName); app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts[personName].waitForExistence(timeout: 10))
+        app.staticTexts[personName].tap()
         XCTAssertTrue(app.navigationBars[personName].waitForExistence(timeout: 5))
         app.navigationBars[personName].buttons["Edit"].tap()
         let bar = app.navigationBars["Edit person"]

@@ -23,6 +23,8 @@ enum SyntheticNotebookFixture {
         let birthday: Birthday
         switch selection {
         case "named-friend": records = [(token, "Synthetic Named")]; birthday = .unknown
+        case "cancel-standard": records = [(token, "Synthetic Cancel Standard")]; birthday = .unknown
+        case "cancel-large": records = [(token, "Synthetic Cancel Large")]; birthday = .unknown
         case "long-friend": records = [(token, "Synthetic Parent With A Long Compound Family Name")]; birthday = .unknown
         case "partner-friends", "young-parent-friends":
             var bytes = token.uuid
@@ -54,7 +56,8 @@ enum SyntheticNotebookFixture {
             throw FixtureError.nonemptyNotebook
         }
         for (id, name) in records {
-            var friend = Person(id: id, firstName: name, birthday: birthday, connections: [.friend])
+            let connections: Set<Connection> = (selection == "cancel-standard" || selection == "cancel-large") ? [] : [.friend]
+            var friend = Person(id: id, firstName: name, birthday: birthday, connections: connections)
             friend.isListed = true
             if selection == "estimated-contact-photo" {
                 // Deterministic, metadata-free synthetic fixture, isolated to DEBUG notebooks.

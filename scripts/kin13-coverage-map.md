@@ -381,3 +381,14 @@ and assertions remain unchanged. The native Contacts fixture keeps its existing
 teardown order and independently verified owned-Contacts cleanup. A killed test
 runner can still interrupt teardown; this change does not establish a cause or fix
 for the observed accessibility, picker, or simulator delays.
+
+### Cancel-rendering setup isolation
+
+Both standard- and largest-text Cancel-rendering tests use isolated
+`cancel-standard` and `cancel-large` notebook fixtures instead of creating a
+person via the editor as setup. They still open that saved person's real profile and editor, make every
+original geometry, OCR, hit-target and Cancel assertion, and verify return to
+the same profile. Creation and saving remain tested in other required journeys;
+these two tests no longer exercise creation as an incidental setup step. The
+fixtures preserve the original name, uncategorized connection state and unknown age,
+require unique test notebooks, and are excluded from Release builds.
