@@ -73,11 +73,11 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Parent 2"].waitForExistence(timeout: 5))
     }
     @MainActor func testRelationshipRoleLabelsFromBothDirectionsAndForPartners() {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "role-label-friends"]
         app.launch()
         XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 5))
-        addPerson(app,name: "Synthetic Child")
+        XCTAssertTrue(app.staticTexts["Synthetic Child"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic A"].tap(); app.buttons["Add child"].tap(); chooseExistingPerson(app,name: "Synthetic Child")
         assertParentRoles(app,parent: "Synthetic A",child: "Synthetic Child")
         capture(app,"Add child clearly labels parent and child")

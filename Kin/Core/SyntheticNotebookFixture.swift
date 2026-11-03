@@ -30,6 +30,13 @@ enum SyntheticNotebookFixture {
             let names = selection == "partner-friends" ? ("Synthetic A", "Synthetic B") : ("Synthetic Young", "Synthetic Existing Parent")
             records = [(token, names.0), (UUID(uuid: bytes), names.1)]
             birthday = .unknown
+        case "role-label-friends":
+            var second = token.uuid
+            second.15 ^= 0xff
+            var third = token.uuid
+            third.14 ^= 0xff
+            records = [(token, "Synthetic A"), (UUID(uuid: second), "Synthetic B"), (UUID(uuid: third), "Synthetic Child")]
+            birthday = .unknown
         case "estimated-age-boundary", "estimated-age-largest", "estimated-photo", "estimated-contact-draft":
             let names = ["estimated-age-boundary": "Synthetic Older", "estimated-age-largest": "Synthetic Large Age",
                          "estimated-photo": "Synthetic Photo", "estimated-contact-draft": "Synthetic Existing Draft"]
