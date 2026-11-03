@@ -87,15 +87,13 @@ private enum SyntheticCardSelectionError: Error { case unavailable }
 @MainActor func requireDismissal(_ source: XCUIElement, destination: XCUIElement,
                                  file: StaticString = #filePath, line: UInt = #line) {
     var lastSource: Bool?
-    var lastDestination: Bool?
     var lastHittable: Bool?
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
         let sourceExists = source.exists
-        lastSource = sourceExists; lastDestination = nil; lastHittable = nil
+        lastSource = sourceExists; lastHittable = nil
         guard !sourceExists else { return false }
-        let destinationExists = destination.exists
-        lastDestination = destinationExists
-        guard destinationExists else { return false }
+        // isHittable is false for a missing element, so a separate exists
+        // query would repeat a synchronous accessibility lookup.
         let destinationHittable = destination.isHittable
         lastHittable = destinationHittable
         return destinationHittable
@@ -103,7 +101,7 @@ private enum SyntheticCardSelectionError: Error { case unavailable }
     let result = XCTWaiter.wait(for: [ready], timeout: 5)
     if result != .completed {
         func text(_ value: Bool?) -> String { value.map(String.init) ?? "not observed" }
-        let state = "sourceExists=\(text(lastSource)); destinationExists=\(text(lastDestination)); destinationHittable=\(text(lastHittable))"
+        let state = "sourceExists=\(text(lastSource)); destinationHittable=\(text(lastHittable))"
         XCTContext.runActivity(named: "Screen dismissal readiness") { activity in
             let attachment = XCTAttachment(string: state)
             attachment.name = "Synthetic dismissal state"
