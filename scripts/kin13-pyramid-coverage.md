@@ -92,9 +92,11 @@ The 69 current `test*` methods are enumerated from all nine test-bearing UI file
 
 The isolated `extraction/` candidate moves the existing pure `syntheticCardResolution`,
 `preciseFormFrameIsVisible`, reveal deadline and reveal policy source from the UI
-helper into `KinTests/Shared/NativePickerPolicy.swift`. Apart from access modifiers,
+helper into the already-shared `KinTests/Shared/SyntheticContactsCleanup.swift`. This
+keeps the guarded Xcode project configuration unchanged, at the cost of placing
+two test-support responsibilities in the same file. Apart from access modifiers,
 imports and an explicit initializer, the extracted policy body matches the
-original. The UI target includes that same source; the three existing UI-target
+original. The UI target already includes that same source; the three existing UI-target
 policy tests remain unchanged. Three new lower-level test functions reproduce
 all 23 existing assertions. The separate chooser model test covers the
 empty-search/reset duplicate-identity sequence without replacing its UI journey.
@@ -106,5 +108,8 @@ existing Release guard and contained no policy markers. These are local Xcode 27
 checks, not hosted Xcode 27.0 or iOS simulator execution. Current app and core
 files were verified against head where used in the package test; the local Release
 app was not built from an exact remote checkout. All three UI-target policy tests
-and all native journeys remain required. The last full hosted run 41741180017
-failed three tests; this extraction is not a demonstrated fix for those failures.
+and all native journeys remain required. The prior hosted run 41741180017 failed three tests. The first extraction attempt
+(run 41748618781) failed the repository identity guard because it added an Xcode
+UI source reference; the revised local candidate preserves the original project
+file and the guard, and all four local identity tests pass. This extraction is not
+a demonstrated fix for the earlier UI failures.

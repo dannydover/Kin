@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		A01300000000000000000002 /* SyntheticContactsCleanup.swift in KinUITests */ = {isa = PBXBuildFile; fileRef = A01300000000000000000003 /* SyntheticContactsCleanup.swift */; };
-		A01400000000000000000002 /* NativePickerPolicy.swift in KinUITests */ = {isa = PBXBuildFile; fileRef = A01400000000000000000003 /* NativePickerPolicy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -30,7 +29,6 @@
 
 /* Begin PBXFileReference section */
 		A01300000000000000000003 /* SyntheticContactsCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KinTests/Shared/SyntheticContactsCleanup.swift; sourceTree = "<group>"; };
-		A01400000000000000000003 /* NativePickerPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KinTests/Shared/NativePickerPolicy.swift; sourceTree = "<group>"; };
 		3B43AC6F2FC54637005B9DB1 /* Kin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B43AC7C2FC54638005B9DB1 /* KinTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B43AC862FC54638005B9DB1 /* KinUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KinUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -83,7 +81,6 @@
 			isa = PBXGroup;
 			children = (
 				A01300000000000000000003 /* SyntheticContactsCleanup.swift */,
-				A01400000000000000000003 /* NativePickerPolicy.swift */,
 				3B43AC712FC54637005B9DB1 /* Kin */,
 				3B43AC7F2FC54638005B9DB1 /* KinTests */,
 				3B43AC892FC54638005B9DB1 /* KinUITests */,
@@ -260,7 +257,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A01300000000000000000002 /* SyntheticContactsCleanup.swift in KinUITests */,
-				A01400000000000000000002 /* NativePickerPolicy.swift in KinUITests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
