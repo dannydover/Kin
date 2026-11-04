@@ -2,22 +2,38 @@ import XCTest
 
 /// Resolve one exact synthetic card; never select an arbitrary duplicate.
 @MainActor func requireSyntheticContactCard(_ app: XCUIApplication, name: String) throws -> XCUIElement {
+    // Nonshipping diagnostic: observe the original cell query, then compare a
+    // uniquely named target within the native Contacts list.
     let cards = app.cells.containing(.staticText, identifier: name)
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
         syntheticCardResolution(cards.count) != .absent
     }, object: nil)
     let outcome = XCTWaiter.wait(for: [ready], timeout: 5)
-    let resolution = syntheticCardResolution(cards.count)
-    guard outcome == .completed, resolution == .unique else {
-        XCTFail("Expected exactly one synthetic Contacts card; none or multiple were found")
+    let baseline = syntheticCardResolution(cards.count)
+    let list = app.otherElements.matching(identifier: "ContactsListView")
+    let namedCells = list.descendants(matching: .cell).matching(identifier: name)
+    let cells = syntheticCardResolution(namedCells.count)
+    let labels = namedCells.descendants(matching: .staticText).matching(identifier: name)
+    let candidate = syntheticCardResolution(labels.count)
+    func category(_ value: SyntheticCardResolution) -> String {
+        switch value {
+        case .absent: return "absent"
+        case .unique: return "unique"
+        case .ambiguous: return "ambiguous"
+        }
+    }
+    let waiter = outcome == .completed ? "completed" : "not-completed"
+    print("KIN_CARD_SCOPE baseline=\(category(baseline)) waiter=\(waiter) named_cells=\(category(cells)) scoped_labels=\(category(candidate))")
+    guard cells == .unique, candidate == .unique else {
+        XCTFail("Expected one scoped synthetic contact cell and text target")
         throw SyntheticCardSelectionError.unavailable
     }
-    let card = cards.element
-    guard card.isHittable else {
-        XCTFail("The unique synthetic Contacts card is not visible and hittable")
+    let target = labels.element
+    guard target.isHittable else {
+        XCTFail("The unique scoped synthetic contact target is not visible and hittable")
         throw SyntheticCardSelectionError.unavailable
     }
-    return card
+    return target
 }
 
 private enum SyntheticCardSelectionError: Error { case unavailable }
@@ -179,4 +195,6 @@ private enum SyntheticCardSelectionError: Error { case unavailable }
 @MainActor func editorToggle(_ identifier: String, in app: XCUIApplication, scrollStep: CGFloat? = nil) -> XCUIElement {
     editorSwitchWrapper(identifier, in: app, scrollStep: scrollStep).switches.firstMatch
 }
+
+
 
