@@ -1,9 +1,31 @@
 import SwiftUI
 import UIKit
 import Combine
+#if DEBUG
+import Darwin
+#endif
 
 @main
 struct KinApp: App {
+    #if DEBUG
+    init() {
+        guard ProcessInfo.processInfo.arguments.contains("--kin-stderr-route-probe") else { return }
+        var info = stat()
+        let kind: String
+        if fstat(STDERR_FILENO, &info) != 0 { kind = "unknown" }
+        else {
+            switch info.st_mode & mode_t(S_IFMT) {
+            case mode_t(S_IFIFO): kind = "pipe"
+            case mode_t(S_IFSOCK): kind = "socket"
+            case mode_t(S_IFREG): kind = "file"
+            case mode_t(S_IFCHR): kind = "character"
+            default: kind = "other"
+            }
+        }
+        let marker = "KIN_STDERR_ROUTE category=\(kind)\n"
+        marker.withCString { pointer in _ = write(STDERR_FILENO, pointer, marker.utf8.count) }
+    }
+    #endif
     @UIApplicationDelegateAdaptor(NotebookLifecycle.self) private var lifecycle
     var body: some Scene {
         WindowGroup { NotebookRoot(lifecycle: lifecycle) }
@@ -160,3 +182,4 @@ private struct NotebookAvailability: ViewModifier {
 extension View {
     func notebookAvailability(_ store: KinStore) -> some View { modifier(NotebookAvailability(store: store)) }
 }
+

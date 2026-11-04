@@ -15,6 +15,8 @@ CLEANUP_SCOPES = {
 }
 
 def parse(line, allowed):
+    m=re.fullmatch(r"KIN_STDERR_ROUTE category=(pipe|socket|file|character|other|unknown)",line.strip())
+    if m:return {'kind':'stderr_route','category':m[1]}
     m=re.search(r"Test Case '-\[(\w+)\.(\w+) (test\w+)\]' (started|passed|failed)",line)
     if m:
         ident=f'{m[1]}/{m[2]}/{m[3]}'
@@ -74,16 +76,18 @@ def main():
             try:os.killpg(proc.pid,signal.SIGINT)
             except ProcessLookupError:pass
         signal.signal(signal.SIGINT,stop);signal.signal(signal.SIGTERM,stop)
-        buf=b'';last=0
+        buf=b'';last=0;window_bytes=0;route_seen=False
         while True:
             elapsed=round(time.monotonic()-started,1);ready,_,_=select.select([proc.stdout],[],[],1)
             if ready:
                 chunk=os.read(proc.stdout.fileno(),65536)
                 if chunk:
+                    window_bytes+=len(chunk)
                     buf+=chunk
                     while b'\n' in buf:
                         line,buf=buf.split(b'\n',1);event=parse(line.decode('utf-8','replace'),allowed)
                         if event:
+                            if event['kind']=='stderr_route':route_seen=True
                             if event['kind']=='test':
                                 if event['event']=='started':
                                     if event['id'] in started_tests: duplicate_starts.add(event['id'])
@@ -104,9 +108,13 @@ def main():
                                 print(f"CI_CONTACT_CLEANUP {event['scope']} {event['status']}",flush=True)
                     if len(buf)>65536:buf=b''
                 elif proc.poll() is not None:break
-            if elapsed-last>=15:append(out,{'kind':'heartbeat','elapsed':elapsed,'test':current});last=elapsed
+            if elapsed-last>=15:
+                append(out,{'kind':'heartbeat','elapsed':elapsed,'test':current})
+                append(out,{'kind':'output_window','elapsed':elapsed,'bytes':window_bytes})
+                window_bytes=0;last=elapsed
             if proc.poll() is not None and not ready:break
         code=proc.wait()
+        append(out,{'kind':'stderr_route_result','observed':route_seen,'meaning':'marker_seen' if route_seen else 'unknown'})
         expected={CLEANUP_SCOPES[ident] for ident in ids if ident in CLEANUP_SCOPES}
         # XCTest may buffer teardown output until after a test has finished. Each
         # fixture therefore emits a distinct fixed scope, never an inferred current test.
@@ -148,3 +156,4 @@ if __name__=='__main__':
     finally:
         sampler.finish(failed)
     sys.exit(result)
+

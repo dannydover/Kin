@@ -100,13 +100,14 @@ final class IndexMembershipUITests: XCTestCase {
     @MainActor private func clearSearchFixture(usePreview: Bool = false) -> XCUIApplication {
         let app = XCUIApplication(); addTeardownBlock { app.terminate() }
         if usePreview {
-            app.launchArguments = ["--kin-preview", "filter-fixture"]
+            app.launchArguments = ["--kin-preview", "filter-fixture", "--kin-stderr-route-probe"]
             app.launch()
             XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
             XCTAssertEqual(app.cells.count, 3)
             return app
         }
-        launch(app)
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-stderr-route-probe"]; app.launch()
+        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
         for (name, category) in [("Alex Morgan", ""), ("Jamie Patel", "Friend"), ("Robin Chen", "Family")] {
             app.buttons["Add person"].tap()
             let first = app.textFields["First name (optional)"]
@@ -266,3 +267,4 @@ final class IndexMembershipUITests: XCTestCase {
     }
 
 }
+
