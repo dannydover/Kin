@@ -125,13 +125,39 @@ jobs:
             python3 scripts/ci-simulator.py cleanup
           fi
       - name: Retain synthetic cleanup outcome
-        if: always()
+        id: cleanup_upload
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: kin-cleanup-${{ matrix.shard }}
           path: ${{ runner.temp }}/KinTests-cleanup.json
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
+      - name: Retry cleanup record upload once
+        id: cleanup_upload_retry
+        if: always() && env.KIN_CI_SIMULATOR != '' && steps.cleanup_upload.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-cleanup-retry-${{ matrix.shard }}
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Require retained simulator cleanup record
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        env:
+          FIRST_OUTCOME: ${{ steps.cleanup_upload.outcome }}
+          RETRY_OUTCOME: ${{ steps.cleanup_upload_retry.outcome }}
+        run: |
+          if [ "$FIRST_OUTCOME" = success ]; then
+            echo "Cleanup record retained on first attempt."
+          elif [ "$FIRST_OUTCOME" = failure ] && [ "$RETRY_OUTCOME" = success ]; then
+            echo "::warning::Cleanup record retained on the second upload attempt; the first attempt failed."
+          else
+            echo "::error::Simulator cleanup record was not retained."
+            exit 1
+          fi
   release-validation:
     runs-on: xcode-27
     timeout-minutes: 30
@@ -173,3 +199,4 @@ jobs:
           test "${{ needs.core-validation.result }}" = success
           test "${{ needs.simulator-tests.result }}" = success
           test "${{ needs.release-validation.result }}" = success
+
