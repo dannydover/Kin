@@ -72,6 +72,57 @@ final class KinUITests: XCTestCase {
         // Review/cancel never creates an identity or consumes the next saved reference.
         XCTAssertTrue(app.staticTexts["Parent 2"].waitForExistence(timeout: 5))
     }
+    @MainActor func testDiagnosticFourRouteIdentityPredicateParity() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend", "--kin-ui-synthetic-contact"]
+        app.launch(); addTeardownBlock { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
+        let positiveNames = ["Synthetic Named"] as NSArray
+        let positivePredicate = NSPredicate(format:
+            "identifier IN %@ OR title IN %@ OR label IN %@ OR value IN %@ OR placeholderValue IN %@",
+            positiveNames, positiveNames, positiveNames, positiveNames, positiveNames)
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].exists)
+        XCTAssertGreaterThan(app.staticTexts.matching(positivePredicate).count, 0, "Positive parity control")
+        let routes = ["Add person","Add child","Add partner","Add parent"]
+        for route in routes {
+            if route == "Add person" { app.buttons[route].tap() }
+            else {
+                app.staticTexts["Synthetic Named"].tap(); reveal(app.buttons[route],in: app); app.buttons[route].tap()
+                app.buttons["Create new person"].tap()
+            }
+            app.buttons["Import from Contacts"].tap()
+            let fixture = app.buttons["synthetic-contact-selection"]
+            XCTAssertTrue(fixture.waitForExistence(timeout: 10)); fixture.tap()
+            XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
+            let excluded = ["contact-current-draft", "Person 0", "Parent 0", "Child 0", "Partner 0"]
+            let oldStart = ProcessInfo.processInfo.systemUptime
+            let oldResults = excluded.map { app.staticTexts[$0].exists }
+            let oldDuration = ProcessInfo.processInfo.systemUptime - oldStart
+            let values = excluded as NSArray
+            let predicate = NSPredicate(format:
+                "identifier IN %@ OR title IN %@ OR label IN %@ OR value IN %@ OR placeholderValue IN %@",
+                values, values, values, values, values)
+            let newStart = ProcessInfo.processInfo.systemUptime
+            let combinedCount = app.staticTexts.matching(predicate).count
+            let combinedDuration = ProcessInfo.processInfo.systemUptime - newStart
+            print("KIN_PARITY route=\(route) old_any=\(oldResults.contains(true)) combined_nonzero=\(combinedCount != 0) old_seconds=\(String(format: "%.3f", oldDuration)) combined_seconds=\(String(format: "%.3f", combinedDuration))")
+            XCTAssertFalse(oldResults.contains(true), "Original temporary-identity checks")
+            XCTAssertEqual(combinedCount != 0, oldResults.contains(true), "Batched query parity")
+            XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "contact-selected-contact").firstMatch.label.contains("John Appleseed"))
+            if route == "Add parent" { capture(app,"New unnamed parent import review has no temporary identity") }
+            app.buttons["contact-cancel"].tap()
+            requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Add person"].buttons["Cancel"])
+            XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"First name")
+            app.navigationBars["Add person"].buttons["Cancel"].tap()
+            if route != "Add person" {
+                app.navigationBars[route].buttons["Cancel"].tap(); app.navigationBars.buttons["People"].tap()
+            }
+        }
+        openAllPeople(app); XCTAssertEqual(app.cells.count,1)
+        app.staticTexts["Synthetic Named"].tap(); reveal(app.buttons["Add parent"],in: app); app.buttons["Add parent"].tap()
+        app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
+        // Review/cancel never creates an identity or consumes the next saved reference.
+        XCTAssertTrue(app.staticTexts["Parent 2"].waitForExistence(timeout: 5))
+    }
     @MainActor func testRelationshipRoleLabelsFromBothDirectionsAndForPartners() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "role-label-friends"]
         app.launch(); addTeardownBlock { app.terminate() }
@@ -1368,3 +1419,4 @@ final class KinUITests: XCTestCase {
     }
 
 }
+
