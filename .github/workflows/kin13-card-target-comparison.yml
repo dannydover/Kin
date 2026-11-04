@@ -1,0 +1,80 @@
+name: Synthetic native card target comparison (nonshipping)
+on:
+  push:
+    branches: [diagnostic/kin13-card-target-comparison]
+permissions:
+  contents: read
+jobs:
+  card-target-comparison:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          test "$(uname -m)" = arm64
+      - name: Prepare isolated synthetic simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin card ${GITHUB_RUN_ID}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          export KIN_CI_SIMULATOR
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          python3 scripts/ci-simulator.py grant
+          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+      - name: Exercise both synthetic missing-birthday native journeys
+        timeout-minutes: 45
+        run: |
+          xcodebuild -project Kin.xcodeproj -scheme Kin -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR" -derivedDataPath DerivedData -resultBundlePath "$RUNNER_TEMP/KinTests.xcresult" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 600 -only-testing:KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport -only-testing:KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview test CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/KinCard-private.log" 2>&1
+      - name: Report allowlisted comparison and cleanup markers
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'KinCard-private.log'
+          marker = re.compile(r'(?:CI_CONTACT_CLEANUP (?:missing-birthday|missing-birthday-saved-photo) verified|KIN_CARD_COMPARE baseline=(?:absent|unique|ambiguous) waiter=(?:completed|not-completed) candidate=(?:absent|unique|ambiguous))')
+          if path.exists():
+              for line in path.read_text(errors='replace').splitlines():
+                  match = marker.search(line)
+                  if match: print(match.group(0))
+          PY
+      - name: Verify finalized result and exact test identities
+        if: always()
+        run: |
+          set +e
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json" || exit 1
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json" || exit 1
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"; status=$?
+          python3 -c 'import importlib.util,json,os; s=importlib.util.spec_from_file_location("m","scripts/ci-test-shards.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); m.verify_test_ids(json.load(open(os.environ["RUNNER_TEMP"]+"/KinTests-test-tree.json")),["KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport","KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview"])' || status=1
+          exit "$status"
+      - name: Retain finalized or partial result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - name: Upload synthetic result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-card-target-result
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove isolated simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then python3 scripts/ci-simulator.py cleanup; fi
+      - name: Retain simulator cleanup record
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-card-target-cleanup
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+
