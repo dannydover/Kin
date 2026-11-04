@@ -115,6 +115,23 @@ import Testing
         #expect(links.first?.status == .former)
     }
 
+    @Test("A paired fixture notebook reopens after deleting one person without reseeding")
+    func pairedFixtureDeletionReopensWithoutReseeding() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let token = UUID()
+        let store = try KinStore(storeURL: directory.appendingPathComponent("fixture.sqlite"))
+        defer { try? store.close() }
+        try SyntheticNotebookFixture.seed("partner-friends", token: token, store: store)
+        try store.deletePerson(token)
+        try store.close(); try store.resume()
+        #expect(store.people.map(\.firstName) == ["Synthetic B"])
+        #expect(throws: SyntheticNotebookFixture.FixtureError.nonemptyNotebook) {
+            try SyntheticNotebookFixture.seed("partner-friends", token: token, store: store)
+        }
+        #expect(store.people.map(\.firstName) == ["Synthetic B"])
+    }
+
     @Test("Partial two-person setup fails closed rather than silently completing or overwriting", arguments: ["partner-friends", "young-parent-friends"])
     func partialPairedFixture(_ selection: String) throws {
         let store = try KinStore(inMemory: true); defer { try? store.close() }

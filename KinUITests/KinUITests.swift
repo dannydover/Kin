@@ -352,7 +352,8 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson() {
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
+        let notebookID = UUID().uuidString
+        app.launchArguments = ["--kin-test-notebook", notebookID, "--kin-ui-fixture", "partner-friends"]
         app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 10))
@@ -377,7 +378,10 @@ final class KinUITests: XCTestCase {
         app.buttons.matching(identifier: "confirm-delete-person").allElementsBoundByIndex.last!.tap()
         XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Synthetic A"].exists)
-        app.terminate(); app.launch()
+        app.terminate()
+        // Reopen the same notebook without reseeding after deleting a fixture person.
+        app.launchArguments = ["--kin-test-notebook", notebookID]
+        app.launch()
         openAllPeople(app)
         XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Synthetic A"].exists)
