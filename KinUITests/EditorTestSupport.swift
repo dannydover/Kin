@@ -1,65 +1,5 @@
 import XCTest
 
-/// The caller establishes this frame in the same coordinate space as the form.
-func preciseFormFrameIsVisible(_ frame: CGRect, lowerBound: CGFloat, upperBound: CGFloat) -> Bool {
-    frame.width > 0 && frame.height > 0 && frame.minY >= lowerBound && frame.maxY <= upperBound
-}
-
-enum NativeContactRevealDecision: Equatable {
-    case wait, select, scrollUp, scrollDown
-}
-
-struct NativeContactRevealDeadline {
-    private let end: TimeInterval
-    init(start: TimeInterval, timeout: TimeInterval) { end = start + timeout }
-    func remaining(now: TimeInterval) -> TimeInterval { max(0, end - now) }
-}
-
-/// Pure policy: a second reveal requires observed movement, and selection
-/// requires one hittable target whose frame has settled for one second.
-struct NativeContactRevealPolicy {
-    private(set) var scrolls = 0
-    private(set) var sawUnsettledFrame = false
-    private var previousVisibleFrame: CGRect?
-    private var stableSince: TimeInterval = 0
-    private var lastScrolledFrame: CGRect?
-
-    private func differs(_ a: CGRect, _ b: CGRect) -> Bool {
-        abs(a.minX - b.minX) > 0.5 || abs(a.minY - b.minY) > 0.5
-            || abs(a.width - b.width) > 0.5 || abs(a.height - b.height) > 0.5
-    }
-
-    mutating func observe(candidateCount: Int, visibleCount: Int, visibleFrame: CGRect?,
-                          soleFrame: CGRect?, lowerBound: CGFloat, now: TimeInterval) -> NativeContactRevealDecision {
-        if visibleCount == 1, let frame = visibleFrame {
-            if previousVisibleFrame == nil || differs(frame, previousVisibleFrame!) {
-                previousVisibleFrame = frame; stableSince = now; sawUnsettledFrame = true
-                return .wait
-            }
-            if now - stableSince < 1 { sawUnsettledFrame = true; return .wait }
-            return .select
-        }
-        previousVisibleFrame = nil
-        guard visibleCount == 0, candidateCount == 1, let frame = soleFrame, scrolls < 16 else { return .wait }
-        if let previous = lastScrolledFrame, !differs(frame, previous) { return .wait }
-        return frame.maxY > lowerBound ? .scrollUp : .scrollDown
-    }
-
-    mutating func didScroll(from frame: CGRect) {
-        lastScrolledFrame = frame
-        scrolls += 1
-    }
-}
-
-enum SyntheticCardResolution: Equatable {
-    case absent, unique, ambiguous
-}
-
-func syntheticCardResolution(_ count: Int) -> SyntheticCardResolution {
-    if count == 0 { return .absent }
-    return count == 1 ? .unique : .ambiguous
-}
-
 /// Resolve one exact synthetic card; never select an arbitrary duplicate.
 @MainActor func requireSyntheticContactCard(_ app: XCUIApplication, name: String) throws -> XCUIElement {
     let cards = app.cells.containing(.staticText, identifier: name)
@@ -239,3 +179,4 @@ private enum SyntheticCardSelectionError: Error { case unavailable }
 @MainActor func editorToggle(_ identifier: String, in app: XCUIApplication, scrollStep: CGFloat? = nil) -> XCUIElement {
     editorSwitchWrapper(identifier, in: app, scrollStep: scrollStep).switches.firstMatch
 }
+
