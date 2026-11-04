@@ -352,10 +352,10 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson() {
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
         app.launch(); addTeardownBlock { app.terminate() }
-        addPerson(app, name: "Synthetic A")
-        addPerson(app, name: "Synthetic B")
+        XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic A"].tap()
         app.buttons["Add partner"].tap()
         chooseExistingPerson(app,name: "Synthetic B")
@@ -419,27 +419,28 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testSharedChildReuseAndRenameAcrossBothParents() {
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]
         app.launch(); addTeardownBlock { app.terminate() }
-        addPerson(app,name: "Synthetic Parent A"); addPerson(app,name: "Synthetic Parent B")
-        app.staticTexts["Synthetic Parent A"].tap()
+        XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Synthetic B"].waitForExistence(timeout: 10))
+        app.staticTexts["Synthetic A"].tap()
         app.buttons["Add child"].tap(); app.buttons["Create new person"].tap(); app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Child 3"].waitForExistence(timeout: 5))
         app.navigationBars.buttons["People"].tap()
-        app.staticTexts["Synthetic Parent B"].tap(); app.buttons["Add child"].tap()
+        app.staticTexts["Synthetic B"].tap(); app.buttons["Add child"].tap()
         chooseExistingPerson(app,name: "Child 3")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Child 3"].waitForExistence(timeout: 5))
         app.staticTexts["Child 3"].tap()
         app.swipeUp()
-        XCTAssertTrue(app.staticTexts["Synthetic Parent A"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Synthetic Parent B"].exists)
+        XCTAssertTrue(app.staticTexts["Synthetic A"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Synthetic B"].exists)
         app.navigationBars.buttons["Edit"].tap()
         app.textFields["First name (optional)"].tap(); app.textFields["First name (optional)"].typeText("Synthetic Shared Child")
         app.buttons["Save"].tap()
-        app.navigationBars.buttons["Synthetic Parent B"].tap()
+        app.navigationBars.buttons["Synthetic B"].tap()
         XCTAssertTrue(app.staticTexts["Synthetic Shared Child"].waitForExistence(timeout: 5))
-        app.navigationBars.buttons["People"].tap(); app.staticTexts["Synthetic Parent A"].tap()
+        app.navigationBars.buttons["People"].tap(); app.staticTexts["Synthetic A"].tap()
         XCTAssertTrue(app.staticTexts["Synthetic Shared Child"].waitForExistence(timeout: 5))
         app.navigationBars.buttons["People"].tap()
         let previews = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "child-preview-"))
@@ -1374,4 +1375,5 @@ final class KinUITests: XCTestCase {
     }
 
 }
+
 

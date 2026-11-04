@@ -169,5 +169,35 @@ import Testing
         }
         #expect(store.people == before && store.parentLinks.isEmpty && store.partnerLinks.isEmpty)
     }
+    @Test("Paired fixture matches two normally saved Friend drafts")
+    func pairedFixtureMatchesDirectDrafts() throws {
+        let seeded = try KinStore(inMemory: true)
+        let direct = try KinStore(inMemory: true)
+        defer { try? seeded.close(); try? direct.close() }
+        try SyntheticNotebookFixture.seed("partner-friends", token: UUID(), store: seeded)
+        for name in ["Synthetic A", "Synthetic B"] {
+            var draft = PersonDraftDefaults.newPerson(relationship: nil, people: direct.people)
+            draft.firstName = name
+            var gender = DraftGenderDefault(value: draft.gender, isNew: true)
+            gender.nameChanged(name, lookup: NameAssociations.bundled.gender)
+            draft.gender = gender.value
+            draft.connections.insert(.friend)
+            try direct.savePerson(draft)
+        }
+        #expect(seeded.people.count == 2 && direct.people.count == 2)
+        for name in ["Synthetic A", "Synthetic B"] {
+            let fixture = try #require(seeded.people.first { $0.firstName == name })
+            let saved = try #require(direct.people.first { $0.firstName == name })
+            #expect(fixture.firstName == saved.firstName && fixture.lastName == saved.lastName)
+            #expect(fixture.gender == saved.gender && fixture.birthday == saved.birthday)
+            #expect(fixture.connections == saved.connections && fixture.indexInclusion == saved.indexInclusion)
+            #expect(fixture.reference == saved.reference && fixture.revision == saved.revision)
+            #expect(fixture.notes == saved.notes && fixture.photo == saved.photo && fixture.unnamedRole == saved.unnamedRole)
+        }
+        #expect(seeded.parentLinks.isEmpty && seeded.partnerLinks.isEmpty)
+        #expect(direct.parentLinks.isEmpty && direct.partnerLinks.isEmpty)
+    }
+
 }
 #endif
+

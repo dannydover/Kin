@@ -399,3 +399,8 @@ poll. It retains the one-second stable-frame requirement, the eight-second
 waiter, and all subsequent screenshot and geometry assertions. Apple documents
 that `isHittable` is false for a missing element. This reduces redundant remote
 queries; it does not establish a cause or cure for the broader snapshot stalls.
+
+
+## Paired Friend setup substitution
+
+The partner unlink/delete and shared-child rename journeys use the DEBUG-only `partner-friends` fixture in a uniquely named test notebook instead of creating two Friends through the UI in each journey. Their relationship interactions, assertions and relaunch checks remain. A separate real UI test still covers Friend toggle, Save and relaunch; fixture-versus-direct-save parity checks stored fields and relationships. This removes four repeated creation/toggle/Save setups. The two relationship journeys no longer cover creation of both people through the UI immediately before the relationship actions in the same notebook; model parity does not replace that continuous UI contract. Native Contacts and Photos journeys are unchanged. Runtime savings require hosted measurement.
