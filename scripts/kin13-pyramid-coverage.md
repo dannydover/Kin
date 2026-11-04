@@ -113,3 +113,12 @@ and all native journeys remain required. The prior hosted run 41741180017 failed
 UI source reference; the revised local candidate preserves the original project
 file and the guard, and all four local identity tests pass. This extraction is not
 a demonstrated fix for the earlier UI failures.
+
+Hosted run [41748618781](https://github.com/dannydover/Kin/actions/runs/41748618781)
+finished with 224 passed, three failed and zero skipped across finalized test
+bundles. The failures were an automatic-gender assertion in adult Contacts review,
+a membership-journey timeout, and failure to reveal the Friend switch. The
+repository identity check also failed on the added UI source reference. These
+failures remain unresolved; the shared-file correction addresses only the
+identity check and does not establish a fix for UI reliability. Simulator
+cleanup records and the owned synthetic Contacts cleanup markers were verified.
