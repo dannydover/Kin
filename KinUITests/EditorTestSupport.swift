@@ -1,7 +1,7 @@
 import XCTest
 
 /// Resolve one exact synthetic card; never select an arbitrary duplicate.
-@MainActor func requireSyntheticContactCard(_ app: XCUIApplication, name: String) throws -> XCUIElement {
+@MainActor func requireSyntheticContactCard(_ app: XCUIApplication, name: String, testCase: XCTestCase) throws -> XCUIElement {
     let cards = app.cells.containing(.staticText, identifier: name)
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
         syntheticCardResolution(cards.count) != .absent
@@ -9,7 +9,24 @@ import XCTest
     let outcome = XCTWaiter.wait(for: [ready], timeout: 5)
     let resolution = syntheticCardResolution(cards.count)
     guard outcome == .completed, resolution == .unique else {
-        XCTFail("Expected exactly one synthetic Contacts card; none or multiple were found")
+        if resolution == .ambiguous {
+            // Record the real failure before any additional diagnostic query.
+            let prior = testCase.continueAfterFailure
+            testCase.continueAfterFailure = true
+            XCTFail("Expected exactly one synthetic Contacts card; final resolution: ambiguous")
+            testCase.continueAfterFailure = prior
+            print("KIN_CARD_HIER_START baseline=ambiguous")
+            let tree = app.debugDescription
+            let structure = syntheticCardHierarchy(tree, name: name)
+            let list = app.otherElements.matching(identifier: "ContactsListView")
+            let cells = list.descendants(matching: .cell).matching(identifier: name)
+            let labels = cells.descendants(matching: .staticText).matching(identifier: name)
+            let cellCategory = syntheticCardCategory(syntheticCardResolution(cells.count))
+            let labelCategory = syntheticCardCategory(syntheticCardResolution(labels.count))
+            print("KIN_CARD_HIER hierarchy=\(structure.global) scoped_hierarchy=\(structure.scoped) named_cells=\(cellCategory) scoped_labels=\(labelCategory)")
+        } else {
+            XCTFail("Expected exactly one synthetic Contacts card; final resolution: \(syntheticCardCategory(resolution))")
+        }
         throw SyntheticCardSelectionError.unavailable
     }
     let card = cards.element
@@ -18,6 +35,46 @@ import XCTest
         throw SyntheticCardSelectionError.unavailable
     }
     return card
+}
+
+// Only fixed cardinality categories leave the synthetic runner. The raw
+// accessibility description and generated contact name are never printed.
+private func syntheticCardCategory(_ value: SyntheticCardResolution) -> String {
+    switch value {
+    case .absent: return "absent"
+    case .unique: return "unique"
+    case .ambiguous: return "ambiguous"
+    }
+}
+
+private func syntheticCardHierarchy(_ description: String, name: String) -> (global: String, scoped: String) {
+    guard let begin = description.range(of: "Element subtree:"),
+          let end = description.range(of: "Path to element:", range: begin.upperBound..<description.endIndex) else {
+        return ("unknown", "unknown")
+    }
+    struct Node { let indentation: Int; let isCell: Bool; let inList: Bool; let index: Int }
+    var stack: [Node] = []
+    var global = Set<Int>()
+    var scoped = Set<Int>()
+    let lines = description[begin.upperBound..<end.lowerBound].split(separator: "\n", omittingEmptySubsequences: false)
+    for (index, raw) in lines.enumerated() {
+        let line = String(raw)
+        let indentation = line.prefix { $0 == " " }.count
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { continue }
+        while let last = stack.last, last.indentation >= indentation { stack.removeLast() }
+        let inList = (stack.last?.inList ?? false) || trimmed.contains("identifier: 'ContactsListView'")
+        let isCell = trimmed.hasPrefix("Cell,") || trimmed.hasPrefix("Cell ")
+        stack.append(Node(indentation: indentation, isCell: isCell, inList: inList, index: index))
+        if line.contains(name) {
+            for node in stack where node.isCell {
+                global.insert(node.index)
+                if node.inList { scoped.insert(node.index) }
+            }
+        }
+    }
+    return (syntheticCardCategory(syntheticCardResolution(global.count)),
+            syntheticCardCategory(syntheticCardResolution(scoped.count)))
 }
 
 private enum SyntheticCardSelectionError: Error { case unavailable }
@@ -179,4 +236,6 @@ private enum SyntheticCardSelectionError: Error { case unavailable }
 @MainActor func editorToggle(_ identifier: String, in app: XCUIApplication, scrollStep: CGFloat? = nil) -> XCUIElement {
     editorSwitchWrapper(identifier, in: app, scrollStep: scrollStep).switches.firstMatch
 }
+
+
 
