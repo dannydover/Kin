@@ -135,3 +135,18 @@ retains its explicit intermediate restart and all assertions. This improves
 failure-path ownership; it does not establish a fix for switch delivery, Photos,
 Contacts, or process-termination stalls. The no-argument normal launch and
 isolated-simulator requirement are unchanged.
+
+Hosted run [41757891061](https://github.com/dannydover/Kin/actions/runs/41757891061)
+completed with 226 passed, one failed, and zero skipped. The normal cold-launch
+journey passed; its failure-path teardown has not been demonstrated by that
+pass. The UI-3 saved-photo review failed because a global label query matched
+both the editor and Contacts review birth-information buttons. The snapshot
+identified them separately as `birth-information` and
+`contact-birth-information`. The test helper now selects the editor identifier
+and explicitly preserves each original exact-label requirement; the native
+review uses its existing prefixed identifier and retains the exact label check.
+The Continue-without-photo path additionally requires the existing dismissal
+helper (up to five seconds) before operating on the editor. The test's overall
+allowance and all original outcomes remain unchanged. This addresses that
+ambiguous lookup; it is not evidence that other UI stalls or picker loading
+failures are fixed. The owned Contacts cleanup marker was verified.

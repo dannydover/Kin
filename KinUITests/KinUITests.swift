@@ -172,8 +172,8 @@ final class KinUITests: XCTestCase {
         app.launch(); XCTAssertTrue(app.staticTexts["Synthetic Young"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].waitForExistence(timeout: 10))
         app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
-        let birth = app.buttons["Birth information, Unknown"]
-        reveal(birth,in: app); birth.tap(); app.buttons["Estimated age"].tap()
+        let birth = editorBirthInformation(app, expected: "Birth information, Unknown")
+        birth.tap(); app.buttons["Estimated age"].tap()
         chooseAge(app,value: 3); app.buttons["Save"].tap()
         XCTAssertFalse(app.buttons["Add child"].exists); XCTAssertFalse(app.buttons["Add partner"].exists)
         return app
@@ -588,8 +588,8 @@ final class KinUITests: XCTestCase {
         app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         app.staticTexts["Synthetic Named"].tap(); app.navigationBars.buttons["Edit"].tap()
-        let initialBirthday = app.buttons["Birth information, Unknown"]
-        reveal(initialBirthday, in: app); initialBirthday.tap()
+        let initialBirthday = editorBirthInformation(app, expected: "Birth information, Unknown")
+        initialBirthday.tap()
         app.buttons["Estimated age"].tap()
         chooseAge(app,value: 3)
         app.buttons["Save"].tap()
@@ -598,8 +598,8 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Parents"].exists)
         capture(app, "Under sixteen profile keeps Parents and hides family add controls")
         app.navigationBars.buttons["Edit"].tap()
-        let birthday = app.buttons["Birth information, Estimated age"]
-        reveal(birthday,in: app); birthday.tap()
+        let birthday = editorBirthInformation(app, expected: "Birth information, Estimated age")
+        birthday.tap()
         XCTAssertTrue(app.buttons["Unknown"].waitForExistence(timeout: 5))
         app.buttons["Unknown"].tap(); app.buttons["Save"].tap()
         XCTAssertTrue(app.buttons["Add partner"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Add child"].exists)
@@ -657,8 +657,8 @@ final class KinUITests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Save"])
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed); app.buttons["Save"].tap()
         app.navigationBars.buttons["Edit"].tap()
-        let birthPicker = app.buttons["Birth information, Estimated age"]
-        reveal(birthPicker, in: app); birthPicker.tap()
+        let birthPicker = editorBirthInformation(app, expected: "Birth information, Estimated age")
+        birthPicker.tap()
         app.buttons["Unknown"].tap(); app.buttons["Save"].tap()
         let warning = app.alerts["Remove the existing photo?"]
         XCTAssertTrue(warning.waitForExistence(timeout: 5)); XCTAssertTrue(warning.buttons["Cancel"].isHittable)
@@ -751,9 +751,10 @@ final class KinUITests: XCTestCase {
         reveal(retained,in: app); retained.tap(); app.buttons["Unknown"].tap()
         reveal(app.buttons["Continue without importing photo"],in: app)
         app.buttons["Continue without importing photo"].tap()
+        requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
         XCTAssertEqual(app.textFields["First name (optional)"].value as? String,contactName)
-        let unknownBirth = app.buttons["Birth information, Unknown"]
-        reveal(unknownBirth,in: app); unknownBirth.tap(); app.buttons["Estimated age"].tap()
+        let unknownBirth = editorBirthInformation(app, expected: "Birth information, Unknown")
+        unknownBirth.tap(); app.buttons["Estimated age"].tap()
         XCTAssertFalse(app.buttons["Save"].isEnabled)
         chooseAge(app,value: 19)
         reveal(app.buttons["Add photo"],in: app)
@@ -1235,6 +1236,15 @@ final class KinUITests: XCTestCase {
     @MainActor private func formContentBottom(_ app: XCUIApplication) -> CGFloat {
         let cancel = app.buttons["contact-cancel"]
         return cancel.exists ? min(cancel.frame.minY - 12,app.frame.maxY - 100) : app.frame.maxY - 100
+    }
+    /// The editor and Contacts review can expose identical visible labels while
+    /// a sheet dismisses. Select the editor by its stable identifier and retain
+    /// the same exact accessibility-label requirement as the former label query.
+    @MainActor private func editorBirthInformation(_ app: XCUIApplication, expected: String) -> XCUIElement {
+        let picker = app.buttons["birth-information"]
+        reveal(picker, in: app)
+        XCTAssertEqual(picker.label, expected)
+        return picker
     }
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication, requireHittable: Bool = false) {
         for _ in 0..<12 {

@@ -129,9 +129,10 @@ final class NativeContactsTests: XCTestCase {
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = isAdult ? "Eligible Contacts preview - synthetic" : "Ineligible Contacts preview - synthetic"
             attachment.lifetime = .keepAlways; add(attachment)
-            let exactBirthday = app.buttons["Birth information, Exact birthday"]
+            let exactBirthday = app.buttons["contact-birth-information"]
             for _ in 0..<8 { if exactBirthday.exists { break }; app.swipeUp() }
             XCTAssertTrue(exactBirthday.exists)
+            XCTAssertEqual(exactBirthday.label, "Birth information, Exact birthday")
             app.buttons["contact-import"].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
             if isAdult { XCTAssertTrue(app.staticTexts["Gender: Female"].exists) }
