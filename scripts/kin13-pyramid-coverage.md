@@ -122,3 +122,16 @@ repository identity check also failed on the added UI source reference. These
 failures remain unresolved; the shared-file correction addresses only the
 identity check and does not establish a fix for UI reliability. Simulator
 cleanup records and the owned synthetic Contacts cleanup markers were verified.
+
+Hosted run [41753178370](https://github.com/dannydover/Kin/actions/runs/41753178370)
+passed the corrected identity guard, core and Release checks but failed three UI
+cases: native Contacts selection readiness, cold-launch Friend/Save precondition,
+and Photos picker readiness. All 224 other test results passed, none skipped;
+simulator and owned-Contacts cleanup evidence was verified. In the failed cold
+launch, no app termination was recorded in its teardown; the following test's
+launch recorded an implicit termination of a Kin instance. PID continuity is not
+established. The cold-launch test now registers app teardown before launch and
+retains its explicit intermediate restart and all assertions. This improves
+failure-path ownership; it does not establish a fix for switch delivery, Photos,
+Contacts, or process-termination stalls. The no-argument normal launch and
+isolated-simulator requirement are unchanged.

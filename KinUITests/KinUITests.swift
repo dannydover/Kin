@@ -23,6 +23,7 @@ final class KinUITests: XCTestCase {
         // with no preview/test-store arguments, including in Release builds.
         let app = XCUIApplication()
         app.launchArguments = []
+        addTeardownBlock { app.terminate() }
         app.launch()
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["Notebook locked"].exists)
@@ -34,7 +35,6 @@ final class KinUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Notebook locked"].exists)
         app.staticTexts[name].tap()
         XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
-        app.terminate()
         #else
         throw XCTSkip("Normal notebook startup regression requires an isolated simulator.")
         #endif
