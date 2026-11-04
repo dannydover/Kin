@@ -54,8 +54,14 @@ final class KinUITests: XCTestCase {
             let fixture = app.buttons["synthetic-contact-selection"]
             XCTAssertTrue(fixture.waitForExistence(timeout: 10)); fixture.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
-            XCTAssertFalse(app.staticTexts["contact-current-draft"].exists)
-            for role in ["Person","Parent","Child","Partner"] { XCTAssertFalse(app.staticTexts[role + " 0"].exists) }
+            // Preserve XCTest's identifier/title/label/value/placeholder match
+            // semantics while resolving the five absent identities together.
+            let excluded = ["contact-current-draft", "Person 0", "Parent 0", "Child 0", "Partner 0"] as NSArray
+            let absentIdentities = NSPredicate(format:
+                "identifier IN %@ OR title IN %@ OR label IN %@ OR value IN %@ OR placeholderValue IN %@",
+                excluded, excluded, excluded, excluded, excluded)
+            XCTAssertEqual(app.staticTexts.matching(absentIdentities).count, 0,
+                           "The import review must not expose a temporary draft identity.")
             XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "contact-selected-contact").firstMatch.label.contains("John Appleseed"))
             if route == "Add parent" { capture(app,"New unnamed parent import review has no temporary identity") }
             app.buttons["contact-cancel"].tap()
@@ -1368,3 +1374,4 @@ final class KinUITests: XCTestCase {
     }
 
 }
+
