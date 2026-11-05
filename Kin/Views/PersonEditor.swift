@@ -96,6 +96,10 @@ struct PersonEditor: View {
                                 }.accessibilityIdentifier("synthetic-preservation-contact-\(index)")
                             }
                         }
+                    } else if ProcessInfo.processInfo.arguments.contains("--kin-ui-synthetic-contact-with-photo") {
+                        Button("Use synthetic contact with photo") {
+                            pendingContact = ContactSnapshot.syntheticMissingBirthdayWithPhoto()
+                        }.accessibilityIdentifier("synthetic-contact-with-photo-selection")
                     } else if ProcessInfo.processInfo.arguments.contains("--kin-ui-synthetic-contact") {
                         Button("Use synthetic contact") {
                             pendingContact = ContactSnapshot(firstName: "John", lastName: "Appleseed")

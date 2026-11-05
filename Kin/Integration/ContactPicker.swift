@@ -1,5 +1,8 @@
 import SwiftUI
 import ContactsUI
+#if DEBUG
+import UIKit
+#endif
 
 @MainActor struct ContactSnapshot {
     let photoIdentity = UUID()
@@ -37,6 +40,21 @@ import ContactsUI
         }
     }
 }
+
+
+#if DEBUG
+extension ContactSnapshot {
+    /// Fixed, in-memory test payload; no Contacts store is read.
+    static func syntheticMissingBirthdayWithPhoto() -> ContactSnapshot {
+        let data = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).pngData { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        }
+        return ContactSnapshot(firstName: "Synthetic No Birthday", lastName: "",
+                               birthInformation: .missing, loadPhoto: { data })
+    }
+}
+#endif
 
 /// UIKit owns the system picker's dismissal. SwiftUI owns only the inert container.
 struct ContactPicker: UIViewControllerRepresentable {

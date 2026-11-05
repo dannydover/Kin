@@ -9,7 +9,14 @@ import XCTest
     let outcome = XCTWaiter.wait(for: [ready], timeout: 5)
     let resolution = syntheticCardResolution(cards.count)
     guard outcome == .completed, resolution == .unique else {
-        XCTFail("Expected exactly one synthetic Contacts card; none or multiple were found")
+        let resolutionLabel: String
+        switch resolution {
+        case .absent: resolutionLabel = "absent"
+        case .unique: resolutionLabel = "unique"
+        case .ambiguous: resolutionLabel = "ambiguous"
+        }
+        let waiterLabel = outcome == .completed ? "completed" : "not-completed"
+        XCTFail("Expected exactly one synthetic Contacts card; final resolution: \(resolutionLabel); waiter: \(waiterLabel)")
         throw SyntheticCardSelectionError.unavailable
     }
     let card = cards.element

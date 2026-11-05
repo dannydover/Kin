@@ -12,6 +12,17 @@ import Testing
             UIColor.systemBlue.setFill(); context.fill(CGRect(x: 0,y: 0,width: 8,height: 8))
         }
     }
+    #if DEBUG
+    @Test("Synthetic missing-birthday payload supplies a decodable photo only when eligible")
+    func syntheticMissingBirthdayPhotoFixture() throws {
+        let snapshot = ContactSnapshot.syntheticMissingBirthdayWithPhoto()
+        #expect(snapshot.firstName == "Synthetic No Birthday")
+        #expect(snapshot.birthInformation == .missing)
+        #expect(snapshot.photo(for: .unknown, today: today, calendar: Calendar(identifier: .gregorian)) == nil)
+        let data = try #require(snapshot.photo(for: adult, today: today, calendar: Calendar(identifier: .gregorian)))
+        #expect(UIImage(data: data) != nil)
+    }
+    #endif
     @Test("No access before eligibility or opt-in; corrections invalidate and repeated review reuses bytes")
     func eligibility() {
         var reads = 0; let data = image()

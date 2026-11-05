@@ -730,6 +730,7 @@ final class KinUITests: XCTestCase {
         let app = XCUIApplication()
         let notebookFixture = useFixturePhoto ? "estimated-contact-photo" : "estimated-contact-draft"
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", notebookFixture]
+        if scenario == .unknownCancel { app.launchArguments.append("--kin-ui-synthetic-contact-with-photo") }
         app.launch(); openEstimatedAdultFixture(app,name: "Synthetic Existing Draft")
         app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
         if !useFixturePhoto {
@@ -757,11 +758,20 @@ final class KinUITests: XCTestCase {
                     && app.textFields["First name (optional)"].value as? String == "Synthetic Existing Draft"
             }) else { return }
             importButton.tap()
-            let appeared = waitForNativeContactsPicker(app)
-            if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
-            XCTAssertTrue(appeared)
-            let card = try requireSyntheticContactCard(app, name: contactName)
-            card.tap()
+            if scenario == .unknownCancel {
+                let candidates = app.buttons.matching(identifier: "synthetic-contact-with-photo-selection")
+                XCTAssertTrue(candidates.firstMatch.waitForExistence(timeout: 30))
+                XCTAssertEqual(candidates.count, 1)
+                let card = candidates.element
+                XCTAssertTrue(card.isHittable)
+                card.tap()
+            } else {
+                let appeared = waitForNativeContactsPicker(app)
+                if !appeared { recordTestState(app, stage: "Contacts picker did not appear") }
+                XCTAssertTrue(appeared)
+                let card = try requireSyntheticContactCard(app, name: contactName)
+                card.tap()
+            }
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         }
         if scenario == .reviewCancel {
@@ -787,7 +797,7 @@ final class KinUITests: XCTestCase {
             reveal(app.buttons["Continue without importing photo"],in: app)
             app.buttons["Continue without importing photo"].tap()
             requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
-            XCTAssertEqual(app.textFields["First name (optional)"].value as? String,contactName)
+            XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic No Birthday")
             let unknownBirth = editorBirthInformation(app, expected: "Birth information, Unknown")
             unknownBirth.tap(); app.buttons["Estimated age"].tap()
             XCTAssertFalse(app.buttons["Save"].isEnabled)
