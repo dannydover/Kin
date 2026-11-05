@@ -1,4 +1,7 @@
-# Kin 1.3 UI reliability and gate trust — design draft
+# Kin 1.3 UI reliability and gate trust
+
+The audit below records historical findings; the approved current strategy and
+acceptance evidence are in the final sections of this document.
 
 ## Evidence and boundaries
 
@@ -62,73 +65,55 @@ is needed. The unit job selects the entire KinTests target and rejects empty,
 failed or skipped results, but has no independent mandatory-test identity
 inventory; the observed 126 is not a permanent guaranteed count.
 
-## Proposed staged work
+## Approved layered plan and acceptance
 
-1. Record the behavior/risk-to-test map before moving or combining coverage.
-   Existing deterministic tests already exercise identity, relationships, age,
-   photo eligibility, import review and persistence. Add deterministic coverage
-   for missing state transitions where useful, but keep a real blocking UI path
-   for button/toggle delivery, save/cancel, relaunch, accessibility and actual
-   Contacts/Photos presentation. A constructed picker coordinator is not proof
-   that the system picker works. No test, assertion or native coverage is silently
-   removed, quarantined, skipped or made nonblocking.
-2. Make shared fixtures and teardown verifiable: unique synthetic identities,
-   observed fixture readiness, ownership-scoped cleanup and explicit cleanup
-   failures that preserve the original failure. Audit notebook/process, keyboard,
-   Contacts/Photos and service state separately. Do not seed real data, broaden
-   permissions, add arbitrary sleeps or silently retap controls.
-3. Trace the boundaries common to reported failures with fixed-field synthetic
-   events: test action issued, app event/action entered, state transition and
-   observed end state. Calibrate trace collection and preserve original failures;
-   absent events are inconclusive unless the collector and app heartbeat are
-   demonstrably continuous. Use one bounded targeted experiment per hypothesis,
-   with a defined stop if it does not reproduce. Treat UIKit/SwiftUI, app binding,
-   XCTest locator and runner contention as competing hypotheses until evidence
-   distinguishes them.
-4. Audit UI synchronization as shared infrastructure: bounded functional
-   readiness and stable scoped locators, one action followed by an observed state,
-   and diagnostic snapshots that do not conceal the original outcome. Do not
-   replace meaningful end-state assertions with an easier readiness condition.
-   Test any shared helper change against both passing and failing evidence.
-5. Keep fast deterministic checks separate for early feedback while the existing
-   required `validate` continues to require the full UI and native integrations.
-   A smaller blocking suite, different release gate, evidence reuse or a changed
-   coverage boundary requires a reviewed before/after map and a separate owner
-   decision; this plan does not authorize those changes.
+The owner approved a smaller blocking suite after the same-head comparison in
+[run 42068723543](https://github.com/dannydover/Kin/actions/runs/42068723543).
+The earlier audit above is historical evidence, not a requirement to keep all
+native UI journeys in the automatic gate. The accepted gate requires core,
+the entire iOS `KinTests` unit/integration target, four exact UI smoke tests,
+and Release validation. Finalized identities, no-skip checks, retained results,
+and applicable cleanup remain fail-closed. The smoke covers app launch,
+create/save/relaunch, relationship edit/relaunch, and empty People screenshots
+at normal and largest text. It does not use real Contacts or Photos.
 
-## Acceptance and measurement
+The full broad UI suite, including real system picker journeys, is run only by
+explicitly dispatching `Manual broad UI diagnostics` with an exact source SHA.
+It reports failures and retains its own evidence; a passing required gate never
+relabels a failed broad run. The workflow must exist on the default branch before
+GitHub can dispatch it. Removing broad UI from automatic PR checks and the
+required gate reduces automated end-to-end assurance. See the
+[layered coverage map and release checklist](Kin13LayeredValidation.md) for
+specific losses and conditional physical-device Contacts/Photos review when
+those features, permissions or affected platform behavior change. Normal and
+largest-text layout, scrolling, clipping, hit targets, VoiceOver, backgrounding,
+and relaunch remain manual release-candidate obligations. Physical QA has not
+been completed for this candidate.
 
-After evidence-backed changes are reviewed locally, run a bounded initial set of
-three complete, first-attempt hosted suites on the same exact reviewed head and
-pinned toolchain, each using fresh synthetic simulators. Include a predefined
-order variation that changes ordering only, not selected identities, assertions,
-permissions or required gates, and verify the actual observed execution order
-changed; reordering selector arguments alone is not proof. Establish an
-independent baseline of mandatory unit identities before claiming all baseline
-unit tests were accounted for, and include all newly added tests. Preserve all
-runs and artifacts, including every
-failure; do not replace one with a later passing attempt. A candidate meets this
-initial criterion only if every required run finalizes with all baseline identities and any new tests accounted for and no failures,
-skips, expected failures, or missing results. The current baseline is 184 tests,
-but matching a count alone is not sufficient.
-Investigate any failure before proposing further work. Three passes are a bounded
-engineering criterion, not proof of a zero failure rate.
+## Repeatability evidence and limits
 
-Report per-run identities, environment and toolchain, selected/order manifest,
-first observed failure when available, failure class, elapsed and runner times,
-setup/cleanup outcome and artifact integrity. Compare first-attempt results with
-an explicitly identified baseline and continue observing over subsequent changes;
-do not imply an improvement without a denominator and observation window.
-Confirm local/hosted toolchain differences rather than assuming parity. Physical
-QA and source-to-signed-archive provenance remain separate release requirements.
+On exact code head `6c275de70775159be51be955917c47df2e6222e1`, the
+[standard run 42112107825](https://github.com/dannydover/Kin/actions/runs/42112107825)
+and [random-plan run 42113699517](https://github.com/dannydover/Kin/actions/runs/42113699517)
+both passed the required gate: 164 iOS tests and four smoke tests each, zero
+skips, with matching result hashes, matching iOS identity sets, exact smoke
+identities and verified simulator deletion. In the standard run, shutdown timed
+out before deletion succeeded and inventory confirmed absence. The four smoke
+test starts were observed in a different order. All 164 iOS test starts in the
+retained test-host output were observed in the same sequence, despite the random
+plan; a changed iOS order has not been established. Core and Release execution
+were unchanged. These two samples do not establish a failure rate.
 
-The three exact diagnostic branch names in the CI trigger allow independent
-first-attempt runs at the same commit without merging the draft or replacing a
-failed run. Two use the standard scheme; the third generates a disposable
-test-only scheme from it with the same targets and a randomized Xcode test plan.
-The production scheme is not modified. The unit target and
-release build retain the production scheme in every trial. UI selection and
-identity verification are unchanged. Run the trials sequentially, retain every
-result, and compare observed test-start sequences within each shard; if the
-randomized trial does not actually change an observed sequence, report the
-order-variation criterion as unverified rather than assuming it occurred.
+The earlier [trial 42105476611](https://github.com/dannydover/Kin/actions/runs/42105476611)
+remains failed: its iOS simulator shutdown and deletion timed out and inventory
+still showed the device present. Its broad UI result independently recorded 72
+passes and one Photos/Contacts query-timeout failure. Retained passing tests do
+not erase either failure. Preserve all failures and artifacts, investigate any
+new failure, and avoid retrying unchanged tests merely to obtain green.
+
+This document update is documentation-only and follows the tested code head;
+it does not imply a new code-order experiment. Normal CI still runs on the
+resulting PR head. The captured largest-text screenshot shows content extending
+behind the search bar in its initial viewport; the automated broad test reached
+and opened the main button after scrolling, but full paragraph readability and
+VoiceOver must be checked on the release device.
