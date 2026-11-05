@@ -81,6 +81,30 @@ import Testing
         ContactImport.apply(next,to: &person,birthday: adult,preparedPhoto: previous,today: today)
         #expect(person.photo == nil && nextReads == 1)
     }
+    @Test("Reviewed adult photo survives saving and reopening without another Contacts read")
+    func reviewedPhotoPersistsAcrossReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("synthetic.sqlite")
+        var reads = 0
+        let bytes = image()
+        let snapshot = ContactSnapshot(firstName: "Synthetic Photo", lastName: "", loadPhoto: { reads += 1; return bytes })
+        var review = ContactPhotoReview()
+        review.update(snapshot: snapshot, birthday: adult, included: true, today: today)
+        let reviewed = try #require(review.prepared?.data)
+        var person = Person()
+        ContactImport.apply(snapshot, to: &person, birthday: adult, preparedPhoto: review.prepared, today: today)
+        let store = try KinStore(storeURL: url)
+        defer { try? store.close() }
+        try store.savePerson(person, today: today)
+        try store.close()
+        let reopened = try KinStore(storeURL: url)
+        defer { try? reopened.close() }
+        let persisted = try reopened.person(person.id)
+        #expect(persisted.photo == reviewed)
+        #expect(persisted.birthday == adult)
+        #expect(reads == 1)
+    }
     @Test("Review cancellation and failed save retain prepared bytes without a partial saved person", arguments: [false,true])
     func failure(afterCommit: Bool) throws {
         var failing = true, reads = 0

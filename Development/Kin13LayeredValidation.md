@@ -8,6 +8,8 @@ The `validate` gate requires Core and repository checks, the **entire** iOS `Kin
 
 This is a single comparison, not a measured failure rate or proof of stable future runs. Collect repeatability and changed-order evidence independently and preserve each result.
 
+Broad UI jobs wait for the four blocking jobs to finish before requesting runners, so they do not compete with the gate for limited hosted capacity. They still run if a required job fails; cancelling the workflow cancels the broad run too. This scheduling change may lengthen time to the broad result and does not hide failures.
+
 ## Coverage and limitations
 
 | Behavior | Proposed blocking evidence | Still requires broader UI or manual review |
@@ -16,7 +18,9 @@ This is a single comparison, not a measured failure rate or proof of stable futu
 | Link, edit and reopen a relationship | `SmokeUITests.testRelationshipEditPersistsAfterRelaunch`; `PersonTests` and `SequentialImportRestartTests` | Other relationship roles, reversal, cancellation and accessibility permutations |
 | Filters, birthdays, identity, cancellation, saving and reopening | Complete Core and iOS `KinTests` target, including `PeopleFilterStateTests`, `FilterStoreSequenceTests`, `ExistingContactBirthPreservationTests`, and store/relationship tests | The full range of rendered navigation, gestures and accessibility behavior |
 | Contact and photo rules and persistence | `ContactPickerTests`, `ExistingContactBirthPreservationTests`, `ContactPhotoReviewTests`, `NewPersonImportTests`, `SequentialImportRestartTests`, and `PhotoProcessorTests` | Real system-picker presentation, selection, permission transitions and native payload delivery |
-| Basic rendered person-row layout | `RenderedLayoutTests` renders the actual row at standard and largest text sizes and checks nonempty, appropriately sized output | This is not an OCR, clipping, hit-target, VoiceOver or full-screen proof; broad UI and device review remain necessary |
+| Basic rendered People-screen layout | `RenderedLayoutTests` renders the actual empty and populated People screens and a person row at standard and largest text sizes, checking dimensions and distinct screen output | SwiftUI rendering can omit platform-backed content. This is not an OCR, clipping, hit-target or VoiceOver proof; broad UI and device review remain necessary |
+
+`ContactPhotoReviewTests.reviewedPhotoPersistsAcrossReopen` adds a lower-layer check that the exact reviewed adult-photo bytes and birthday survive a disk reopen without another Contacts read. It does not exercise the real picker or replace the manual system-picker review.
 
 The small smoke intentionally excludes real Contacts and Photos pickers. Repeated native picker failures and delays are documented in [run 42060127588](https://github.com/dannydover/Kin/actions/runs/42060127588) (ambiguous Contacts card), [run 42044257144](https://github.com/dannydover/Kin/actions/runs/42044257144) (Contacts card lookup), and [run 41942996537](https://github.com/dannydover/Kin/actions/runs/41942996537) (Photos loading). Other non-picker UI and simulator failures also occurred. These examples support reducing picker dependence in smoke; they do not establish a failure rate or an Apple root cause.
 

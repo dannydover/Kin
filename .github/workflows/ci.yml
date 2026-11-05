@@ -40,6 +40,10 @@ jobs:
       - name: Core tests
         run: scripts/test-core.sh
   simulator-tests:
+    # Let blocking work claim runner capacity first; still run broad UI after
+    # failed required jobs, unless the workflow itself was cancelled.
+    needs: [core-validation, ios-tests, candidate-smoke, release-validation]
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
