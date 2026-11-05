@@ -656,18 +656,12 @@ final class KinUITests: XCTestCase {
         app.navigationBars["Edit person"].buttons["Cancel"].tap()
     }
     @MainActor func testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-photo"]
-        app.launch(); addTeardownBlock { app.terminate() }; openEstimatedAdultFixture(app,name: "Synthetic Photo")
-        app.navigationBars.buttons["Edit"].tap(); app.swipeUp(); app.buttons["Add photo"].tap()
-        XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 15))
-        let fixture = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-        guard fixture.waitForExistence(timeout: 10) else { throw XCTSkip("Seed an isolated simulator with a synthetic Photos image for this picker regression.") }
-        // iOS 26 exposes a grid image with a valid frame but marks it non-hittable.
-        // Tap the observed image center rather than asking XCTest to infer a hit target.
-        fixture.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap(); XCTAssertTrue(app.buttons["Change photo"].waitForExistence(timeout: 10))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Save"])
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed); app.buttons["Save"].tap()
-        app.navigationBars.buttons["Edit"].tap()
+        // This fixture starts with a saved synthetic PNG. The separate native
+        // Photos-plus-Contacts journey still exercises picker selection and save.
+        let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "estimated-contact-photo"]
+        app.launch(); addTeardownBlock { app.terminate() }; openEstimatedAdultFixture(app,name: "Synthetic Existing Draft")
+        app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
+        XCTAssertTrue(app.buttons["Change photo"].waitForExistence(timeout: 10))
         let birthPicker = editorBirthInformation(app, expected: "Birth information, Estimated age")
         birthPicker.tap()
         app.buttons["Unknown"].tap(); app.buttons["Save"].tap()
@@ -675,7 +669,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(warning.waitForExistence(timeout: 5)); XCTAssertTrue(warning.buttons["Cancel"].isHittable)
         capture(app, "Photo removal warning with visible Cancel")
         warning.buttons["Cancel"].tap(); app.navigationBars["Edit person"].buttons["Cancel"].tap()
-        app.terminate(); app.launch(); app.staticTexts["Synthetic Photo"].tap()
+        app.terminate(); app.launch(); app.staticTexts["Synthetic Existing Draft"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Estimated 80 as of")).firstMatch.exists)
         app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
         XCTAssertTrue(app.buttons["Change photo"].exists)
@@ -1389,5 +1383,6 @@ final class KinUITests: XCTestCase {
     }
 
 }
+
 
 
