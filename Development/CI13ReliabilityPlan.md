@@ -101,8 +101,24 @@ identities and verified simulator deletion. In the standard run, shutdown timed
 out before deletion succeeded and inventory confirmed absence. The four smoke
 test starts were observed in a different order. All 164 iOS test starts in the
 retained test-host output were observed in the same sequence, despite the random
-plan; a changed iOS order has not been established. Core and Release execution
-were unchanged. These two samples do not establish a failure rate.
+plan; those two runs did not establish a changed iOS order. Core and Release
+execution were unchanged. These two samples do not establish a failure rate.
+
+**The later iOS order diagnostic used two separate test-host invocations on one
+fresh simulator. It does not establish order independence within a single
+continuous test-host process.** On unchanged PR source
+`627d3d57df5ff3094d5872cd8a1beebf355ae0c7`, the
+[explicit-batch run 42121042016](https://github.com/dannydover/Kin/actions/runs/42121042016)
+passed 94 and 70 tests, zero skips. All 164 baseline identities and observed
+starts appeared exactly once in a different order. Both finalized result-bundle
+hashes and simulator shutdown, deletion and absence were independently verified.
+The wrapper was separate from the tested source and did not change the PR gate.
+
+The [first diagnostic attempt 42119226838](https://github.com/dannydover/Kin/actions/runs/42119226838)
+remains failed: its verifier reported the 94/70 outcome, but packaging failed
+and neither result bundle was retained, so those bundles cannot be independently
+verified. Its simulator shutdown, deletion and absence were verified. The later
+successful diagnostic does not retroactively make that attempt pass.
 
 The earlier [trial 42105476611](https://github.com/dannydover/Kin/actions/runs/42105476611)
 remains failed: its iOS simulator shutdown and deletion timed out and inventory
