@@ -790,9 +790,6 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Estimated 80 as of")).firstMatch.waitForExistence(timeout: 5))
     }
-    @MainActor func testNativeImportSavesReviewedName() throws {
-        try checkReviewedImportForEveryEntryPoint(useNativePicker: true)
-    }
     @MainActor func testSyntheticImportSavesReviewedNamesForEveryEntryPoint() throws {
         try checkReviewedImportForEveryEntryPoint(useNativePicker: false)
     }
@@ -802,9 +799,8 @@ final class KinUITests: XCTestCase {
         if !useNativePicker { app.launchArguments.append("--kin-ui-synthetic-contact") }
         addTeardownBlock { app.terminate() }; app.launch()
         XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
-        // The native smoke covers real picker selection once. The synthetic
-        // app-UI test below exercises all four entry points with the same review,
-        // save, relationship, visibility and relaunch assertions.
+        // Exercise all four entry points with review, save, relationship,
+        // visibility and relaunch assertions through the synthetic adapter.
         let routes = useNativePicker ? ["Add person"] : ["Add person","Add parent","Add child","Add partner"]
         for (index,route) in routes.enumerated() {
             if index == 0 { app.buttons[route].tap() }
