@@ -9,17 +9,27 @@ import unittest
 
 
 class VerifyTests(unittest.TestCase):
-    def test_packaging_fails_for_bad_hash_or_source(self):
+    def test_packaging_uses_batch_path_and_retains_partial_results(self):
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);retained=root/'KinCI-retained';retained.mkdir()
-            archive=retained/'KinTests-xcresult.zip';archive.write_bytes(b'synthetic')
-            (retained/'manifest.json').write_text(json.dumps({'status':'finalized','result_sha256':hashlib.sha256(archive.read_bytes()).hexdigest()}))
-            (retained/'source-commit.txt').write_text('expected\n')
-            env=dict(os.environ, RUNNER_TEMP=temp, EXPECTED_SOURCE='expected')
-            def run():return subprocess.run(['python3',str(Path(__file__).with_name('verify_package.py'))],env=env,capture_output=True)
-            self.assertEqual(run().returncode,0)
-            archive.write_bytes(b'corrupt');self.assertNotEqual(run().returncode,0)
-            archive.write_bytes(b'synthetic');(retained/'source-commit.txt').write_text('wrong\n');self.assertNotEqual(run().returncode,0)
+            root=Path(temp);fake=root/'xcrun'
+            summary={'result':'Passed','totalTestCount':1,'passedTests':1,'failedTests':0,'skippedTests':0}
+            fake.write_text('#!/bin/sh\n[ "$KIN_FAKE_FAIL" != 1 ] || exit 2\nprintf \'%s\\n\' '+repr(json.dumps(summary))+'\n')
+            fake.chmod(0o755)
+            for name in ('first','second'):
+                result=root/('ios-order-'+name)/'KinTests.xcresult';result.mkdir(parents=True)
+                (result/'Info.plist').write_text('synthetic')
+                (result.parent/'KinTests-progress.jsonl').write_text('{"kind":"exit","code":0}\n')
+            env=dict(os.environ,RUNNER_TEMP=temp,EXPECTED_SOURCE='expected',GITHUB_SHA='wrapper',PATH=str(root)+':'+os.environ['PATH'])
+            def run(name,**extra):return subprocess.run(['python3',str(Path(__file__).with_name('package.py')),name],env=dict(env,**extra),capture_output=True)
+            self.assertEqual(run('first').returncode,0)
+            retained=root/'ios-order-first'/'KinCI-retained';m=json.loads((retained/'manifest.json').read_text());archive=retained/'KinTests-xcresult.zip'
+            self.assertEqual(m['status'],'finalized');self.assertEqual(m['result_sha256'],hashlib.sha256(archive.read_bytes()).hexdigest())
+            self.assertEqual((retained/'source-commit.txt').read_text().strip(),'expected')
+            self.assertNotEqual(run('second',KIN_FAKE_FAIL='1').returncode,0)
+            partial=root/'ios-order-second'/'KinCI-retained'
+            self.assertEqual(json.loads((partial/'manifest.json').read_text())['status'],'partial')
+            self.assertTrue((partial/'KinTests-xcresult.zip').is_file())
+            self.assertTrue((partial/'KinTests-progress.jsonl').is_file())
 
     def test_batch_emits_only_known_start_hashes(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -22,3 +22,10 @@ This tests ordering across two explicit batches. It does not reproduce a single
 continuous test-host process for all 164 tests, and cannot establish interaction
 between the two batches within one process. It does not change the required PR
 gate or erase the previous same-order trials and their cleanup observations.
+
+The first attempt, run 42119226838, reported 94 and 70 passing identities and a
+changed observed order, but both result uploads failed after packaging used an
+incorrect temporary location. Its job failed; the unretained bundles cannot be
+independently checked. Simulator shutdown, deletion and absence were verified.
+The revised packager keeps the runner's temporary directory unchanged, preserves
+partial bundles on summary failure, and validates each finalized archive hash.

@@ -23,7 +23,7 @@ for name in ('first', 'second'):
     batch = root / ('ios-order-' + name)
     result = batch / 'KinTests.xcresult'
     def report(kind):
-        return json.loads(subprocess.check_output(['xcrun', 'xcresulttool', 'get', 'test-results', kind, '--path', str(result)]))
+        return json.loads(subprocess.check_output(['xcrun', 'xcresulttool', 'get', 'test-results', kind, '--path', str(result)], timeout=90))
     summary, tree = report('summary'), report('tests')
     expected = {x for x in baseline['identities'] if x.split('/')[0] in baseline[name + '_suites']}
     if (summary.get('result') != 'Passed' or summary.get('failedTests') != 0 or

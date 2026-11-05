@@ -66,17 +66,7 @@ jobs:
       - name: Package first batch
         if: always()
         working-directory: source
-        env:
-          RUNNER_TEMP: ${{ runner.temp }}/ios-order-first
-        run: |
-          mkdir -p "$RUNNER_TEMP"
-          if [ -d "$RUNNER_TEMP/KinTests.xcresult" ]; then
-            xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json" || :
-          fi
-          python3 scripts/ci-retain.py
-          printf '%s\n' "$EXPECTED_SOURCE" > "$RUNNER_TEMP/KinCI-retained/source-commit.txt"
-          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/KinCI-retained/diagnostic-commit.txt"
-          python3 ../control/scripts/kin13-ios-order/verify_package.py
+        run: python3 ../control/scripts/kin13-ios-order/package.py first
       - name: Retain first batch evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,17 +78,7 @@ jobs:
       - name: Package second batch
         if: always()
         working-directory: source
-        env:
-          RUNNER_TEMP: ${{ runner.temp }}/ios-order-second
-        run: |
-          mkdir -p "$RUNNER_TEMP"
-          if [ -d "$RUNNER_TEMP/KinTests.xcresult" ]; then
-            xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json" || :
-          fi
-          python3 scripts/ci-retain.py
-          printf '%s\n' "$EXPECTED_SOURCE" > "$RUNNER_TEMP/KinCI-retained/source-commit.txt"
-          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/KinCI-retained/diagnostic-commit.txt"
-          python3 ../control/scripts/kin13-ios-order/verify_package.py
+        run: python3 ../control/scripts/kin13-ios-order/package.py second
       - name: Retain second batch evidence
         if: always()
         uses: actions/upload-artifact@v4
