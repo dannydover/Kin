@@ -5,7 +5,7 @@ import subprocess
 import unittest
 
 ROOT=pathlib.Path(__file__).resolve().parents[2]
-WORKFLOW=ROOT/'.github/workflows/kin13-fixed-product-comparison.yml'
+WORKFLOW=ROOT/'scripts/kin13-ab/workflow-reference.yml'
 
 def yaml_file(path):
     result=subprocess.run(['ruby','-ryaml','-rjson','-e','puts JSON.generate(YAML.load_file(ARGV[0]))',str(path)],capture_output=True,text=True,check=True)

@@ -10,6 +10,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class LayeredComparisonTests(unittest.TestCase):
+    def test_no_other_workflow_starts_on_pull_requests(self):
+        workflows = ROOT / '.github/workflows'
+        for path in workflows.glob('*.y*ml'):
+            if path.name != 'ci.yml':
+                output = subprocess.check_output(['ruby', '-ryaml', '-rjson', '-e', 'puts JSON.generate(YAML.load_file(ARGV[0]))', str(path)])
+                document = json.loads(output)
+                triggers = document.get('on', document.get('true', {}))
+                if isinstance(triggers, str): triggers = [triggers]
+                self.assertNotIn('pull_request', triggers, path.name)
+                self.assertNotIn('pull_request_target', triggers, path.name)
+
     def test_manual_hash_gate_fails_closed(self):
         workflow = (ROOT / '.github/workflows/manual-broad-ui.yml').read_text()
         block = workflow.split('      - name: Verify packaged result hash\n', 1)[1]
