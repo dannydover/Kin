@@ -1,10 +1,12 @@
 # Kin 1.3 layered validation comparison
 
-## Comparison first
+## Same-head comparison and required gate
 
-The existing `validate` check remains unchanged for this comparison: Core, the complete iOS `KinTests` target, all four broad UI shards, and Release validation still have to succeed. The independent `candidate-smoke` job runs on the same commit, Xcode 27.0 and iOS 27.0 runtime. Its result is visible but does not replace `validate`. Compare the actual job outcomes, first-attempt failures, durations and retained cleanup on the same head before changing the release-blocking gate. A passing candidate cannot erase a failed broad test or establish a failure rate.
+[Run 42068723543](https://github.com/dannydover/Kin/actions/runs/42068723543) compared both approaches at commit `171e38038dd427f897b6798f6e2fd95cbb6f6508` on Xcode 27.0/iOS 27.0. The proposed components passed: Core, Release, all 163 iOS unit/integration tests and both exact smoke identities. The smoke job took 9 minutes 2 seconds after starting, plus queue time; its test step took 5 minutes 4 seconds. The current full gate failed: 233 passed and one failed, zero skipped. The failure reported that Kin did not have a process ID during `testAllPeopleOpensProfilesAndReturnsToSameIndex`. All UI identities, result hashes, six simulator cleanup records and five owned synthetic Contacts cleanup markers were verified. The broad failure remains a failure; its cause is unresolved.
 
-The proposed future minimum gate is Core and repository checks; the **entire** iOS `KinTests` target, including integration and rendered-layout tests; the two exact smoke identities; and Release validation. It must fail on a failed, missing, skipped, repeated, interrupted or incomplete selected test, or unverified required cleanup. The present workflow's unit and broad UI shards share a matrix, so implementing a smaller gate later requires a separately reviewable job separation; a matrix aggregate must not be mistaken for the unit job's status. Branch protections remain unchanged.
+The `validate` gate requires Core and repository checks, the **entire** iOS `KinTests` target including integration and rendered-layout tests, both exact smoke identities, and Release validation. Missing, skipped, failed, repeated, interrupted or incomplete selected tests and unverified required cleanup fail their jobs. The broader UI matrix runs independently and reports its own result and artifacts, including failures. It is not a dependency of `validate`; this reduces automated end-to-end release assurance and requires the manual review below. Branch protections are unchanged. The full workflow may still show failure when broad UI fails, even if `validate` passes.
+
+This is a single comparison, not a measured failure rate or proof of stable future runs. Collect repeatability and changed-order evidence independently and preserve each result.
 
 ## Coverage and limitations
 
