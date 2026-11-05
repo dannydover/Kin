@@ -662,6 +662,8 @@ final class KinUITests: XCTestCase {
         app.launch(); addTeardownBlock { app.terminate() }; openEstimatedAdultFixture(app,name: "Synthetic Existing Draft")
         app.navigationBars.buttons["Edit"].tap(); app.swipeUp()
         XCTAssertTrue(app.buttons["Change photo"].waitForExistence(timeout: 10))
+        // Return from the photo row to the age section before resolving it.
+        app.swipeDown()
         let birthPicker = editorBirthInformation(app, expected: "Birth information, Estimated age")
         birthPicker.tap()
         app.buttons["Unknown"].tap(); app.buttons["Save"].tap()
