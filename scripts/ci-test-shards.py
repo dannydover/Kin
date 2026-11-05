@@ -8,6 +8,10 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 GROUPS = ('unit', 'ui-0', 'ui-1', 'ui-2', 'ui-3')
+SMOKE_IDS = (
+    'KinUITests/KinUITests/testNormalColdLaunchOpensNotebookAndPreservesSavedPerson',
+    'KinUITests/SmokeUITests/testRelationshipEditPersistsAfterRelaunch',
+)
 TIMINGS = ROOT / 'scripts/ci-ui-timings.json'
 
 def discover(root=ROOT):
@@ -55,6 +59,10 @@ def selections(group, root=ROOT):
     ids = discover(root)
     if group == 'unit':
         return ['KinTests']
+    if group == 'smoke':
+        if len(SMOKE_IDS) != len(set(SMOKE_IDS)) or not set(SMOKE_IDS).issubset(ids):
+            raise ValueError('Smoke identities missing or duplicated')
+        return list(SMOKE_IDS)
     if group not in GROUPS:
         raise ValueError('Unknown shard')
     baseline = json.loads((root / 'scripts/ci-ui-timings.json').read_text())

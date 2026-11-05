@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 import tempfile
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('shards', Path(__file__).resolve().parents[1] / 'ci-test-shards.py')
 shards = importlib.util.module_from_spec(spec)
@@ -50,6 +51,16 @@ class CoverageTests(unittest.TestCase):
 
     def test_unit_and_integration_target_is_unfiltered(self):
         self.assertEqual(shards.selections('unit'), ['KinTests'])
+
+    def test_smoke_is_exact_subset_and_missing_identity_fails_closed(self):
+        smoke = shards.selections('smoke')
+        self.assertEqual(len(smoke), 2)
+        self.assertEqual(len(set(smoke)), 2)
+        self.assertTrue(set(smoke).issubset(set(shards.discover())))
+        self.assertFalse(any('NativeContactsTests' in value for value in smoke))
+        with patch.object(shards, 'discover', return_value=smoke[:-1]):
+            with self.assertRaisesRegex(ValueError, 'Smoke identities'):
+                shards.selections('smoke')
 
     def test_invalid_shard_fails_closed(self):
         with self.assertRaises(ValueError):

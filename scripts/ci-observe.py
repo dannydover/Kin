@@ -52,8 +52,13 @@ def test_scheme(group, order):
     # The unit target stays on the production scheme in every trial.
     return 'KinRandomOrder' if group != 'unit' and order == 'random' else 'Kin'
 
+def requires_contact_authorization(group):
+    return group not in ('unit', 'smoke')
+
 def main():
     group=sys.argv[1];ids=shards.selections(group);allowed=set(ids)
+    if group == 'smoke' and set(ids) & set(CLEANUP_SCOPES):
+        raise ValueError('Smoke cannot omit required Contacts authorization or cleanup')
     result=Path(os.environ['RUNNER_TEMP'])/'KinTests.xcresult';progress=Path(os.environ['RUNNER_TEMP'])/'KinTests-progress.jsonl'
     env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','DEVELOPER_DIR','LANG','LC_ALL') if k in os.environ}
     env['NSUnbufferedIO']='YES'
@@ -128,7 +133,8 @@ def main():
     if code:return code if code>0 else 1
     if duplicate_starts:
         print('Repeated UI test starts prevent a clean first-attempt result.',file=sys.stderr);return 1
-    if group!='unit' and authorization != {'authorized'}:
+    # Smoke uses no Contacts fixtures or system picker; do not require a grant.
+    if requires_contact_authorization(group) and authorization != {'authorized'}:
         print('CI runner Contacts authorization was not verified as authorized.',file=sys.stderr);return 1
     # On an otherwise passing run, every selected test that creates Contacts
     # must have verified cleanup exactly once. Fail closed on missing/duplicate,

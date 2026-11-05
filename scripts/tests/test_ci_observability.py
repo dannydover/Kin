@@ -5,6 +5,13 @@ ROOT=pathlib.Path(__file__).resolve().parents[2]
 def load(name):
     spec=importlib.util.spec_from_file_location('observe',ROOT/'scripts'/name); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 class ObservabilityTests(unittest.TestCase):
+    def test_smoke_does_not_require_contacts_and_keeps_full_suite_checks(self):
+        observer = load('ci-observe.py')
+        self.assertFalse(observer.requires_contact_authorization('smoke'))
+        self.assertTrue(observer.requires_contact_authorization('ui-0'))
+        self.assertTrue(observer.requires_contact_authorization('ui-3'))
+        self.assertFalse(set(observer.shards.selections('smoke')) & set(observer.CLEANUP_SCOPES))
+
     def test_progress_flushes_actions_and_syncs_critical_records(self):
         observer = load('ci-observe.py')
         with tempfile.TemporaryDirectory() as root:
