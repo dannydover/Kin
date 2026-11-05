@@ -4,6 +4,27 @@ import XCTest
 final class SmokeUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor func testEmptyPeopleScreenAtNormalText() { captureEmptyPeopleScreen(largest: false) }
+    @MainActor func testEmptyPeopleScreenAtLargestText() { captureEmptyPeopleScreen(largest: true) }
+
+    @MainActor private func captureEmptyPeopleScreen(largest: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        if largest {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
+        addTeardownBlock { app.terminate() }
+        app.launch()
+        XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Keep your people close."].waitForExistence(timeout: 5))
+        let screenshot = app.screenshot()
+        XCTAssertGreaterThan(screenshot.pngRepresentation.count, 500)
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = largest ? "Empty People screen - largest text" : "Empty People screen - normal text"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor func testRelationshipEditPersistsAfterRelaunch() {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "partner-friends"]

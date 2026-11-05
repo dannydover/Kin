@@ -54,8 +54,8 @@ class CoverageTests(unittest.TestCase):
 
     def test_smoke_is_exact_subset_and_missing_identity_fails_closed(self):
         smoke = shards.selections('smoke')
-        self.assertEqual(len(smoke), 2)
-        self.assertEqual(len(set(smoke)), 2)
+        self.assertEqual(len(smoke), 4)
+        self.assertEqual(len(set(smoke)), 4)
         self.assertTrue(set(smoke).issubset(set(shards.discover())))
         self.assertFalse(any('NativeContactsTests' in value for value in smoke))
         with patch.object(shards, 'discover', return_value=smoke[:-1]):
