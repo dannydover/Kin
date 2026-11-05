@@ -1381,7 +1381,7 @@ final class KinUITests: XCTestCase {
             let observation = XCTAttachment(string: observations.joined(separator: "\n"))
             observation.name = "Friend readiness existing reads"
             observation.lifetime = .keepAlways
-            add(observation)
+            self.add(observation)
         }
         let friendReady = requireTestState(app, "Friend on and Save enabled", {
             observed("friendUnique") { friends.count == 1 } && observed("controlUnique") { controls.count == 1 }
