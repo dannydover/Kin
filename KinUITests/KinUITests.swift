@@ -1327,13 +1327,19 @@ final class KinUITests: XCTestCase {
         recordFriendStage("before")
         controls.element.tap()
         recordFriendStage("after")
+        // The tap can scroll the switch out of view. Use at most one deliberate
+        // reveal, within the same five-second readiness budget; never retap it.
+        let readinessDeadline = ProcessInfo.processInfo.systemUptime + 5
+        if !controls.element.isHittable && ProcessInfo.processInfo.systemUptime < readinessDeadline {
+            app.swipeUp()
+        }
         let save = editor.buttons.matching(identifier: "Save")
         guard requireTestState(app, "Friend on and Save enabled", {
             friends.count == 1 && controls.count == 1
                 && friends.element.value as? String == "1" && controls.element.value as? String == "1"
                 && friends.element.isHittable && controls.element.isHittable && save.count == 1
                 && save.element.isEnabled && save.element.isHittable
-        }) else { return }
+        }, deadline: readinessDeadline) else { return }
         save.element.tap()
         guard requireTestState(app, "Direct save opens saved profile", {
             app.navigationBars[name].exists && !editor.exists
@@ -1348,10 +1354,14 @@ final class KinUITests: XCTestCase {
     }
     @MainActor private func requireTestState(_ app: XCUIApplication, _ stage: String,
                                              _ condition: @escaping () -> Bool,
+                                             deadline: TimeInterval? = nil,
                                              file: StaticString = #filePath, line: UInt = #line) -> Bool {
-        if condition() { return true }
+        let initiallyReady = condition()
+        if initiallyReady && (deadline == nil || ProcessInfo.processInfo.systemUptime < deadline!) { return true }
+        let timeout = deadline.map { max(0, $0 - ProcessInfo.processInfo.systemUptime) } ?? 5
         let expected = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
-        let ready = XCTWaiter.wait(for: [expected], timeout: 5) == .completed
+        let ready = timeout > 0 && XCTWaiter.wait(for: [expected], timeout: timeout) == .completed
+            && (deadline == nil || ProcessInfo.processInfo.systemUptime < deadline!)
         if !ready {
             recordTestState(app, stage: stage)
             XCTFail("UI precondition failed: " + stage, file: file, line: line)
