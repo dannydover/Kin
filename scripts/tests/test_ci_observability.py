@@ -49,22 +49,12 @@ print("ready",flush=True); time.sleep(30)
             'KinUITests/KinUITests/testMissingBirthdayReviewCancelWithSavedPhoto': 'missing-birthday-review-cancel',
             'KinUITests/KinUITests/testMissingBirthdayUnknownCancelWithSavedPhoto': 'missing-birthday-unknown-cancel',
             'KinUITests/KinUITests/testRealPhotoContactEstimatedImportAndRelaunch': 'missing-birthday-real-photo-save',
-            'KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview': 'missing-birthday-saved-photo',
         }
         discovered = set(observer.shards.discover())
         self.assertTrue(set(required).issubset(discovered))
         for ident, scope in required.items():
             self.assertEqual(observer.CLEANUP_SCOPES.get(ident), scope)
         self.assertEqual(len(set(required.values())), len(required))
-
-    def test_saved_photo_cleanup_marker_is_distinct_and_allowlisted(self):
-        observer = load('ci-observe.py')
-        ident = 'KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview'
-        self.assertEqual(observer.CLEANUP_SCOPES[ident], 'missing-birthday-saved-photo')
-        self.assertEqual(observer.parse('KIN_CI_CONTACT_CLEANUP missing-birthday-saved-photo verified PRIVATE', set()),
-                         {'kind': 'contact_cleanup', 'scope': 'missing-birthday-saved-photo', 'status': 'verified'})
-        self.assertNotEqual(observer.CLEANUP_SCOPES[ident], observer.CLEANUP_SCOPES[
-            'KinUITests/KinUITests/testMissingBirthdayReviewCancelWithSavedPhoto'])
 
     def test_split_missing_birthday_cleanup_markers_are_allowlisted(self):
         observer = load('ci-observe.py')

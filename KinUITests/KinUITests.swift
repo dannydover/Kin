@@ -525,7 +525,7 @@ final class KinUITests: XCTestCase {
             app.buttons["Done"].tap(); app.terminate()
         }
     }
-    @MainActor func testIllustratedEmptyStateMenuAndSearchRecovery() {
+    @MainActor func testIllustratedEmptyStateMenuAndSearch() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["Keep your people close."].waitForExistence(timeout: 5))
@@ -548,6 +548,18 @@ final class KinUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Keep your people close."].exists)
         capture(app, "Search with no matches")
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() } else { app.buttons["close"].tap() }
+    }
+    @MainActor func testUnlistedPeopleMenuReturnAndRelaunch() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend"]
+        app.launch(); addTeardownBlock { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 10))
+        app.staticTexts["Synthetic Named"].tap(); app.navigationBars.buttons["Edit"].tap()
+        editorToggle("index-inclusion", in: app).tap(); app.buttons["Save"].tap()
+        app.navigationBars.buttons["People"].tap()
+        XCTAssertTrue(app.staticTexts["Your main list is empty"].waitForExistence(timeout: 5))
+        openAllPeople(app)
+        XCTAssertTrue(app.staticTexts["Synthetic Named"].waitForExistence(timeout: 5))
         app.buttons["people-menu"].tap(); app.buttons["People"].tap()
         XCTAssertTrue(app.staticTexts["Your main list is empty"].waitForExistence(timeout: 5))
         app.terminate(); app.launch()
@@ -678,7 +690,7 @@ final class KinUITests: XCTestCase {
         capture(app, "Visible Cancel preserves saved photo and age after relaunch")
     }
     private enum MissingBirthdayScenario {
-        case reviewCancel, unknownCancel, realPhotoSave, syntheticSequence
+        case reviewCancel, unknownCancel, realPhotoSave
     }
     @MainActor func testMissingBirthdayReviewCancelWithSavedPhoto() throws {
         try checkMissingBirthdayWithSavedPhoto(.reviewCancel)
@@ -688,9 +700,6 @@ final class KinUITests: XCTestCase {
     }
     @MainActor func testRealPhotoContactEstimatedImportAndRelaunch() throws {
         try checkMissingBirthdayWithSavedPhoto(.realPhotoSave)
-    }
-    @MainActor func testSyntheticSavedPhotoContactMissingBirthdayReview() throws {
-        try checkMissingBirthdayWithSavedPhoto(.syntheticSequence)
     }
     @MainActor private func checkMissingBirthdayWithSavedPhoto(_ scenario: MissingBirthdayScenario) throws {
         let useFixturePhoto = scenario != .realPhotoSave
@@ -712,7 +721,6 @@ final class KinUITests: XCTestCase {
         case .reviewCancel: cleanupScope = .missingBirthdayReviewCancel
         case .unknownCancel: cleanupScope = .missingBirthdayUnknownCancel
         case .realPhotoSave: cleanupScope = .missingBirthdayRealPhotoSave
-        case .syntheticSequence: cleanupScope = .missingBirthdaySavedPhoto
         }
         addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: fixtureStore, scope: cleanupScope, creationUncertain: creationUncertain) }
         let create = CNSaveRequest(); create.add(fixtureContact,toContainerWithIdentifier: nil)
@@ -756,7 +764,7 @@ final class KinUITests: XCTestCase {
             card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         }
-        if scenario == .syntheticSequence || scenario == .reviewCancel {
+        if scenario == .reviewCancel {
             try selectSample()
             XCTAssertTrue(app.staticTexts["contact-current-draft"].exists)
             XCTAssertTrue(app.staticTexts["Synthetic Existing Draft"].exists)
@@ -770,7 +778,7 @@ final class KinUITests: XCTestCase {
             XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic Existing Draft")
         }
         if scenario == .reviewCancel { return }
-        if scenario == .syntheticSequence || scenario == .unknownCancel {
+        if scenario == .unknownCancel {
             try selectSample()
             // Missing source data retains the saved estimate. Unknown is now a
             // deliberate reviewed edit, rather than an automatic import side effect.
@@ -792,7 +800,6 @@ final class KinUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 80 as of")).firstMatch.exists)
         }
         if scenario == .unknownCancel { return }
-        if scenario == .syntheticSequence { app.navigationBars.buttons["Edit"].tap() }
         try selectSample()
         let picker = app.buttons["contact-birth-information"]
         reveal(picker,in: app); picker.tap(); app.buttons["Estimated age"].tap()

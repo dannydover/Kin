@@ -13,7 +13,6 @@ CLEANUP_SCOPES = {
     'KinUITests/KinUITests/testMissingBirthdayReviewCancelWithSavedPhoto': 'missing-birthday-review-cancel',
     'KinUITests/KinUITests/testMissingBirthdayUnknownCancelWithSavedPhoto': 'missing-birthday-unknown-cancel',
     'KinUITests/KinUITests/testRealPhotoContactEstimatedImportAndRelaunch': 'missing-birthday-real-photo-save',
-    'KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview': 'missing-birthday-saved-photo',
 }
 
 def parse(line, allowed):
@@ -21,7 +20,7 @@ def parse(line, allowed):
     if m:
         ident=f'{m[1]}/{m[2]}/{m[3]}'
         return {'kind':'test','id':ident,'event':m[4]} if ident in allowed else None
-    m=re.search(r'KIN_CI_CONTACT_CLEANUP (native-adult|native-minor|preservation|missing-birthday-saved-photo|missing-birthday-review-cancel|missing-birthday-unknown-cancel|missing-birthday-real-photo-save) (verified|empty|failed)\b',line)
+    m=re.search(r'KIN_CI_CONTACT_CLEANUP (native-adult|native-minor|preservation|missing-birthday-review-cancel|missing-birthday-unknown-cancel|missing-birthday-real-photo-save) (verified|empty|failed)\b',line)
     if m:return {'kind':'contact_cleanup','scope':m[1],'status':m[2]}
     m=re.search(r'KIN_CI_AUTH (notDetermined|restricted|denied|authorized|limited|unknown)\b',line)
     if m:return {'kind':'authorization','state':m[1]}
