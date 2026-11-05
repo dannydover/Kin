@@ -15,7 +15,20 @@ CLEANUP_SCOPES = {
     'KinUITests/KinUITests/testRealPhotoContactEstimatedImportAndRelaunch': 'missing-birthday-real-photo-save',
 }
 
+# Fixed, non-parameterized synthetic test names only; never record arbitrary
+# Swift Testing output or argument values. These allow an observed unit-order
+# comparison without collecting names or values from test data.
+UNIT_ORDER_NAMES = {
+    'Reviewed adult photo survives saving and reopening without another Contacts read': 'photo-reopen',
+    'Person row renders at standard and largest text sizes': 'row-render',
+    'Delegate warning detaches synchronously and availability reopens the same store': 'notebook-lifecycle',
+}
+
 def parse(line, allowed):
+    if 'KinTests' in allowed:
+        m=re.search(r'\bTest "([^"]+)" started\.', line)
+        if m and m[1] in UNIT_ORDER_NAMES:
+            return {'kind':'unit_order','id':UNIT_ORDER_NAMES[m[1]],'event':'started'}
     m=re.search(r"Test Case '-\[(\w+)\.(\w+) (test\w+)\]' (started|passed|failed)",line)
     if m:
         ident=f'{m[1]}/{m[2]}/{m[3]}'
@@ -49,8 +62,9 @@ def append(out, record):
 def test_scheme(group, order):
     if order not in ('standard', 'random'):
         raise ValueError('Unsupported test order')
-    # The unit target stays on the production scheme in every trial.
-    return 'KinRandomOrder' if group != 'unit' and order == 'random' else 'Kin'
+    # Diagnostic random-order branches use the same target selections and
+    # assertions with a disposable test plan; normal PRs keep the scheme.
+    return 'KinRandomOrder' if order == 'random' else 'Kin'
 
 def requires_contact_authorization(group):
     return group not in ('unit', 'smoke')

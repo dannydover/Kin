@@ -315,9 +315,9 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 
 ## Release gate and acceptance
 
-- Keep the mapped UI tests and `validate` required; migrate an old assertion only after its replacement is recorded and validated. No skip, retry-to-green, or passing status for a failed native journey.
-- A smaller required UI set must still include real Contacts and Photos, core navigation and data persistence, destructive-action safety, and representative accessibility sizes. The import and unnamed-review migrations remove seven repeated native picker invocations; the preservation migration removes five more; the parent-route migration removes two more. Real native journeys remain, with the unnamed-identity, yearless-payload and native Add-parent-route tradeoffs documented above. The complete map and remaining suite composition still require review.
-- Validate lower-level replacements first, then any UI change on the exact commit. Exercise bounded repeated full suites and relevant order variation; report every failure and retain artifacts. A single green run is not a reliability guarantee.
+- The required `validate` check includes core, the complete iOS unit/integration target, the four exact essential UI smoke tests, and Release validation. Retain finalized results, exact smoke identities and mandatory cleanup; do not skip, retry to green, or report a failed test as passing.
+- The full UI suite, including real Contacts and Photos, is an explicitly dispatched manual diagnostic and is not run automatically on PRs or included in `validate`. Its separate failures remain visible. This intentionally reduces automated end-to-end assurance. When affected picker, permissions, import, or photo features change, complete the documented manual release-device checks. See [the layered plan and checklist](../Development/Kin13LayeredValidation.md) for the current coverage and remaining obligations.
+- Validate replacement coverage and changes on the exact commit. Assess bounded repeatability and genuinely observed order variation where the mechanism supports it, retaining every result. A single green run is not a reliability guarantee.
 - Historical native focus, picker readiness, Friend switch, Clear restoration and accessibility query stalls remain unresolved. Resource free/inactive counters are not a direct memory-pressure measurement.
 
 ### Screen transition readiness audit

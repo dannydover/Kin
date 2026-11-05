@@ -12,6 +12,14 @@ class ObservabilityTests(unittest.TestCase):
         self.assertTrue(observer.requires_contact_authorization('ui-3'))
         self.assertFalse(set(observer.shards.selections('smoke')) & set(observer.CLEANUP_SCOPES))
 
+    def test_unit_order_records_only_fixed_test_names_without_values(self):
+        observer = load('ci-observe.py')
+        line = '◇ Test "Reviewed adult photo survives saving and reopening without another Contacts read" started.'
+        self.assertEqual(observer.parse(line, {'KinTests'}), {'kind':'unit_order','id':'photo-reopen','event':'started'})
+        self.assertIsNone(observer.parse(line, {'KinUITests/Example/testA'}))
+        self.assertIsNone(observer.parse('◇ Test "Private synthetic value" started.', {'KinTests'}))
+        self.assertIsNone(observer.parse('◇ Test case passing 1 argument "private" started.', {'KinTests'}))
+
     def test_progress_flushes_actions_and_syncs_critical_records(self):
         observer = load('ci-observe.py')
         with tempfile.TemporaryDirectory() as root:
@@ -118,10 +126,40 @@ print("ready",flush=True); time.sleep(30)
         with self.assertRaises(ValueError):m.compare(before,{'ui-0':['a','a','c'],'ui-1':['d','e']},expected)
         with self.assertRaises(ValueError):m.compare(before,{'ui-0':['a','b','c']},expected)
 
-    def test_random_order_only_changes_ui_trial_scheme(self):
+    def test_smoke_order_cli_rejects_unchanged_and_missing_starts(self):
+        shards = load('ci-test-shards.py')
+        identities = shards.selections('smoke')
+        with tempfile.TemporaryDirectory() as directory:
+            left = pathlib.Path(directory) / 'left'; right = pathlib.Path(directory) / 'right'
+            left.mkdir(); right.mkdir()
+            def write(path, values):
+                (path / 'smoke.jsonl').write_text(''.join(json.dumps({'kind':'test','event':'started','id':v})+'\n' for v in values))
+            def compare():
+                return subprocess.run([sys.executable, str(ROOT/'scripts/ci-compare-order.py'), str(left), str(right), '--smoke'], capture_output=True)
+            write(left, identities); write(right, identities)
+            self.assertNotEqual(compare().returncode, 0)
+            write(right, list(reversed(identities)))
+            self.assertEqual(compare().returncode, 0)
+            write(right, identities[:-1])
+            self.assertNotEqual(compare().returncode, 0)
+
+    def test_unit_order_comparison_uses_fixed_allowlist(self):
+        observer = load('ci-observe.py'); m = load('ci-compare-order.py')
+        names = list(observer.UNIT_ORDER_NAMES.values())
+        self.assertEqual(set(names), {'photo-reopen','row-render','notebook-lifecycle'})
+        sources = '\n'.join(p.read_text() for p in (ROOT/'KinTests').rglob('*.swift'))
+        for title in observer.UNIT_ORDER_NAMES:
+            self.assertEqual(sources.count('@Test("' + title + '")'), 1)
+        self.assertEqual(m.compare({'unit':names}, {'unit':list(reversed(names))}, {'unit':names}), ['unit'])
+        with self.assertRaises(ValueError): m.compare({'unit':names}, {'unit':names}, {'unit':names})
+        with self.assertRaises(ValueError): m.compare({'unit':names}, {'unit':names[:-1]}, {'unit':names})
+
+    def test_random_order_changes_only_diagnostic_trial_scheme(self):
         m=load('ci-observe.py')
         self.assertEqual(m.test_scheme('unit','standard'),'Kin')
-        self.assertEqual(m.test_scheme('unit','random'),'Kin')
+        self.assertEqual(m.test_scheme('unit','random'),'KinRandomOrder')
+        self.assertEqual(m.test_scheme('smoke','standard'),'Kin')
+        self.assertEqual(m.test_scheme('smoke','random'),'KinRandomOrder')
         self.assertEqual(m.test_scheme('ui-0','standard'),'Kin')
         self.assertEqual(m.test_scheme('ui-0','random'),'KinRandomOrder')
         with self.assertRaises(ValueError):m.test_scheme('ui-0','unknown')

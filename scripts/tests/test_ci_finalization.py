@@ -19,7 +19,8 @@ def selected_ui():
 
 class FinalizationGateTests(unittest.TestCase):
     def run_block(self, *, passed=True, missing='', bad_identity=False, shard='ui-1'):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        name = 'ci.yml' if shard == 'unit' else 'manual-broad-ui.yml'
+        workflow = (ROOT / '.github/workflows' / name).read_text()
         block = workflow.split('      - name: Require finalized results with full fixture coverage\n', 1)[1]
         block = block.split('      - name: Package synthetic progress and finalized result\n', 1)[0]
         script = '\n'.join(line[10:] for line in block.split('        run: |\n', 1)[1].splitlines())

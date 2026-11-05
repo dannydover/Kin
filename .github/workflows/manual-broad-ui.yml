@@ -1,0 +1,171 @@
+name: Manual broad UI diagnostics
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-character source commit SHA to test
+        required: true
+        type: string
+      order:
+        description: UI test order
+        required: true
+        type: choice
+        default: standard
+        options: [standard, random]
+permissions:
+  contents: read
+jobs:
+  simulator-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ui-0, ui-1, ui-2, ui-3]
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_CI_ORDER: ${{ inputs.order }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+    steps:
+      - name: Require an immutable source SHA
+        shell: bash
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "A full lowercase commit SHA is required." >&2; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Verify exact checked-out source
+        id: verify_source
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Verify test toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
+      - name: Create isolated iOS 27 simulator
+        run: |
+          echo "KIN_CI_SETUP stage=create status=start elapsed=$SECONDS"
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          export KIN_CI_SIMULATOR
+          echo "KIN_CI_SETUP stage=create status=complete elapsed=$SECONDS"
+          echo "KIN_CI_SETUP stage=boot status=start elapsed=$SECONDS"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          echo "KIN_CI_SETUP stage=boot-command status=complete elapsed=$SECONDS"
+          echo "KIN_CI_SETUP stage=boot-readiness status=start elapsed=$SECONDS"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+          echo "KIN_CI_SETUP stage=boot-readiness status=complete elapsed=$SECONDS"
+          echo "KIN_CI_SETUP stage=boot status=complete elapsed=$SECONDS"
+          # Only the UI test runner seeds synthetic Contacts; Kin itself retains
+          # selection-only picker access without an address-book permission.
+          if [ "${{ matrix.shard }}" != "unit" ]; then
+            echo "KIN_CI_SETUP stage=contacts status=start elapsed=$SECONDS"
+            python3 scripts/ci-simulator.py grant
+            echo "KIN_CI_SETUP stage=contacts status=complete elapsed=$SECONDS"
+            echo "KIN_CI_SETUP stage=media status=start elapsed=$SECONDS"
+            python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
+            xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
+            echo "KIN_CI_SETUP stage=media status=complete elapsed=$SECONDS"
+          fi
+      - name: Unit, integration, and UI regression suite (iOS 27)
+        timeout-minutes: 45
+        run: python3 scripts/ci-observe.py "${{ matrix.shard }}"
+      - name: Require finalized results with full fixture coverage
+        if: always()
+        run: |
+          if [ ! -d "$RUNNER_TEMP/KinTests.xcresult" ]; then
+            echo "Finalized test results are unavailable; validation failed." >&2
+            exit 1
+          fi
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          validation_status=0
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json" || validation_status=1
+          if [ "${{ matrix.shard }}" = unit ]; then
+            python3 scripts/ci-test-shards.py unit "$RUNNER_TEMP/KinTests-summary.json" || validation_status=1
+          else
+            if xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"; then
+              python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json" || validation_status=1
+            else
+              validation_status=1
+            fi
+          fi
+          exit "$validation_status"
+      - name: Package synthetic progress and finalized result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - name: Retain verified source identity
+        if: always() && steps.verify_source.outcome == 'success'
+        run: |
+          mkdir -p "$RUNNER_TEMP/KinCI-retained"
+          printf '%s\n' "$SOURCE_SHA" > "$RUNNER_TEMP/KinCI-retained/source-commit.txt"
+          printf '%s\n' "$KIN_CI_ORDER" > "$RUNNER_TEMP/KinCI-retained/test-order.txt"
+      - name: Verify packaged result hash
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'KinCI-retained'
+          manifest = json.loads((root / 'manifest.json').read_text())
+          result = root / 'KinTests-xcresult.zip'
+          if manifest.get('status') != 'finalized' or hashlib.sha256(result.read_bytes()).hexdigest() != manifest.get('result_sha256'):
+              raise SystemExit('Result is incomplete or its hash does not match the manifest')
+          PY
+      - name: Retain synthetic progress and finalized result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-tests-${{ matrix.shard }}
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove this run's isolated simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
+            python3 scripts/ci-simulator.py cleanup
+          fi
+      - name: Retain synthetic cleanup outcome
+        id: cleanup_upload
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-cleanup-${{ matrix.shard }}
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Retry cleanup record upload once
+        id: cleanup_upload_retry
+        if: always() && env.KIN_CI_SIMULATOR != '' && steps.cleanup_upload.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-cleanup-retry-${{ matrix.shard }}
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Require retained simulator cleanup record
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        env:
+          FIRST_OUTCOME: ${{ steps.cleanup_upload.outcome }}
+          RETRY_OUTCOME: ${{ steps.cleanup_upload_retry.outcome }}
+        run: |
+          if [ "$FIRST_OUTCOME" = success ]; then
+            echo "Cleanup record retained on first attempt."
+          elif [ "$FIRST_OUTCOME" = failure ] && [ "$RETRY_OUTCOME" = success ]; then
+            echo "::warning::Cleanup record retained on the second upload attempt; the first attempt failed."
+          else
+            echo "::error::Simulator cleanup record was not retained."
+            exit 1
+          fi
+  broad-result:
+    needs: [simulator-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require successful broad UI shards
+        run: test "${{ needs.simulator-tests.result }}" = success

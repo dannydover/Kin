@@ -27,15 +27,16 @@ def compare(baseline, random, expected):
 
 def read_starts(directory, group):
     records = [json.loads(line) for line in (Path(directory) / f'{group}.jsonl').read_text().splitlines()]
-    return [r['id'] for r in records if r.get('kind') == 'test' and r.get('event') == 'started']
+    kind = 'unit_order' if group == 'unit' else 'test'
+    return [r['id'] for r in records if r.get('kind') == kind and r.get('event') == 'started']
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        sys.exit('Usage: ci-compare-order.py BASELINE_DIR RANDOM_DIR')
+    if len(sys.argv) not in (3, 4) or (len(sys.argv) == 4 and sys.argv[3] not in ('--smoke', '--unit')):
+        sys.exit('Usage: ci-compare-order.py BASELINE_DIR RANDOM_DIR [--smoke|--unit]')
     try:
-        groups = shards.GROUPS[1:]
-        expected = {g: shards.selections(g) for g in groups}
+        groups = (sys.argv[3][2:],) if len(sys.argv) == 4 else shards.GROUPS[1:]
+        expected = {g: (['photo-reopen', 'row-render', 'notebook-lifecycle'] if g == 'unit' else shards.selections(g)) for g in groups}
         before = {g: read_starts(sys.argv[1], g) for g in groups}
         after = {g: read_starts(sys.argv[2], g) for g in groups}
         print('Observed order changed in:', ', '.join(compare(before, after, expected)))
