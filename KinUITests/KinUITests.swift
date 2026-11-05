@@ -1366,12 +1366,31 @@ final class KinUITests: XCTestCase {
             app.swipeUp()
         }
         let save = editor.buttons.matching(identifier: "Save")
-        guard requireTestState(app, "Friend on and Save enabled", {
-            friends.count == 1 && controls.count == 1
-                && friends.element.value as? String == "1" && controls.element.value as? String == "1"
-                && friends.element.isHittable && controls.element.isHittable && save.count == 1
-                && save.element.isEnabled && save.element.isHittable
-        }, deadline: readinessDeadline) else { return }
+        // Diagnostic-only: record outcomes of the existing short-circuit reads.
+        var observations: [String] = []
+        func observed(_ label: String, _ read: () -> Bool) -> Bool {
+            let start = ProcessInfo.processInfo.systemUptime
+            let value = read()
+            let end = ProcessInfo.processInfo.systemUptime
+            if observations.count < 100 {
+                observations.append("\(label)=\(value ? "true" : "false"); start=\(String(format: "%.3f", start - readinessDeadline)); duration=\(String(format: "%.3f", end - start))")
+            }
+            return value
+        }
+        func retainFriendObservations() {
+            let observation = XCTAttachment(string: observations.joined(separator: "\n"))
+            observation.name = "Friend readiness existing reads"
+            observation.lifetime = .keepAlways
+            add(observation)
+        }
+        let friendReady = requireTestState(app, "Friend on and Save enabled", {
+            observed("friendUnique") { friends.count == 1 } && observed("controlUnique") { controls.count == 1 }
+                && observed("friendOn") { friends.element.value as? String == "1" } && observed("controlOn") { controls.element.value as? String == "1" }
+                && observed("friendHittable") { friends.element.isHittable } && observed("controlHittable") { controls.element.isHittable } && observed("saveUnique") { save.count == 1 }
+                && observed("saveEnabled") { save.element.isEnabled } && observed("saveHittable") { save.element.isHittable }
+        }, deadline: readinessDeadline, beforeFailure: retainFriendObservations)
+        guard friendReady else { return }
+        retainFriendObservations()
         save.element.tap()
         guard requireTestState(app, "Direct save opens saved profile", {
             app.navigationBars[name].exists && !editor.exists
@@ -1387,6 +1406,7 @@ final class KinUITests: XCTestCase {
     @MainActor private func requireTestState(_ app: XCUIApplication, _ stage: String,
                                              _ condition: @escaping () -> Bool,
                                              deadline: TimeInterval? = nil,
+                                             beforeFailure: (() -> Void)? = nil,
                                              file: StaticString = #filePath, line: UInt = #line) -> Bool {
         let initiallyReady = condition()
         if initiallyReady && (deadline == nil || ProcessInfo.processInfo.systemUptime < deadline!) { return true }
@@ -1395,6 +1415,7 @@ final class KinUITests: XCTestCase {
         let ready = timeout > 0 && XCTWaiter.wait(for: [expected], timeout: timeout) == .completed
             && (deadline == nil || ProcessInfo.processInfo.systemUptime < deadline!)
         if !ready {
+            beforeFailure?()
             recordTestState(app, stage: stage)
             XCTFail("UI precondition failed: " + stage, file: file, line: line)
         }
