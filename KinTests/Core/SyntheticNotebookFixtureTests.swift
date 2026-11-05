@@ -42,6 +42,32 @@ import Testing
         try SyntheticNotebookFixture.seed(selection, token: token, store: store)
         #expect(store.people == [person])
     }
+    @Test("Filter fixture persists exact listed records and preserves later edits")
+    func persistedFilterRecords() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let token = UUID()
+        let store = try KinStore(storeURL: directory.appendingPathComponent("fixture.sqlite"))
+        defer { try? store.close() }
+        try SyntheticNotebookFixture.seed("filter-records", token: token, store: store)
+        #expect(store.people.count == 3)
+        let byName = Dictionary(uniqueKeysWithValues: store.people.map { ($0.firstName, $0) })
+        #expect(byName["Alex Morgan"]?.connections == [])
+        #expect(byName["Jamie Patel"]?.connections == [.friend])
+        #expect(byName["Robin Chen"]?.connections == [.family])
+        #expect(store.people.allSatisfy { $0.isListed && $0.birthday == .unknown })
+        #expect(Set(store.people.map(\.reference)) == Set([1, 2, 3]))
+        let before = Dictionary(uniqueKeysWithValues: store.people.map { ($0.id, $0) })
+        try store.close(); try store.resume()
+        #expect(Dictionary(uniqueKeysWithValues: store.people.map { ($0.id, $0) }) == before)
+        var changed = try #require(store.people.first { $0.firstName == "Alex Morgan" })
+        changed.notes = "Synthetic changed note"
+        try store.savePerson(changed)
+        try SyntheticNotebookFixture.seed("filter-records", token: token, store: store)
+        #expect(try store.person(changed.id).notes == "Synthetic changed note")
+        #expect(store.people.count == 3)
+    }
+
     @Test("Friend fixture retains exact initial data and never overwrites later edits", arguments: [
         ("named-friend", "Synthetic Named"),
         ("long-friend", "Synthetic Parent With A Long Compound Family Name")

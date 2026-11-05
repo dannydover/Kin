@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 
-DEBUG_PATTERN = rb'--kin-preview|--kin-test-notebook|--kin-ui-fixture|named-friend|cancel-standard|cancel-large|long-friend|partner-friends|young-parent-friends|role-label-friends|estimated-age-boundary|estimated-age-largest|estimated-photo|estimated-contact-draft|estimated-contact-photo|--kin-ui-synthetic-contact|--kin-ui-preservation-contacts|synthetic-contact-selection|synthetic-contact-with-photo-selection|syntheticMissingBirthdayWithPhoto|synthetic-preservation-contact-|KinTestNotebooks|DemoFamilies|DevelopmentPreview|SyntheticNotebookFixture'
+DEBUG_PATTERN = rb'--kin-preview|--kin-test-notebook|--kin-ui-fixture|named-friend|filter-records|cancel-standard|cancel-large|long-friend|partner-friends|young-parent-friends|role-label-friends|estimated-age-boundary|estimated-age-largest|estimated-photo|estimated-contact-draft|estimated-contact-photo|--kin-ui-synthetic-contact|--kin-ui-preservation-contacts|synthetic-contact-selection|synthetic-contact-with-photo-selection|syntheticMissingBirthdayWithPhoto|synthetic-preservation-contact-|KinTestNotebooks|DemoFamilies|DevelopmentPreview|SyntheticNotebookFixture'
 
 
 def main():

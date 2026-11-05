@@ -32,6 +32,13 @@ enum SyntheticNotebookFixture {
             let names = selection == "partner-friends" ? ("Synthetic A", "Synthetic B") : ("Synthetic Young", "Synthetic Existing Parent")
             records = [(token, names.0), (UUID(uuid: bytes), names.1)]
             birthday = .unknown
+        case "filter-records":
+            var second = token.uuid
+            second.15 ^= 0xff
+            var third = token.uuid
+            third.14 ^= 0xff
+            records = [(token, "Alex Morgan"), (UUID(uuid: second), "Jamie Patel"), (UUID(uuid: third), "Robin Chen")]
+            birthday = .unknown
         case "role-label-friends":
             var second = token.uuid
             second.15 ^= 0xff
@@ -56,7 +63,17 @@ enum SyntheticNotebookFixture {
             throw FixtureError.nonemptyNotebook
         }
         for (id, name) in records {
-            let connections: Set<Connection> = (selection == "cancel-standard" || selection == "cancel-large") ? [] : [.friend]
+            let connections: Set<Connection>
+            if selection == "filter-records" {
+                switch name {
+                case "Alex Morgan": connections = []
+                case "Jamie Patel": connections = [.friend]
+                case "Robin Chen": connections = [.family]
+                default: throw FixtureError.unsupported
+                }
+            } else {
+                connections = (selection == "cancel-standard" || selection == "cancel-large") ? [] : [.friend]
+            }
             var friend = Person(id: id, firstName: name, birthday: birthday, connections: connections)
             friend.isListed = true
             if selection == "estimated-contact-photo" {

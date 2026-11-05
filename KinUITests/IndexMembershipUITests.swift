@@ -106,17 +106,10 @@ final class IndexMembershipUITests: XCTestCase {
             XCTAssertEqual(app.cells.count, 3)
             return app
         }
-        launch(app)
-        for (name, category) in [("Alex Morgan", ""), ("Jamie Patel", "Friend"), ("Robin Chen", "Family")] {
-            app.buttons["Add person"].tap()
-            let first = app.textFields["First name (optional)"]
-            first.tap(); first.typeText(name)
-            if !category.isEmpty { editorToggle(category,in: app).tap() }
-            app.buttons["Save"].tap()
-            XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
-            app.navigationBars.buttons["People"].tap()
-            XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
-        }
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "filter-records"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.cells.count, 3)
         return app
     }
 
