@@ -5,7 +5,9 @@ enum SyntheticContactsCleanupScope: String {
     case nativeAdult = "native-adult"
     case nativeMinor = "native-minor"
     case preservation = "preservation"
-    case missingBirthday = "missing-birthday"
+    case missingBirthdayReviewCancel = "missing-birthday-review-cancel"
+    case missingBirthdayUnknownCancel = "missing-birthday-unknown-cancel"
+    case missingBirthdayRealPhotoSave = "missing-birthday-real-photo-save"
     case missingBirthdaySavedPhoto = "missing-birthday-saved-photo"
 }
 

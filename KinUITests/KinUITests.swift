@@ -677,13 +677,23 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Change photo"].exists)
         capture(app, "Visible Cancel preserves saved photo and age after relaunch")
     }
-    @MainActor func testContactMissingBirthdayPromptCancellationAndEstimatedImport() throws {
-        try checkMissingBirthdayWithSavedPhoto(useFixturePhoto: false)
+    private enum MissingBirthdayScenario {
+        case reviewCancel, unknownCancel, realPhotoSave, syntheticSequence
+    }
+    @MainActor func testMissingBirthdayReviewCancelWithSavedPhoto() throws {
+        try checkMissingBirthdayWithSavedPhoto(.reviewCancel)
+    }
+    @MainActor func testMissingBirthdayUnknownCancelWithSavedPhoto() throws {
+        try checkMissingBirthdayWithSavedPhoto(.unknownCancel)
+    }
+    @MainActor func testRealPhotoContactEstimatedImportAndRelaunch() throws {
+        try checkMissingBirthdayWithSavedPhoto(.realPhotoSave)
     }
     @MainActor func testSyntheticSavedPhotoContactMissingBirthdayReview() throws {
-        try checkMissingBirthdayWithSavedPhoto(useFixturePhoto: true)
+        try checkMissingBirthdayWithSavedPhoto(.syntheticSequence)
     }
-    @MainActor private func checkMissingBirthdayWithSavedPhoto(useFixturePhoto: Bool) throws {
+    @MainActor private func checkMissingBirthdayWithSavedPhoto(_ scenario: MissingBirthdayScenario) throws {
+        let useFixturePhoto = scenario != .realPhotoSave
         // Native Photos/Contacts interactions take longer on hosted simulators.
         executionTimeAllowance = 600
         #if targetEnvironment(simulator)
@@ -697,7 +707,13 @@ final class KinUITests: XCTestCase {
         }.pngData()
         var created: [CNMutableContact] = []
         var creationUncertain = false
-        let cleanupScope: SyntheticContactsCleanupScope = useFixturePhoto ? .missingBirthdaySavedPhoto : .missingBirthday
+        let cleanupScope: SyntheticContactsCleanupScope
+        switch scenario {
+        case .reviewCancel: cleanupScope = .missingBirthdayReviewCancel
+        case .unknownCancel: cleanupScope = .missingBirthdayUnknownCancel
+        case .realPhotoSave: cleanupScope = .missingBirthdayRealPhotoSave
+        case .syntheticSequence: cleanupScope = .missingBirthdaySavedPhoto
+        }
         addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: fixtureStore, scope: cleanupScope, creationUncertain: creationUncertain) }
         let create = CNSaveRequest(); create.add(fixtureContact,toContainerWithIdentifier: nil)
         creationUncertain = true
@@ -740,37 +756,44 @@ final class KinUITests: XCTestCase {
             card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         }
+        if scenario == .syntheticSequence || scenario == .reviewCancel {
+            try selectSample()
+            XCTAssertTrue(app.staticTexts["contact-current-draft"].exists)
+            XCTAssertTrue(app.staticTexts["Synthetic Existing Draft"].exists)
+            capture(app, "Contact missing birthday asks for birth information")
+            let birthPicker = app.buttons["contact-birth-information"]
+            reveal(birthPicker,in: app); birthPicker.tap()
+            XCTAssertTrue(app.buttons["Exact birthday"].exists)
+            XCTAssertTrue(app.buttons["Unknown"].exists); app.buttons["Unknown"].tap()
+            app.buttons["contact-cancel"].tap()
+            requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
+            XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic Existing Draft")
+        }
+        if scenario == .reviewCancel { return }
+        if scenario == .syntheticSequence || scenario == .unknownCancel {
+            try selectSample()
+            // Missing source data retains the saved estimate. Unknown is now a
+            // deliberate reviewed edit, rather than an automatic import side effect.
+            let retained = app.buttons["contact-birth-information"]
+            reveal(retained,in: app); retained.tap(); app.buttons["Unknown"].tap()
+            reveal(app.buttons["Continue without importing photo"],in: app)
+            app.buttons["Continue without importing photo"].tap()
+            requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
+            XCTAssertEqual(app.textFields["First name (optional)"].value as? String,contactName)
+            let unknownBirth = editorBirthInformation(app, expected: "Birth information, Unknown")
+            unknownBirth.tap(); app.buttons["Estimated age"].tap()
+            XCTAssertFalse(app.buttons["Save"].isEnabled)
+            chooseAge(app,value: 19)
+            reveal(app.buttons["Add photo"],in: app)
+            XCTAssertTrue(app.buttons["Add photo"].exists)
+            XCTAssertFalse(app.buttons["Change photo"].exists)
+            app.navigationBars["Edit person"].buttons["Cancel"].tap()
+            XCTAssertTrue(app.navigationBars["Synthetic Existing Draft"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 80 as of")).firstMatch.exists)
+        }
+        if scenario == .unknownCancel { return }
+        if scenario == .syntheticSequence { app.navigationBars.buttons["Edit"].tap() }
         try selectSample()
-        XCTAssertTrue(app.staticTexts["contact-current-draft"].exists)
-        XCTAssertTrue(app.staticTexts["Synthetic Existing Draft"].exists)
-        capture(app, "Contact missing birthday asks for birth information")
-        let birthPicker = app.buttons["contact-birth-information"]
-        reveal(birthPicker,in: app); birthPicker.tap()
-        XCTAssertTrue(app.buttons["Exact birthday"].exists)
-        XCTAssertTrue(app.buttons["Unknown"].exists); app.buttons["Unknown"].tap()
-        app.buttons["contact-cancel"].tap()
-        requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
-        XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic Existing Draft")
-        try selectSample()
-        // Missing source data retains the saved estimate. Unknown is now a
-        // deliberate reviewed edit, rather than an automatic import side effect.
-        let retained = app.buttons["contact-birth-information"]
-        reveal(retained,in: app); retained.tap(); app.buttons["Unknown"].tap()
-        reveal(app.buttons["Continue without importing photo"],in: app)
-        app.buttons["Continue without importing photo"].tap()
-        requireDismissal(app.navigationBars["Contact birth information"], destination: app.navigationBars["Edit person"].buttons["Cancel"])
-        XCTAssertEqual(app.textFields["First name (optional)"].value as? String,contactName)
-        let unknownBirth = editorBirthInformation(app, expected: "Birth information, Unknown")
-        unknownBirth.tap(); app.buttons["Estimated age"].tap()
-        XCTAssertFalse(app.buttons["Save"].isEnabled)
-        chooseAge(app,value: 19)
-        reveal(app.buttons["Add photo"],in: app)
-        XCTAssertTrue(app.buttons["Add photo"].exists)
-        XCTAssertFalse(app.buttons["Change photo"].exists)
-        app.navigationBars["Edit person"].buttons["Cancel"].tap()
-        XCTAssertTrue(app.navigationBars["Synthetic Existing Draft"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@","Estimated 80 as of")).firstMatch.exists)
-        app.navigationBars.buttons["Edit"].tap(); try selectSample()
         let picker = app.buttons["contact-birth-information"]
         reveal(picker,in: app); picker.tap(); app.buttons["Estimated age"].tap()
         chooseAge(app,value: 19,contact: true)

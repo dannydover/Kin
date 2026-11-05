@@ -46,7 +46,9 @@ print("ready",flush=True); time.sleep(30)
         required = {
             'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdult': 'native-adult',
             'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForMinor': 'native-minor',
-            'KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport': 'missing-birthday',
+            'KinUITests/KinUITests/testMissingBirthdayReviewCancelWithSavedPhoto': 'missing-birthday-review-cancel',
+            'KinUITests/KinUITests/testMissingBirthdayUnknownCancelWithSavedPhoto': 'missing-birthday-unknown-cancel',
+            'KinUITests/KinUITests/testRealPhotoContactEstimatedImportAndRelaunch': 'missing-birthday-real-photo-save',
             'KinUITests/KinUITests/testSyntheticSavedPhotoContactMissingBirthdayReview': 'missing-birthday-saved-photo',
         }
         discovered = set(observer.shards.discover())
@@ -62,7 +64,14 @@ print("ready",flush=True); time.sleep(30)
         self.assertEqual(observer.parse('KIN_CI_CONTACT_CLEANUP missing-birthday-saved-photo verified PRIVATE', set()),
                          {'kind': 'contact_cleanup', 'scope': 'missing-birthday-saved-photo', 'status': 'verified'})
         self.assertNotEqual(observer.CLEANUP_SCOPES[ident], observer.CLEANUP_SCOPES[
-            'KinUITests/KinUITests/testContactMissingBirthdayPromptCancellationAndEstimatedImport'])
+            'KinUITests/KinUITests/testMissingBirthdayReviewCancelWithSavedPhoto'])
+
+    def test_split_missing_birthday_cleanup_markers_are_allowlisted(self):
+        observer = load('ci-observe.py')
+        for scope in ('missing-birthday-review-cancel', 'missing-birthday-unknown-cancel',
+                      'missing-birthday-real-photo-save'):
+            self.assertEqual(observer.parse(f'KIN_CI_CONTACT_CLEANUP {scope} verified PRIVATE', set()),
+                             {'kind': 'contact_cleanup', 'scope': scope, 'status': 'verified'})
 
     def test_both_native_cleanup_markers_are_required_independently(self):
         observer = load('ci-observe.py')
