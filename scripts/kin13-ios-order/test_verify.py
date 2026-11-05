@@ -1,0 +1,73 @@
+import json
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+
+class VerifyTests(unittest.TestCase):
+    def test_packaging_fails_for_bad_hash_or_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);retained=root/'KinCI-retained';retained.mkdir()
+            archive=retained/'KinTests-xcresult.zip';archive.write_bytes(b'synthetic')
+            (retained/'manifest.json').write_text(json.dumps({'status':'finalized','result_sha256':hashlib.sha256(archive.read_bytes()).hexdigest()}))
+            (retained/'source-commit.txt').write_text('expected\n')
+            env=dict(os.environ, RUNNER_TEMP=temp, EXPECTED_SOURCE='expected')
+            def run():return subprocess.run(['python3',str(Path(__file__).with_name('verify_package.py'))],env=env,capture_output=True)
+            self.assertEqual(run().returncode,0)
+            archive.write_bytes(b'corrupt');self.assertNotEqual(run().returncode,0)
+            archive.write_bytes(b'synthetic');(retained/'source-commit.txt').write_text('wrong\n');self.assertNotEqual(run().returncode,0)
+
+    def test_batch_emits_only_known_start_hashes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp); control=root/'control';control.mkdir()
+            shutil.copy(Path(__file__).with_name('run_batch.py'), control/'run_batch.py')
+            title='Fixed synthetic test'; digest=hashlib.sha256(title.encode()).hexdigest()
+            (control/'baseline.json').write_text(json.dumps({'first_suites':['ExampleTests'],'start_title_hashes':[digest]}))
+            fake=root/'xcodebuild'
+            fake.write_text('#!/bin/sh\nprintf \'Test "Fixed synthetic test" started.\\nprivate payload\\n\'\n')
+            fake.chmod(0o755)
+            env=dict(os.environ, RUNNER_TEMP=temp, KIN_CI_SIMULATOR='synthetic', PATH=str(root)+':'+os.environ['PATH'])
+            result=subprocess.run(['python3',str(control/'run_batch.py'),'first'],env=env,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            progress=(root/'ios-order-first'/'KinTests-progress.jsonl').read_text()
+            self.assertIn(digest,progress)
+            self.assertNotIn('private payload',progress+result.stdout+result.stderr)
+            self.assertNotIn(title,progress)
+
+    def test_complete_changed_order_and_fail_closed_cases(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); control = root / 'control'; control.mkdir()
+            shutil.copy(Path(__file__).with_name('verify.py'), control / 'verify.py')
+            baseline = {'source_sha':'expected', 'identities':['A/a()', 'A/b()', 'B/c()', 'B/d()'],
+                        'start_title_hashes':['a','b','c','d'],
+                        'first_suites':['B'], 'second_suites':['A']}
+            (control / 'baseline.json').write_text(json.dumps(baseline))
+            for name, ids, starts in [('first',['B/c()','B/d()'],['c','d']),
+                                      ('second',['A/a()','A/b()'],['a','b'])]:
+                batch = root / ('ios-order-' + name); batch.mkdir()
+                result = batch / 'KinTests.xcresult'; result.mkdir()
+                (result / 'summary.json').write_text(json.dumps({'result':'Passed','passedTests':2,'totalTestCount':2,'failedTests':0,'skippedTests':0,'expectedFailures':0}))
+                (result / 'tests.json').write_text(json.dumps({'testNodes':[{'nodeType':'Test Case','nodeIdentifier':x} for x in ids]}))
+                (batch / 'KinTests-progress.jsonl').write_text(''.join(json.dumps({'kind':'test_start_hash','id':x})+'\n' for x in starts)+json.dumps({'kind':'exit','code':0})+'\n')
+            fake = root / 'xcrun'
+            fake.write_text('#!/bin/sh\nfor last; do :; done\ncase "$*" in *"test-results summary"*) cat "$last/summary.json";; *"test-results tests"*) cat "$last/tests.json";; *) exit 2;; esac\n')
+            fake.chmod(0o755)
+            env = dict(os.environ, RUNNER_TEMP=temp, PATH=str(root)+':'+os.environ['PATH'], EXPECTED_SOURCE='expected')
+            def run(): return subprocess.run(['python3', str(control/'verify.py')], env=env, capture_output=True)
+            self.assertEqual(run().returncode, 0)
+            p = root/'ios-order-first'/'KinTests-progress.jsonl'; original=p.read_text()
+            p.write_text(original.replace('"id": "d"','"id": "c"'))
+            self.assertNotEqual(run().returncode, 0)
+            p.write_text(original)
+            result = root/'ios-order-first'/'KinTests.xcresult'/'summary.json'
+            summary=json.loads(result.read_text());summary['skippedTests']=1;result.write_text(json.dumps(summary))
+            self.assertNotEqual(run().returncode, 0)
+            summary['skippedTests']=0;result.write_text(json.dumps(summary))
+            baseline['start_title_hashes']=['c','d','a','b'];(control/'baseline.json').write_text(json.dumps(baseline))
+            self.assertNotEqual(run().returncode, 0)
+
+if __name__ == '__main__': unittest.main()

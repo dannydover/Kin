@@ -1,0 +1,121 @@
+name: Diagnostic iOS explicit batch order
+on:
+  push:
+    branches: [diagnostic/kin13-ios-explicit-order]
+permissions:
+  contents: read
+jobs:
+  ios-order:
+    runs-on: xcode-27
+    timeout-minutes: 85
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      EXPECTED_SOURCE: 627d3d57df5ff3094d5872cd8a1beebf355ae0c7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 627d3d57df5ff3094d5872cd8a1beebf355ae0c7
+          path: source
+          persist-credentials: false
+      - name: Verify source and hosted toolchain
+        working-directory: source
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test -z "$(git status --porcelain)"
+          echo "Synthetic source commit: $EXPECTED_SOURCE"
+          shasum -a 256 ../control/scripts/kin13-ios-order/baseline.json
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
+          python3 -m unittest discover -s ../control/scripts/kin13-ios-order -p 'test_*.py'
+      - name: Create isolated iOS 27 simulator
+        id: boot
+        timeout-minutes: 10
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin iOS order ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+      - name: Build exact source once
+        id: build
+        timeout-minutes: 20
+        working-directory: source
+        run: |
+          xcodebuild -project Kin.xcodeproj -scheme Kin -destination "platform=iOS Simulator,id=$KIN_CI_SIMULATOR" -derivedDataPath "$RUNNER_TEMP/KinOrderBuild" build-for-testing CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/kin-order-build-private.log" 2>&1
+          test -z "$(git status --porcelain)"
+      - name: Run later suite batch first
+        id: first
+        timeout-minutes: 20
+        working-directory: source
+        run: python3 ../control/scripts/kin13-ios-order/run_batch.py first
+      - name: Run earlier suite batch second
+        id: second
+        if: always() && steps.boot.outcome == 'success' && steps.build.outcome == 'success'
+        timeout-minutes: 20
+        working-directory: source
+        run: python3 ../control/scripts/kin13-ios-order/run_batch.py second
+      - name: Verify complete identities and changed observed order
+        if: always()
+        working-directory: source
+        run: python3 ../control/scripts/kin13-ios-order/verify.py
+      - name: Package first batch
+        if: always()
+        working-directory: source
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}/ios-order-first
+        run: |
+          mkdir -p "$RUNNER_TEMP"
+          if [ -d "$RUNNER_TEMP/KinTests.xcresult" ]; then
+            xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json" || :
+          fi
+          python3 scripts/ci-retain.py
+          printf '%s\n' "$EXPECTED_SOURCE" > "$RUNNER_TEMP/KinCI-retained/source-commit.txt"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/KinCI-retained/diagnostic-commit.txt"
+          python3 ../control/scripts/kin13-ios-order/verify_package.py
+      - name: Retain first batch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-ios-order-first
+          path: ${{ runner.temp }}/ios-order-first/KinCI-retained/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Package second batch
+        if: always()
+        working-directory: source
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}/ios-order-second
+        run: |
+          mkdir -p "$RUNNER_TEMP"
+          if [ -d "$RUNNER_TEMP/KinTests.xcresult" ]; then
+            xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json" || :
+          fi
+          python3 scripts/ci-retain.py
+          printf '%s\n' "$EXPECTED_SOURCE" > "$RUNNER_TEMP/KinCI-retained/source-commit.txt"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/KinCI-retained/diagnostic-commit.txt"
+          python3 ../control/scripts/kin13-ios-order/verify_package.py
+      - name: Retain second batch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-ios-order-second
+          path: ${{ runner.temp }}/ios-order-second/KinCI-retained/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove isolated simulator
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        working-directory: source
+        run: python3 scripts/ci-simulator.py cleanup
+      - name: Retain simulator cleanup
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-ios-order-cleanup
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          if-no-files-found: error
+          retention-days: 7
