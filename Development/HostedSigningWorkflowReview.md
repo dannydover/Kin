@@ -114,13 +114,18 @@ categories without secret-bearing messages; a category is not a full diagnosis.
 ## Verification and outputs
 
 The unwired `scripts/verify-signature-integrity.py` runs a bounded, quiet
-`codesign --verify --deep --strict --all-architectures` check on an app bundle. Its
-local tests mock the command; no signed product has been checked. This proves
-only that the tool accepted the seal when eventually run: an ad hoc signature
-can also pass. Recursive checking is limited to nested code recognized by
-`codesign`; it is not an inventory of all executable content. It does not
-verify the signing identity, distribution profile or entitlements and cannot authorize handoff. These checks must
-be implemented separately before it is used in a release workflow.
+`codesign --verify --deep --strict --all-architectures` check on an app bundle,
+with an explicit Apple-generic anchor, Kin bundle ID and owner-supplied team
+requirement. It separately extracts the leaf certificate and checks its SHA-256
+against an owner-reviewed fingerprint. Values are validated before use, and
+commands have bounded runtimes and suppressed output. Synthetic tests mock
+the command; no signed Kin product has been checked. The requirement syntax
+was compiled locally with `csreq`, but actual distribution-certificate behavior
+remains unverified. Recursive checking is limited to nested code recognized by
+`codesign`; it is not an inventory of all executable content. The verification
+and extraction are separate calls, so the caller must prevent mutation between
+them. This does not establish profile authorization, current revocation,
+entitlement policy, provenance or authorization to hand off a build.
 
 Verify the signed app and export with `codesign` and Apple profile decoding;
 compare signature certificate, explicit bundle ID, team, entitlements, version,
@@ -156,6 +161,15 @@ API-key compatibility remain unverified. If direct transfer cannot be supported
 securely, stop: no private artifact store has been identified or approved as a
 fallback. Record IPA hash and Apple's returned build identity without logging
 secrets or treating an upload request as proof of processing or publication.
+
+An existing approved Distribution identity and matching App Store Connect
+profile can be supplied for manual Xcode signing and export without granting a
+team-wide App Store Connect API key solely for signing. Local checks and Xcode
+export cannot establish that Apple will accept the build or that a profile or
+certificate has not been revoked. Apple-side upload and processing remain a
+separately approved validation step. An optional team API key could query current
+profile state, but it has broader account scope and is not a prerequisite for
+manual signing; do not request one by default.
 
 ## Synthetic verification required before approval
 
