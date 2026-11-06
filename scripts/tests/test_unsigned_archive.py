@@ -155,7 +155,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
         self.assertNotIn('secrets.', job)
         self.assertNotIn('contents: write', job)
         self.assertNotIn('KinUnsigned.xcarchive\n', job)
-        self.assertIn('needs: [core-validation, simulator-tests, release-validation]', workflow)
+        self.assertIn('needs: [core-validation, ios-tests, candidate-smoke, release-validation]', workflow)
 
 
 if __name__ == '__main__': unittest.main()
