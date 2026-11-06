@@ -1,0 +1,136 @@
+"""Synthetic keychain lifecycle tests: never call macOS security or real keys."""
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest import mock
+
+spec = importlib.util.spec_from_file_location('keychain', Path(__file__).resolve().parents[1] / 'isolated-signing-keychain.py')
+keychain = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(keychain)
+
+
+class FakeSecurity:
+    def __init__(self, fail=None):
+        self.fail = set(fail or ()); self.calls = []
+
+    def __call__(self, *args):
+        action = args[0]; self.calls.append(action)
+        if action in self.fail: raise RuntimeError('synthetic sensitive error')
+        if action == 'create-keychain': Path(args[-1]).write_text('synthetic keychain')
+        if action == 'delete-keychain': Path(args[-1]).unlink(missing_ok=True)
+
+
+class KeychainLifecycleTests(unittest.TestCase):
+    def exercise(self, root, fake, operation=lambda _: True):
+        with mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
+            return keychain.run_isolated(root, b'synthetic p12', 'synthetic password', operation, backend=fake)
+
+    def test_success_removes_all_owned_files(self):
+        with tempfile.TemporaryDirectory() as root:
+            fake = FakeSecurity()
+            self.assertTrue(self.exercise(root, fake))
+            self.assertEqual(fake.calls, ['create-keychain', 'unlock-keychain', 'import',
+                                          'set-key-partition-list', 'delete-keychain'])
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_each_setup_failure_still_attempts_cleanup(self):
+        for stage in ('create-keychain', 'unlock-keychain', 'import', 'set-key-partition-list'):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as root:
+                fake = FakeSecurity({stage})
+                with self.assertRaises(keychain.TransactionFailed) as result: self.exercise(root, fake)
+                self.assertTrue(result.exception.primary_failed)
+                self.assertIn('delete-keychain', fake.calls)
+                self.assertNotIn('synthetic password', str(result.exception))
+                self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_operation_failure_is_preserved_when_cleanup_also_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            fake = FakeSecurity({'delete-keychain'})
+            with self.assertRaises(keychain.TransactionFailed) as result:
+                self.exercise(root, fake, operation=lambda _: False)
+            self.assertTrue(result.exception.primary_failed)
+            self.assertTrue(result.exception.cleanup_failed)
+            self.assertEqual(result.exception.primary_error, 'validation-error')
+            self.assertEqual(result.exception.cleanup_errors, ('keychain:other-error',))
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_cleanup_failure_cannot_be_success(self):
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaises(keychain.TransactionFailed) as result: self.exercise(root, FakeSecurity({'delete-keychain'}))
+            self.assertFalse(result.exception.primary_failed)
+            self.assertTrue(result.exception.cleanup_failed)
+
+    def test_workspace_timeout_preserves_prior_failure(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
+            def timeout(_): raise subprocess.TimeoutExpired('synthetic', 20)
+            with self.assertRaises(keychain.TransactionFailed) as result:
+                keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: False,
+                                      backend=FakeSecurity(), remove_workspace=timeout)
+            self.assertTrue(result.exception.primary_failed)
+            self.assertTrue(result.exception.cleanup_failed)
+            self.assertEqual(result.exception.primary_error, 'validation-error')
+            self.assertEqual(result.exception.cleanup_errors, ('workspace:timeout',))
+
+    def test_workspace_setup_failure_still_removes_owned_directory(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
+            fake = FakeSecurity()
+            with mock.patch.object(keychain.os, 'chmod', side_effect=OSError('synthetic')):
+                with self.assertRaises(keychain.TransactionFailed) as result:
+                    keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True, backend=fake)
+            self.assertTrue(result.exception.primary_failed)
+            self.assertFalse(result.exception.cleanup_failed)
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_cleanup_noop_is_detected(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
+            with self.assertRaises(keychain.TransactionFailed) as result:
+                keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True,
+                                      backend=FakeSecurity(), remove_workspace=lambda _: None)
+            self.assertFalse(result.exception.primary_failed)
+            self.assertTrue(result.exception.cleanup_failed)
+
+    def test_hosted_runner_is_required_before_backend_call(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'self-hosted'}):
+            fake = FakeSecurity()
+            with self.assertRaises(ValueError): keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True, backend=fake)
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_missing_material_and_symlink_root_are_rejected(self):
+        with tempfile.TemporaryDirectory() as parent, mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
+            fake = FakeSecurity()
+            with self.assertRaises(ValueError): keychain.run_isolated(parent, b'', 'synthetic', lambda _: True, backend=fake)
+            link = Path(parent) / 'link'; link.symlink_to(parent, target_is_directory=True)
+            with self.assertRaises(ValueError): keychain.run_isolated(str(link), b'synthetic', 'synthetic', lambda _: True, backend=fake)
+            self.assertEqual(fake.calls, [])
+
+    def test_workspace_creation_error_is_sanitized(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}), \
+             mock.patch.object(keychain.tempfile, 'mkdtemp', side_effect=OSError('synthetic sensitive detail')):
+            with self.assertRaises(keychain.TransactionFailed) as result:
+                keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True, backend=FakeSecurity())
+            self.assertEqual(result.exception.primary_error, 'workspace-creation-error')
+            self.assertNotIn('synthetic sensitive detail', str(result.exception))
+
+    def test_security_subprocess_is_bounded_and_silent(self):
+        with mock.patch.object(keychain.subprocess, 'run') as run:
+            keychain._security('synthetic-operation', 'synthetic-argument')
+            self.assertEqual(run.call_args.kwargs['timeout'], 20)
+            self.assertTrue(run.call_args.kwargs['check'])
+            self.assertEqual(run.call_args.kwargs['stdout'], subprocess.DEVNULL)
+            self.assertEqual(run.call_args.kwargs['stderr'], subprocess.DEVNULL)
+
+    def test_workspace_removal_is_bounded_and_silent(self):
+        with mock.patch.object(keychain.subprocess, 'run') as run:
+            keychain._remove_owned_workspace(Path('/tmp/synthetic-owned-workspace'))
+            self.assertEqual(run.call_args.kwargs['timeout'], 20)
+            self.assertTrue(run.call_args.kwargs['check'])
+            self.assertEqual(run.call_args.kwargs['stdout'], subprocess.DEVNULL)
+            self.assertEqual(run.call_args.kwargs['stderr'], subprocess.DEVNULL)
+
+
+if __name__ == '__main__': unittest.main()

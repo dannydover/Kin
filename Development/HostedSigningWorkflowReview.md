@@ -80,6 +80,22 @@ failure-safe cleanup step. A test must simulate failures at every stage, confirm
 cleanup was attempted, and fail if cleanup cannot be verified. Hosted runner
 termination is not proof of cleanup. Do not alter the owner's local keychain.
 
+An unwired `scripts/isolated-signing-keychain.py` component stages this lifecycle:
+it permits only a GitHub-hosted runner, creates its own temporary workspace and
+keychain, suppresses raw command output, bounds each security/cleanup subprocess,
+and reports original and cleanup failures separately. Its tests use only a fake
+security backend. It is not called by a workflow and has never handled a real
+credential. The macOS `security` tool receives passwords in process arguments;
+other same-user processes on that runner may observe them. The `apple:` key
+partition may permit more Apple-signed tools than just codesign. The caller must
+still prove the protected environment, validate the certificate and profile,
+bound the overall build operation, handle interruptions, and independently
+verify keychain cleanup. Do not use this component with real material until the
+complete workflow and these risks have been reviewed and explicitly approved.
+The `RUNNER_ENVIRONMENT` string is a defensive check, not trusted proof of the
+runner or the GitHub environment's protections. Failures are retained as fixed
+categories without secret-bearing messages; a category is not a full diagnosis.
+
 ## Verification and outputs
 
 Verify the signed app and export with `codesign` and Apple profile decoding;
