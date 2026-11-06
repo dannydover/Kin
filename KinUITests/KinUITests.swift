@@ -1324,22 +1324,17 @@ final class KinUITests: XCTestCase {
     @MainActor private func openAllPeople(_ app: XCUIApplication) {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
     }
-    @MainActor private func snapshotAttributes(_ app: XCUIApplication) throws -> [String: Bool] {
-        let root = try app.snapshot()
+    @MainActor private func scopedSnapshotAttributes(_ friend: XCUIElement, _ save: XCUIElement) throws -> [String: Bool] {
+        let wrapper = try friend.snapshot()
         func descendants(_ parent: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
             parent.children.flatMap { [$0] + descendants($0) }
         }
-        let all = descendants(root)
-        let wrappers = all.filter { $0.elementType == .switch && $0.identifier == "Friend" }
-        let controls = wrappers.count == 1 ? descendants(wrappers[0]).filter { $0.elementType == .switch } : []
-        let editors = all.filter { $0.elementType == .navigationBar && $0.identifier == "Add person" }
-        let saves = editors.count == 1 ? descendants(editors[0]).filter { $0.elementType == .button && $0.identifier == "Save" } : []
-        return ["friendUnique": wrappers.count == 1,
-                "controlUnique": controls.count == 1,
-                "friendOn": wrappers.count == 1 && (wrappers[0].value as? String) == "1",
+        let controls = descendants(wrapper).filter { $0.elementType == .switch }
+        let saved = try save.snapshot()
+        return ["controlUnique": controls.count == 1,
+                "friendOn": (wrapper.value as? String) == "1",
                 "controlOn": controls.count == 1 && (controls[0].value as? String) == "1",
-                "saveUnique": saves.count == 1,
-                "saveEnabled": saves.count == 1 && saves[0].isEnabled]
+                "saveEnabled": saved.isEnabled]
     }
     
     @MainActor private func addPerson(_ app: XCUIApplication, name: String) {
@@ -1409,13 +1404,15 @@ final class KinUITests: XCTestCase {
         }, deadline: readinessDeadline, beforeFailure: retainFriendObservations)
         guard friendReady else { return }
         retainFriendObservations()
-        // Diagnostic-only: compare one post-read snapshot to the six
+        // Diagnostic-only: compare two scoped post-read snapshots to four
         // non-hittability checks. Original nine reads already completed.
         do {
-            let parity = try snapshotAttributes(app)
-            let labels = ["friendUnique", "controlUnique", "friendOn", "controlOn", "saveUnique", "saveEnabled"]
+            let observationStarted = ProcessInfo.processInfo.systemUptime
+            let parity = try scopedSnapshotAttributes(friends.element, save.element)
+            let observationDuration = ProcessInfo.processInfo.systemUptime - observationStarted
+            let labels = ["controlUnique", "friendOn", "controlOn", "saveEnabled"]
             let report = labels.map { "\($0)=\(parity[$0] == true ? "true" : "false")" }.joined(separator: "; ")
-            let attachment = XCTAttachment(string: report)
+            let attachment = XCTAttachment(string: report + "; duration=" + String(format: "%.3f", observationDuration))
             attachment.name = "Snapshot readiness parity"
             attachment.lifetime = .keepAlways
             self.add(attachment)
