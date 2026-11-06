@@ -72,6 +72,18 @@ class HostedEvidenceTests(unittest.TestCase):
     def test_github_redirects_are_not_followed(self):
         self.assertIsNone(evidence.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://example.invalid'))
 
+    def test_read_only_workflow_has_no_signing_or_artifact_steps(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/hosted-signing-preflight.yml').read_text()
+        self.assertIn('workflow_dispatch:', workflow)
+        self.assertIn('contents: read', workflow)
+        self.assertIn('actions: read', workflow)
+        self.assertIn('persist-credentials: false', workflow)
+        self.assertIn('test "$GITHUB_REF" = refs/heads/main', workflow)
+        self.assertIn('python3 scripts/verify-hosted-ci-evidence.py', workflow)
+        for forbidden in ('pull_request:', 'push:', 'environment:', 'secrets.', 'upload-artifact',
+                          'run_isolated', 'xcodebuild archive', 'altool', 'transporter'):
+            self.assertNotIn(forbidden, workflow)
+
     def test_proposed_environment_requires_all_protections(self):
         env = {'name': 'kin-signing', 'can_admins_bypass': False,
                'deployment_branch_policy': {'protected_branches': False, 'custom_branch_policies': True},
@@ -90,6 +102,27 @@ class HostedEvidenceTests(unittest.TestCase):
                 if scenario == 'extra_branch': policies['branch_policies'].append({'name': '*', 'type': 'branch'}); policies['total_count'] = 2
                 with self.assertRaises(ValueError): evidence.verify_signing_environment(candidate, policies)
 
+    def test_remote_environment_checks_only_fixed_paths_and_rejects_missing_fields(self):
+        env = {'name': 'kin-signing', 'can_admins_bypass': False,
+               'deployment_branch_policy': {'protected_branches': False, 'custom_branch_policies': True},
+               'protection_rules': [{'type': 'required_reviewers', 'prevent_self_review': False,
+                                     'reviewers': [{'type': 'User', 'reviewer': {'id': evidence.OWNER_REVIEWER_ID}}]}]}
+        policies = {'total_count': 1, 'branch_policies': [{'name': 'main', 'type': 'branch'}]}
+        with mock.patch.object(evidence, 'fetch', side_effect=[env, policies]) as fetch:
+            self.assertTrue(evidence.check_signing_environment('synthetic-token'))
+            self.assertEqual(fetch.call_args_list, [mock.call('/environments/kin-signing', 'synthetic-token'),
+                mock.call('/environments/kin-signing/deployment-branch-policies?per_page=100', 'synthetic-token')])
+        for changed in ('bypass', 'type', 'truncated'):
+            with self.subTest(changed=changed):
+                e, p = copy.deepcopy(env), copy.deepcopy(policies)
+                if changed == 'bypass': e.pop('can_admins_bypass')
+                if changed == 'type': p['branch_policies'][0].pop('type')
+                if changed == 'truncated': p['total_count'] = 2
+                with mock.patch.object(evidence, 'fetch', side_effect=[e, p]):
+                    with self.assertRaises(ValueError): evidence.check_signing_environment('synthetic-token')
+        with mock.patch.object(evidence, 'fetch', side_effect=OSError('synthetic response unavailable')):
+            with self.assertRaises(OSError): evidence.check_signing_environment('synthetic-token')
+
     def test_main_checks_exact_checkout_workflow_and_toolchain(self):
         environment = {'GITHUB_SHA': self.sha, 'GITHUB_TOKEN': 'synthetic-token',
                        'GITHUB_REPOSITORY': evidence.REPOSITORY, 'GITHUB_EVENT_NAME': 'workflow_dispatch',
@@ -100,6 +133,13 @@ class HostedEvidenceTests(unittest.TestCase):
                   ('xcodebuild', '-version'): 'Xcode 27.0\nBuild version 27A266a', ('uname', '-m'): 'arm64'}
         def fetch(path, token):
             self.assertEqual(token, 'synthetic-token')
+            if path == '/environments/kin-signing':
+                return {'name': 'kin-signing', 'can_admins_bypass': False,
+                        'deployment_branch_policy': {'protected_branches': False, 'custom_branch_policies': True},
+                        'protection_rules': [{'type': 'required_reviewers', 'prevent_self_review': False,
+                            'reviewers': [{'type': 'User', 'reviewer': {'id': evidence.OWNER_REVIEWER_ID}}]}]}
+            if path == '/environments/kin-signing/deployment-branch-policies?per_page=100':
+                return {'total_count': 1, 'branch_policies': [{'name': 'main', 'type': 'branch'}]}
             if path == '/git/ref/heads/main':
                 return {'ref': 'refs/heads/main', 'object': {'type': 'commit', 'sha': self.sha}}
             if path == '/branches/main':

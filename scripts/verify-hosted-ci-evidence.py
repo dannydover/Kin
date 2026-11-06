@@ -82,7 +82,7 @@ def verify_latest(source, response, fetch_jobs):
 
 
 def verify_signing_environment(environment, branch_policies):
-    """Proposed strict contract; not yet wired to any signing workflow.
+    """Strict policy contract; not yet wired to any signing workflow.
 
     In particular, lack of an authoritative administrator-bypass field is an
     error, not evidence that bypass is disabled. GitHub API compatibility and
@@ -108,6 +108,17 @@ def verify_signing_environment(environment, branch_policies):
             and branch_policies['branch_policies'][0].get('name') == 'main'
             and branch_policies['branch_policies'][0].get('type') == 'branch', 'Environment must allow only main')
     return True
+
+
+def check_signing_environment(token):
+    """Read the proposed environment and policy; missing fields fail closed.
+
+    These read-only checks are not proof that a later job received the same
+    protection, and they neither create an environment nor authorize signing.
+    """
+    environment = fetch('/environments/kin-signing', token)
+    policies = fetch('/environments/kin-signing/deployment-branch-policies?per_page=100', token)
+    return verify_signing_environment(environment, policies)
 
 
 def main():
@@ -147,7 +158,8 @@ def main():
     require(verify_latest(source, fetch('/actions/workflows/ci.yml/runs?' + query, token), jobs)
             == (run_id, attempt), 'Latest CI evidence changed during preflight')
     verify_remote_main()
-    print('Exact protected-main CI evidence verified: run %d attempt %d.' % (run_id, attempt))
+    check_signing_environment(token)
+    print('Exact protected-main CI and environment policy evidence verified: run %d attempt %d.' % (run_id, attempt))
 
 
 if __name__ == '__main__':

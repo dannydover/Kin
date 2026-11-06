@@ -5,7 +5,7 @@ environment, consume credentials, sign an app, upload data or permit release.
 No real signing material or access has been inspected. PR #61's unsigned
 archive exercise is the only implemented hosted archive path so far.
 
-The separate `scripts/verify-hosted-ci-evidence.py` is a working, read-only
+The separate `scripts/verify-hosted-ci-evidence.py` is a read-only
 preflight component, not an authorized signing workflow. It requires a clean
 checkout of the exact workflow-dispatch main SHA, verifies GitHub reports main
 as protected, and requires the reviewed CI workflow
@@ -55,11 +55,26 @@ not document an administrator-bypass field in its example. A supported way to
 verify the intended bypass setting remains unresolved; a missing field must not
 be interpreted as disabled. See
 https://docs.github.com/en/rest/deployments/environments . The script's
-`verify_signing_environment` is a synthetic contract only: `main()` does not
-call it and it performs no API fetch. GitHub's documented branch-policy
-example also omits the `type` field that the contract requires. Until those
-fields and enforcement can be verified through a supported source, this
-contract must fail closed and must not be treated as an operational guard.
+`verify_signing_environment` evaluates the required response contract. GitHub's documented branch-policy
+example also omits the `type` field that the contract requires. GitHub's
+official OpenAPI schema does define `type` for branch-policy responses; an
+omitted example field is not evidence that the API cannot return it. At schema
+revision `1237c2cea548efd96665ea8ba0a3970adac5c576`, the environment schema
+does not define `can_admins_bypass`; that is not proof that the live response
+lacks it or that GitHub cannot enforce the setting. The documented read
+endpoints support Actions read permission and public resources can be read
+without it. A real response and the owner-approved configuration must be
+verified before relying on either field; missing fields fail closed.
+
+The preflight now calls the fixed, read-only environment and branch-policy
+endpoints and applies this contract after its source/CI checks. Tests inject
+synthetic responses only. It does not create an environment, access secrets,
+sign or upload. The manual-only `hosted-signing-preflight.yml` invokes it on an
+exact current main SHA with read-only GitHub token permissions and no signing
+environment or signing secrets. It has not been hosted-dispatched: a manual
+workflow first needs to exist on the default branch. The known failed main CI
+and an unconfigured environment prevent a successful preflight. A successful
+read is not an atomic guarantee that protection persists through a later job.
 
 ## Inputs and execution
 
