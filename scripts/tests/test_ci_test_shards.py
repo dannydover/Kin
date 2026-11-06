@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 import tempfile
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('shards', Path(__file__).resolve().parents[1] / 'ci-test-shards.py')
 shards = importlib.util.module_from_spec(spec)
@@ -17,6 +18,30 @@ class CoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'EditorTestSupport'):
                 shards.discover(root)
 
+    def test_nested_synchronized_ui_test_is_discovered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / 'KinUITests' / 'Nested'
+            nested.mkdir(parents=True)
+            (nested / 'NestedUITests.swift').write_text(
+                'class NestedUITests: XCTestCase { func testNested() {} }')
+            scheme = root / 'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            scheme.parent.mkdir(parents=True)
+            scheme.write_text('<Scheme><TestableReference><BuildableReference BlueprintName="KinTests"/>'
+                              '</TestableReference><TestableReference>'
+                              '<BuildableReference BlueprintName="KinUITests"/>'
+                              '</TestableReference></Scheme>')
+            self.assertEqual(shards.discover(root), ['KinUITests/NestedUITests/testNested'])
+
+    def test_nested_unrecognized_test_structure_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / 'KinUITests' / 'Nested'
+            nested.mkdir(parents=True)
+            (nested / 'Extension.swift').write_text('extension Existing { func testNew() {} }')
+            with self.assertRaisesRegex(ValueError, 'Unrecognized UI test structure'):
+                shards.discover(root)
+
     def test_all_ui_methods_appear_exactly_once(self):
         expected = shards.discover()
         selected = [item for group in shards.GROUPS[1:] for item in shards.selections(group)]
@@ -27,6 +52,46 @@ class CoverageTests(unittest.TestCase):
     def test_unit_and_integration_target_is_unfiltered(self):
         self.assertEqual(shards.selections('unit'), ['KinTests'])
 
+    def test_smoke_is_exact_subset_and_missing_identity_fails_closed(self):
+        smoke = shards.selections('smoke')
+        self.assertEqual(len(smoke), 4)
+        self.assertEqual(len(set(smoke)), 4)
+        self.assertTrue(set(smoke).issubset(set(shards.discover())))
+        self.assertFalse(any('NativeContactsTests' in value for value in smoke))
+        with patch.object(shards, 'discover', return_value=smoke[:-1]):
+            with self.assertRaisesRegex(ValueError, 'Smoke identities'):
+                shards.selections('smoke')
+
     def test_invalid_shard_fails_closed(self):
         with self.assertRaises(ValueError):
             shards.selections('ui-9')
+
+    def test_allocation_is_deterministic_and_includes_new_tests(self):
+        ids = ['suite/testA', 'suite/testB', 'suite/testC', 'suite/testD', 'suite/testNew']
+        timings = {'suite/testA': 400, 'suite/testB': 80, 'suite/removed': 999}
+        groups = shards.allocate(ids, timings, 90)
+        self.assertEqual(groups, shards.allocate(list(reversed(ids)), timings, 90))
+        self.assertEqual(sorted(item for group in groups for item in group), sorted(ids))
+        self.assertEqual(len({item for group in groups for item in group}), len(ids))
+        self.assertIn('suite/testNew', [item for group in groups for item in group])
+        self.assertEqual(groups[0], ['suite/testA'])
+
+    def test_bad_timing_data_fails_closed(self):
+        for timings, fallback in [({'a': -1}, 90), ({'a': True}, 90), ({'a': float('nan')}, 90), ({}, 0)]:
+            with self.subTest(timings=timings, fallback=fallback), self.assertRaises(ValueError):
+                shards.allocate(['a'], timings, fallback)
+
+    def test_result_tree_requires_exact_unique_test_identities(self):
+        selected = ['KinUITests/Suite/testOne', 'KinUITests/Suite/testTwo']
+        def report(ids):
+            return {'testNodes': [{'nodeType': 'Test Suite', 'children': [
+                {'nodeType': 'Test Case', 'nodeIdentifier': ident} for ident in ids
+            ]}]}
+        shards.verify_test_ids(report(['Suite/testTwo()', 'Suite/testOne()']), selected)
+        for ids in (['Suite/testOne()', 'Suite/testOther()'],
+                    ['Suite/testOne()', 'Suite/testOne()'], ['Suite/testOne()'],
+                    ['Suite/testOne()', 'Suite/testTwo'], []):
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                shards.verify_test_ids(report(ids), selected)
+        with self.assertRaises(ValueError):
+            shards.verify_test_ids({}, selected)

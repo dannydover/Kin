@@ -6,7 +6,11 @@ final class IndexMembershipUITests: XCTestCase {
         app.launchArguments = ["--kin-test-notebook",UUID().uuidString]; app.launch()
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
     }
-    @MainActor private func inclusion(_ app: XCUIApplication) -> XCUIElement { editorToggle("index-inclusion", in: app) }
+    // Shorter bounded drags reduce overshoot risk for the inclusion row while
+    // the keyboard limits the visible form; the reveal limit is unchanged.
+    @MainActor private func inclusion(_ app: XCUIApplication) -> XCUIElement {
+        editorToggle("index-inclusion", in: app, scrollStep: 120)
+    }
     @MainActor func testDirectSaveWithoutCategoryOpensProfileAndMembershipSurvivesCategoryEditsCancelAndRelaunch() {
         let app = XCUIApplication(); launch(app)
         app.buttons["Add person"].tap()
@@ -93,36 +97,29 @@ final class IndexMembershipUITests: XCTestCase {
         app.terminate()
     }
 
-    @MainActor private func clearSearchFixture() -> XCUIApplication {
-        let app = XCUIApplication(); launch(app)
-        for (name, category) in [("Alex Morgan", ""), ("Jamie Patel", "Friend"), ("Robin Chen", "Family")] {
-            app.buttons["Add person"].tap()
-            let first = app.textFields["First name (optional)"]
-            first.tap(); first.typeText(name)
-            if !category.isEmpty { editorToggle(category,in: app).tap() }
-            app.buttons["Save"].tap()
-            XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
-            app.navigationBars.buttons["People"].tap()
-            XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
+    @MainActor private func clearSearchFixture(usePreview: Bool = false) -> XCUIApplication {
+        let app = XCUIApplication(); addTeardownBlock { app.terminate() }
+        if usePreview {
+            app.launchArguments = ["--kin-preview", "filter-fixture"]
+            app.launch()
+            XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
+            XCTAssertEqual(app.cells.count, 3)
+            return app
         }
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "filter-records"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.cells.count, 3)
         return app
     }
 
     @MainActor private func assertClearSearchRestored(_ app: XCUIApplication) {
         let clear = app.buttons["clear-search-and-filters"]
-        // The failing trace had already restored these values before XCTest
-        // waited on animation notifications at the next menu transition.
-        // Gate the next transition on that exact functional outcome, within
-        // the existing five-second bound. A first-match cell frame is not a
-        // recovery invariant: CI showed the correct restored screen while
-        // that additional geometry condition failed to settle.
-        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            app.navigationBars["People"].exists
-                && app.buttons["category-filter"].value as? String == "All"
-                && app.cells.count == 3 && app.staticTexts["Alex Morgan"].exists
-                && !clear.exists
-        },object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [restored],timeout: 5),.completed)
+        // One transition observation keeps the original five-second bound.
+        // The exact restored screen and record assertions remain below; polling
+        // all five remote properties in one waiter exhausted that bound even
+        // when the retained failure snapshot showed every condition restored.
+        XCTAssertTrue(clear.waitForNonExistence(timeout: 5), "Clear action must leave the no-results screen")
         XCTAssertTrue(app.navigationBars["People"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["category-filter"].value as? String,"All")
         XCTAssertEqual(app.cells.count,3)
@@ -139,8 +136,9 @@ final class IndexMembershipUITests: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
-    @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() {
-        let app = clearSearchFixture(); defer { app.terminate() }
+    @MainActor func testClearSearchRestoresPeopleWithoutChangingRecords() { checkClearSearchRestoresPeople(usePreview: true) }
+    @MainActor private func checkClearSearchRestoresPeople(usePreview: Bool) {
+        let app = clearSearchFixture(usePreview: usePreview)
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         search.tap(); search.typeText("NoSuchFictionalPerson")
@@ -150,8 +148,14 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
+    // The fixture avoids repeating three create-person flows; creation and
+    // persistence have independent UI and integration coverage.
     @MainActor func testClearEmptyCategoryRestoresPeopleWithoutChangingRecords() {
-        let app = clearSearchFixture(); defer { app.terminate() }
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-preview", "filter-fixture"]
+        app.launch(); addTeardownBlock { app.terminate() }
+        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.cells.count, 3)
         let clear = app.buttons["clear-search-and-filters"]
         app.buttons["category-filter"].tap(); app.buttons["Colleague"].tap()
         XCTAssertTrue(app.staticTexts["No people in this category"].exists)
@@ -159,8 +163,10 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
-    @MainActor func testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() {
-        let app = clearSearchFixture(); defer { app.terminate() }
+    @MainActor func testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() { checkClearCombinedSearchAndCategory(usePreview: false) }
+    @MainActor func testPreviewClearCombinedSearchAndCategoryRepeatedlyPreservesPeople() { checkClearCombinedSearchAndCategory(usePreview: true) }
+    @MainActor private func checkClearCombinedSearchAndCategory(usePreview: Bool) {
+        let app = clearSearchFixture(usePreview: usePreview)
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         for _ in 0..<2 {
@@ -174,13 +180,23 @@ final class IndexMembershipUITests: XCTestCase {
         assertClearSearchPreservedCategory(app)
     }
 
-    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() {
-        let app = clearSearchFixture(); defer { app.terminate() }
+    @MainActor func testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords() { checkClearAllPeopleSearch(usePreview: true) }
+    @MainActor private func checkClearAllPeopleSearch(usePreview: Bool) {
+        let app = clearSearchFixture(usePreview: usePreview)
         let clear = app.buttons["clear-search-and-filters"]
         let search = app.searchFields.firstMatch
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
         XCTAssertTrue(app.navigationBars["All people"].waitForExistence(timeout: 5))
-        search.tap(); search.typeText("NoSuchFictionalPerson")
+        search.tap()
+        // Fixed booleans describe the existing activation immediately after the
+        // single tap. No additional gesture, focus assumption, or retry is made.
+        let observation = "keyboardVisible=\(app.keyboards.firstMatch.exists); "
+            + "cancelVisible=\(app.buttons["Cancel"].exists); "
+            + "searchExists=\(search.exists); searchHittable=\(search.isHittable)"
+        let attachment = XCTAttachment(string: observation)
+        attachment.name = "Synthetic All people search activation"
+        attachment.lifetime = .keepAlways; add(attachment)
+        search.typeText("NoSuchFictionalPerson")
         clear.tap(); assertClearSearchRestored(app)
         // Clearing display controls must not change a stored category.
         assertClearSearchPreservedCategory(app)
@@ -189,7 +205,7 @@ final class IndexMembershipUITests: XCTestCase {
     @MainActor func testClearSearchAndFiltersOnEmptyNotebookAtLargestText() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview","empty","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]
-        app.launch(); defer { app.terminate() }
+        app.launch(); addTeardownBlock { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
         app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Alex Morgan")
         XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5))

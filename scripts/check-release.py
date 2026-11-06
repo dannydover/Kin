@@ -6,6 +6,8 @@ import re
 import subprocess
 import sys
 
+DEBUG_PATTERN = rb'--kin-preview|--kin-test-notebook|--kin-ui-fixture|named-friend|filter-records|cancel-standard|cancel-large|long-friend|partner-friends|young-parent-friends|role-label-friends|estimated-age-boundary|estimated-age-largest|estimated-photo|estimated-contact-draft|estimated-contact-photo|--kin-ui-synthetic-contact|--kin-ui-preservation-contacts|synthetic-contact-selection|synthetic-contact-with-photo-selection|syntheticMissingBirthdayWithPhoto|synthetic-preservation-contact-|KinTestNotebooks|DemoFamilies|DevelopmentPreview|SyntheticNotebookFixture'
+
 
 def main():
     app = Path(sys.argv[1])
@@ -27,7 +29,7 @@ def main():
     executable = (app / info['CFBundleExecutable']).read_bytes()
     patterns = {
         'personal build path': rb'/(?:Users|home)/[^/\s]+|/(?:Volumes)/|/var/(?:folders)/',
-        'debug preview code': rb'--kin-preview|--kin-test-notebook|KinTestNotebooks|DemoFamilies|DevelopmentPreview',
+        'debug preview code': DEBUG_PATTERN,
     }
     for label, pattern in patterns.items():
         if re.search(pattern, executable):

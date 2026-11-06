@@ -111,6 +111,26 @@ private final class PartialContact: CNContact {
         #expect(selected?.birthInformation == .exact(CivilDate(year: 1980,month: 1,day: 1)))
         #expect(selected?.firstName == "Synthetic")
     }
+    @Test("Picker payloads preserve the birthday cases used by the preservation journey")
+    func preservationPickerPayloads() {
+        let samples: [(DateComponents?, ContactBirthInformation)] = [
+            (nil, .missing),
+            (DateComponents(month: 3, day: 14), .yearless),
+            (DateComponents(year: 1995, month: 6, day: 23), .exact(CivilDate(year: 1995, month: 6, day: 23)))
+        ]
+        for (birthday, expected) in samples {
+            let contact = CNMutableContact()
+            contact.givenName = "Synthetic Preservation"
+            contact.birthday = birthday
+            var selected: ContactSnapshot?
+            let picker = ContactPicker(onSelect: { selected = $0 }, onCancel: {})
+            let coordinator = picker.makeCoordinator()
+            coordinator.contactPicker(CNContactPickerViewController(), didSelect: contact)
+            coordinator.pickerDidDismiss()
+            #expect(selected?.firstName == "Synthetic Preservation")
+            #expect(selected?.birthInformation == expected)
+        }
+    }
     @Test("Ineligible Contacts photo never persists through relaunch", arguments: [Birthday.unknown,.exact(CivilDate(year: 2020,month: 1,day: 1)),.estimated(age: 17,referenceDate: CivilDate(year: 2026,month: 10,day: 15))])
     func blockedPersistence(birthday: Birthday) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

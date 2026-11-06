@@ -2,11 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     let store: KinStore
-    private enum PeopleScope { case yours, all }
-    @State private var scope = PeopleScope.yours
-    @State private var query = ""
-    @State private var searching = false
-    @State private var category: Connection?
+    @State private var filter = PeopleFilterState()
     @State private var adding = false
     @State private var path: [UUID] = []
     @State private var savedPersonID: UUID?
@@ -14,19 +10,19 @@ struct ContentView: View {
     @State private var deletingAll = false
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
-    private var hits: [Person] { PeopleIndex.results(store.people, query: query, includeUnlisted: scope == .all, category: category) }
-    private var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var hits: [Person] { filter.results(store.people) }
+    private var isSearching: Bool { filter.isSearching }
     var body: some View {
         NavigationStack(path: $path) {
             Group {
                 if hits.isEmpty {
                     if isSearching { noMatches }
-                    else if category != nil { emptyCategory }
+                    else if filter.category != nil { emptyCategory }
                     else { emptyState }
                 } else {
                     List(hits) { person in
                         NavigationLink(value: person.id) {
-                            if scope == .yours { FamilyIndexRow(person: person, store: store, today: today) }
+                            if filter.scope == .yours { FamilyIndexRow(person: person, store: store, today: today) }
                             else { PersonRow(person: person, today: today, showsAge: false) }
                         }
                         .listRowBackground(KinTheme.background)
@@ -34,19 +30,19 @@ struct ContentView: View {
                     }.listStyle(.plain)
                 }
             }
-            .kinForm().navigationTitle(scope == .yours ? "People" : "All people").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, isPresented: $searching, prompt: scope == .yours ? "Find people" : "Find all people")
+            .kinForm().navigationTitle(filter.scope == .yours ? "People" : "All people").navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $filter.query, isPresented: $filter.searching, prompt: filter.scope == .yours ? "Find people" : "Find all people")
             .safeAreaInset(edge: .top, spacing: 0) { categoryFilter }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
-                        Button("People", systemImage: scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
-                        Button("All people", systemImage: scope == .all ? "checkmark" : "person.3") { switchScope(.all) }
+                        Button("People", systemImage: filter.scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
+                        Button("All people", systemImage: filter.scope == .all ? "checkmark" : "person.3") { switchScope(.all) }
                         Button("About", systemImage: "info.circle") { showingAbout = true }
                         Button("Delete all people", systemImage: "trash", role: .destructive) { deletingAll = true }
                     } label: { Image(systemName: "line.3.horizontal") }
                     .accessibilityLabel("Navigation menu")
-                    .accessibilityHint(scope == .yours ? "Showing People" : "Showing All people")
+                    .accessibilityHint(filter.scope == .yours ? "Showing People" : "Showing All people")
                     .accessibilityIdentifier("people-menu")
                 }
                 ToolbarItem(placement: .primaryAction) { Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add person") }
@@ -62,7 +58,7 @@ struct ContentView: View {
             .sheet(isPresented: $deletingAll) {
                 NavigationStack {
                     DeleteAllPeopleView(store: store) {
-                        path = []; query = ""; category = nil; scope = .yours; deletingAll = false
+                        path = []; filter.switchScope(.yours); deletingAll = false
                     }
                 }
             }
@@ -71,22 +67,22 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in today = Date() }
         }.notebookAvailability(store)
     }
-    private func switchScope(_ selection: PeopleScope) { scope = selection; query = ""; category = nil }
+    private func switchScope(_ selection: PeopleFilterState.Scope) { filter.switchScope(selection) }
     private var categoryFilter: some View {
         Menu {
-            Button("All", systemImage: category == nil ? "checkmark" : "person.2") { category = nil }
-                .accessibilityAddTraits(category == nil ? .isSelected : [])
+            Button("All", systemImage: filter.category == nil ? "checkmark" : "person.2") { filter.category = nil }
+                .accessibilityAddTraits(filter.category == nil ? .isSelected : [])
             ForEach(Connection.allCases) { connection in
-                Button(connection.rawValue.capitalized, systemImage: category == connection ? "checkmark" : "person") { category = connection }
-                    .accessibilityAddTraits(category == connection ? .isSelected : [])
+                Button(connection.rawValue.capitalized, systemImage: filter.category == connection ? "checkmark" : "person") { filter.category = connection }
+                    .accessibilityAddTraits(filter.category == connection ? .isSelected : [])
             }
         } label: {
-            Label(category?.rawValue.capitalized ?? "All", systemImage: "line.3.horizontal.decrease")
+            Label(filter.category?.rawValue.capitalized ?? "All", systemImage: "line.3.horizontal.decrease")
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .padding(.horizontal)
         }
         .accessibilityLabel("Category filter")
-        .accessibilityValue(category?.rawValue.capitalized ?? "All")
+        .accessibilityValue(filter.category?.rawValue.capitalized ?? "All")
         .accessibilityIdentifier("category-filter")
         .background(KinTheme.background)
     }
@@ -128,7 +124,7 @@ struct ContentView: View {
     private var noMatches: some View {
         filteredEmptyState(title: Text("No matches"), image: "magnifyingglass",
             explanation: Text("Try another name, such as Alex Morgan. Tap \(FeatureReference.clearSearchAndFilters) to return to the \(FeatureReference.people) screen."),
-            offersAllPeople: scope == .yours)
+            offersAllPeople: filter.scope == .yours)
     }
     private func filteredEmptyState(title: Text, image: String, explanation: Text,
                                     offersAllPeople: Bool = false) -> some View {
@@ -142,7 +138,7 @@ struct ContentView: View {
                     title.font(.title2.bold()).accessibilityAddTraits(.isHeader)
                     explanation.foregroundStyle(.secondary)
                         .accessibilityIdentifier("filtered-empty-explanation")
-                    if offersAllPeople { Button("Search all people") { scope = .all } }
+                    if offersAllPeople { Button("Search all people") { filter.scope = .all } }
                 }
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -156,7 +152,7 @@ struct ContentView: View {
     }
     private var clearSearchAndFiltersButton: some View {
         Button {
-            query = ""; category = nil; scope = .yours; searching = false
+            filter.clearSearchAndFilters()
         } label: {
             Text("Clear search and filters").fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, minHeight: 44)

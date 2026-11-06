@@ -86,9 +86,34 @@ struct PersonEditor: View {
                         } onCancel: { pendingContact = nil; pickingContact = false }
                     }
                 } else {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--kin-ui-preservation-contacts") {
+                        VStack {
+                            ForEach(0..<4) { index in
+                                Button("Use synthetic contact \(index)") {
+                                    let birth: ContactBirthInformation = index == 1 ? .yearless : index == 3 ? .exact(CivilDate(year: 1995, month: 6, day: 23)) : .missing
+                                    pendingContact = ContactSnapshot(firstName: "Kin Synthetic Keep \(index)", lastName: "", birthInformation: birth)
+                                }.accessibilityIdentifier("synthetic-preservation-contact-\(index)")
+                            }
+                        }
+                    } else if ProcessInfo.processInfo.arguments.contains("--kin-ui-synthetic-contact-with-photo") {
+                        Button("Use synthetic contact with photo") {
+                            pendingContact = ContactSnapshot.syntheticMissingBirthdayWithPhoto()
+                        }.accessibilityIdentifier("synthetic-contact-with-photo-selection")
+                    } else if ProcessInfo.processInfo.arguments.contains("--kin-ui-synthetic-contact") {
+                        Button("Use synthetic contact") {
+                            pendingContact = ContactSnapshot(firstName: "John", lastName: "Appleseed")
+                        }.accessibilityIdentifier("synthetic-contact-selection")
+                    } else {
+                        ContactPicker { snapshot in
+                            pendingContact = snapshot
+                        } onCancel: { pickingContact = false }
+                    }
+                    #else
                     ContactPicker { snapshot in
                         pendingContact = snapshot
                     } onCancel: { pickingContact = false }
+                    #endif
                 }
             }.interactiveDismissDisabled()
         }

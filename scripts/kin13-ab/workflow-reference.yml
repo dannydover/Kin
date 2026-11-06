@@ -1,0 +1,406 @@
+name: Kin 1.3 fixed-product toolchain comparison
+on:
+  pull_request:
+    types: [synchronize]
+permissions:
+  contents: read
+concurrency:
+  group: kin13-fixed-product-comparison-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  kickoff:
+    if: github.event.pull_request.number == 58
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.marker.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - id: marker
+        shell: bash
+        run: |
+          if [ "$(git log -1 --format=%s)" = 'Run one fixed-product Xcode comparison [kin13-ab-once]' ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          fi
+  await_required_ci:
+    needs: kickoff
+    if: needs.kickoff.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - name: Wait for the ordinary PR run without changing its conclusion
+        env:
+          KIN_AB_CONTROL_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 control/scripts/kin13-ab/control.py waitci "$KIN_AB_CONTROL_HEAD"
+  build:
+    needs: [kickoff, await_required_ci]
+    if: needs.kickoff.outputs.enabled == 'true' && needs.await_required_ci.result == 'success'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+      product_sha: ${{ steps.build.outputs.product_sha }}
+      manifest_sha: ${{ steps.build.outputs.manifest_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 022e405fe6d301df9b2e4c936f91f32065ba996d
+          path: source
+          persist-credentials: false
+      - name: Build one immutable unsigned test product
+        id: build
+        shell: bash
+        working-directory: source
+        run: |
+          test "$(git rev-parse HEAD)" = 022e405fe6d301df9b2e4c936f91f32065ba996d
+          test -z "$(git status --porcelain)"
+          KIN_AB_IMAGE=$(python3 ../control/scripts/kin13-ab/control.py image)
+          python3 ../control/scripts/kin13-ab/control.py env 27.0 "$KIN_AB_IMAGE"
+          python3 -m unittest discover -s ../control/scripts/kin13-ab -p 'test_*.py' -v
+          echo "KIN_AB_BUILD status=start elapsed=$SECONDS"
+          xcodebuild -project Kin.xcodeproj -scheme Kin -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0' -derivedDataPath "$RUNNER_TEMP/KinABBuild" build-for-testing CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/kin-ab-build-private.log" 2>&1
+          echo "KIN_AB_BUILD status=complete elapsed=$SECONDS"
+          test -z "$(git status --porcelain)"
+          python3 ../control/scripts/kin13-ab/product_path.py "$RUNNER_TEMP/KinABBuild/Build/Products" > /dev/null
+          python3 ../control/scripts/kin13-ab/product_manifest.py create "$RUNNER_TEMP/KinABBuild/Build/Products" > "$RUNNER_TEMP/KinAB-products.json"
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/KinABBuild/Build/Products" "$RUNNER_TEMP/Products.zip"
+          PRODUCT_SHA=$(shasum -a 256 "$RUNNER_TEMP/Products.zip" | awk '{print $1}')
+          python3 ../control/scripts/kin13-ab/control.py product "$RUNNER_TEMP/Products.zip" "$PRODUCT_SHA"
+          MANIFEST_SHA=$(shasum -a 256 "$RUNNER_TEMP/KinAB-products.json" | awk '{print $1}')
+          echo "manifest_sha=$MANIFEST_SHA" >> "$GITHUB_OUTPUT"
+          echo "image=$KIN_AB_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "product_sha=$PRODUCT_SHA" >> "$GITHUB_OUTPUT"
+          echo "KIN_AB_BUILD source=022e405fe6d301df9b2e4c936f91f32065ba996d product_sha256=$PRODUCT_SHA image=$KIN_AB_IMAGE"
+      - name: Retain fixed unsigned test products
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-ab-products
+          path: |
+            ${{ runner.temp }}/Products.zip
+            ${{ runner.temp }}/KinAB-products.json
+          retention-days: 7
+          if-no-files-found: error
+  preflight270:
+    needs: [build]
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 022e405fe6d301df9b2e4c936f91f32065ba996d
+          path: source
+          persist-credentials: false
+      - name: Verify immutable source
+        shell: bash
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = 022e405fe6d301df9b2e4c936f91f32065ba996d && test -z "$(git status --porcelain)"
+      - uses: ./control/scripts/kin13-ab/actions/preflight
+        with:
+          toolchain: '27.0'
+          image: ${{ needs.build.outputs.image }}
+          product_sha: ${{ needs.build.outputs.product_sha }}
+          manifest_sha: ${{ needs.build.outputs.manifest_sha }}
+  preflight271:
+    needs: [build, preflight270]
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 022e405fe6d301df9b2e4c936f91f32065ba996d
+          path: source
+          persist-credentials: false
+      - name: Verify immutable source
+        shell: bash
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = 022e405fe6d301df9b2e4c936f91f32065ba996d && test -z "$(git status --porcelain)"
+      - uses: ./control/scripts/kin13-ab/actions/preflight
+        with:
+          toolchain: '27.1'
+          image: ${{ needs.build.outputs.image }}
+          product_sha: ${{ needs.build.outputs.product_sha }}
+          manifest_sha: ${{ needs.build.outputs.manifest_sha }}
+  arm1:
+    needs: [build, preflight271]
+    if: always() && needs.build.result == 'success' && needs.preflight271.result == 'success'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [unit, ui-0, ui-1, ui-2, ui-3]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_CI_ORDER: standard
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 022e405fe6d301df9b2e4c936f91f32065ba996d
+          path: source
+          persist-credentials: false
+      - name: Verify immutable source
+        shell: bash
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = 022e405fe6d301df9b2e4c936f91f32065ba996d && test -z "$(git status --porcelain)"
+      - uses: ./control/scripts/kin13-ab/actions/arm
+        with:
+          arm: arm1
+          group: ${{ matrix.shard }}
+          toolchain: '27.0'
+          image: ${{ needs.build.outputs.image }}
+          product_sha: ${{ needs.build.outputs.product_sha }}
+          manifest_sha: ${{ needs.build.outputs.manifest_sha }}
+  gate1:
+    name: Compare controls and retain failures (arm 1)
+    needs: [build, arm1]
+    if: always() && needs.build.result == 'success' && needs.arm1.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      unit_ids: ${{ steps.compare.outputs.unit_ids }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kin-ab-status-arm1-*
+          path: statuses
+      - name: Verify comparable controls without changing test conclusions
+        id: compare
+        env:
+          KIN_AB_STATUSES: statuses
+          KIN_AB_ARM: arm1
+          KIN_AB_TOOLCHAIN: '27.0'
+          KIN_AB_IMAGE: ${{ needs.build.outputs.image }}
+          KIN_AB_PRODUCT_SHA: ${{ needs.build.outputs.product_sha }}
+          KIN_AB_MANIFEST_SHA: ${{ needs.build.outputs.manifest_sha }}
+          KIN_AB_UNIT_IDS: ''
+        run: python3 control/scripts/kin13-ab/control.py gate
+  arm2:
+    needs: [build, gate1]
+    if: always() && needs.build.result == 'success' && needs.gate1.result == 'success'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [unit, ui-0, ui-1, ui-2, ui-3]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      KIN_CI_ORDER: standard
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 022e405fe6d301df9b2e4c936f91f32065ba996d
+          path: source
+          persist-credentials: false
+      - name: Verify immutable source
+        shell: bash
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = 022e405fe6d301df9b2e4c936f91f32065ba996d && test -z "$(git status --porcelain)"
+      - uses: ./control/scripts/kin13-ab/actions/arm
+        with:
+          arm: arm2
+          group: ${{ matrix.shard }}
+          toolchain: '27.1'
+          image: ${{ needs.build.outputs.image }}
+          product_sha: ${{ needs.build.outputs.product_sha }}
+          manifest_sha: ${{ needs.build.outputs.manifest_sha }}
+  gate2:
+    name: Compare controls and retain failures (arm 2)
+    needs: [build, arm2, gate1]
+    if: always() && needs.build.result == 'success' && needs.arm2.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      unit_ids: ${{ steps.compare.outputs.unit_ids }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kin-ab-status-arm2-*
+          path: statuses
+      - name: Verify comparable controls without changing test conclusions
+        id: compare
+        env:
+          KIN_AB_STATUSES: statuses
+          KIN_AB_ARM: arm2
+          KIN_AB_TOOLCHAIN: '27.1'
+          KIN_AB_IMAGE: ${{ needs.build.outputs.image }}
+          KIN_AB_PRODUCT_SHA: ${{ needs.build.outputs.product_sha }}
+          KIN_AB_MANIFEST_SHA: ${{ needs.build.outputs.manifest_sha }}
+          KIN_AB_UNIT_IDS: '${{ needs.gate1.outputs.unit_ids }}'
+        run: python3 control/scripts/kin13-ab/control.py gate
+  arm3:
+    needs: [build, gate2]
+    if: always() && needs.build.result == 'success' && needs.gate2.result == 'success'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [unit, ui-0, ui-1, ui-2, ui-3]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_CI_ORDER: standard
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 022e405fe6d301df9b2e4c936f91f32065ba996d
+          path: source
+          persist-credentials: false
+      - name: Verify immutable source
+        shell: bash
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = 022e405fe6d301df9b2e4c936f91f32065ba996d && test -z "$(git status --porcelain)"
+      - uses: ./control/scripts/kin13-ab/actions/arm
+        with:
+          arm: arm3
+          group: ${{ matrix.shard }}
+          toolchain: '27.0'
+          image: ${{ needs.build.outputs.image }}
+          product_sha: ${{ needs.build.outputs.product_sha }}
+          manifest_sha: ${{ needs.build.outputs.manifest_sha }}
+  gate3:
+    name: Compare controls and retain failures (arm 3)
+    needs: [build, arm3, gate1]
+    if: always() && needs.build.result == 'success' && needs.arm3.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      unit_ids: ${{ steps.compare.outputs.unit_ids }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kin-ab-status-arm3-*
+          path: statuses
+      - name: Verify comparable controls without changing test conclusions
+        id: compare
+        env:
+          KIN_AB_STATUSES: statuses
+          KIN_AB_ARM: arm3
+          KIN_AB_TOOLCHAIN: '27.0'
+          KIN_AB_IMAGE: ${{ needs.build.outputs.image }}
+          KIN_AB_PRODUCT_SHA: ${{ needs.build.outputs.product_sha }}
+          KIN_AB_MANIFEST_SHA: ${{ needs.build.outputs.manifest_sha }}
+          KIN_AB_UNIT_IDS: '${{ needs.gate1.outputs.unit_ids }}'
+        run: python3 control/scripts/kin13-ab/control.py gate
+  arm4:
+    needs: [build, gate3]
+    if: always() && needs.build.result == 'success' && needs.gate3.result == 'success'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [unit, ui-0, ui-1, ui-2, ui-3]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      KIN_CI_ORDER: standard
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 022e405fe6d301df9b2e4c936f91f32065ba996d
+          path: source
+          persist-credentials: false
+      - name: Verify immutable source
+        shell: bash
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = 022e405fe6d301df9b2e4c936f91f32065ba996d && test -z "$(git status --porcelain)"
+      - uses: ./control/scripts/kin13-ab/actions/arm
+        with:
+          arm: arm4
+          group: ${{ matrix.shard }}
+          toolchain: '27.1'
+          image: ${{ needs.build.outputs.image }}
+          product_sha: ${{ needs.build.outputs.product_sha }}
+          manifest_sha: ${{ needs.build.outputs.manifest_sha }}
+  gate4:
+    name: Compare controls and retain failures (arm 4)
+    needs: [build, arm4, gate1]
+    if: always() && needs.build.result == 'success' && needs.arm4.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      unit_ids: ${{ steps.compare.outputs.unit_ids }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kin-ab-status-arm4-*
+          path: statuses
+      - name: Verify comparable controls without changing test conclusions
+        id: compare
+        env:
+          KIN_AB_STATUSES: statuses
+          KIN_AB_ARM: arm4
+          KIN_AB_TOOLCHAIN: '27.1'
+          KIN_AB_IMAGE: ${{ needs.build.outputs.image }}
+          KIN_AB_PRODUCT_SHA: ${{ needs.build.outputs.product_sha }}
+          KIN_AB_MANIFEST_SHA: ${{ needs.build.outputs.manifest_sha }}
+          KIN_AB_UNIT_IDS: '${{ needs.gate1.outputs.unit_ids }}'
+        run: python3 control/scripts/kin13-ab/control.py gate

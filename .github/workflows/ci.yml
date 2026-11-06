@@ -2,7 +2,9 @@ name: Build and test
 on:
   pull_request:
   push:
-    branches: [main]
+    # Two standard and one randomized, first-attempt trials can point at the
+    # exact reviewed commit. These branches run the same required jobs.
+    branches: [main, diagnostic/kin13-trial-standard-a, diagnostic/kin13-trial-standard-b, diagnostic/kin13-trial-random]
 permissions:
   contents: read
 concurrency:
@@ -37,15 +39,12 @@ jobs:
           python3 scripts/check-repository.py
       - name: Core tests
         run: scripts/test-core.sh
-  simulator-tests:
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [unit, ui-0, ui-1, ui-2]
+  ios-tests:
     runs-on: xcode-27
     timeout-minutes: 50
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_CI_ORDER: ${{ github.ref == 'refs/heads/diagnostic/kin13-trial-random' && 'random' || 'standard' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,27 +57,33 @@ jobs:
           test "$(uname -m)" = arm64
       - name: Create isolated iOS 27 simulator
         run: |
+          echo "KIN_CI_SETUP stage=create status=start elapsed=$SECONDS"
           KIN_CI_SIMULATOR=$(xcrun simctl create "Kin CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
           echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
           export KIN_CI_SIMULATOR
+          echo "KIN_CI_SETUP stage=create status=complete elapsed=$SECONDS"
+          echo "KIN_CI_SETUP stage=boot status=start elapsed=$SECONDS"
           xcrun simctl boot "$KIN_CI_SIMULATOR"
+          echo "KIN_CI_SETUP stage=boot-command status=complete elapsed=$SECONDS"
+          echo "KIN_CI_SETUP stage=boot-readiness status=start elapsed=$SECONDS"
           xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
-          # Only the UI test runner seeds synthetic Contacts; Kin itself retains
-          # selection-only picker access without an address-book permission.
-          if [ "${{ matrix.shard }}" != "unit" ]; then
-            python3 scripts/ci-simulator.py grant
-          fi
-          python3 scripts/create-simulator-photo.py "$RUNNER_TEMP/KinSyntheticPhoto.png"
-          xcrun simctl addmedia "$KIN_CI_SIMULATOR" "$RUNNER_TEMP/KinSyntheticPhoto.png"
-      - name: Unit, integration, and UI regression suite (iOS 27)
+          echo "KIN_CI_SETUP stage=boot-readiness status=complete elapsed=$SECONDS"
+          echo "KIN_CI_SETUP stage=boot status=complete elapsed=$SECONDS"
+      - name: Complete iOS unit and integration suite (iOS 27)
         timeout-minutes: 45
-        run: python3 scripts/ci-observe.py "${{ matrix.shard }}"
+        run: python3 scripts/ci-observe.py "unit"
       - name: Require finalized results with full fixture coverage
         if: always()
         run: |
+          if [ ! -d "$RUNNER_TEMP/KinTests.xcresult" ]; then
+            echo "Finalized test results are unavailable; validation failed." >&2
+            exit 1
+          fi
           xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
-          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
-          python3 scripts/ci-test-shards.py "${{ matrix.shard }}" "$RUNNER_TEMP/KinTests-summary.json"
+          validation_status=0
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json" || validation_status=1
+          python3 scripts/ci-test-shards.py unit "$RUNNER_TEMP/KinTests-summary.json" || validation_status=1
+          exit "$validation_status"
       - name: Package synthetic progress and finalized result
         if: always()
         run: python3 scripts/ci-retain.py
@@ -86,7 +91,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kin-tests-${{ matrix.shard }}
+          name: kin-tests-unit
           path: ${{ runner.temp }}/KinCI-retained/
           retention-days: 7
           if-no-files-found: error
@@ -97,13 +102,39 @@ jobs:
             python3 scripts/ci-simulator.py cleanup
           fi
       - name: Retain synthetic cleanup outcome
-        if: always()
+        id: cleanup_upload
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: kin-cleanup-${{ matrix.shard }}
+          name: kin-cleanup-unit
           path: ${{ runner.temp }}/KinTests-cleanup.json
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
+      - name: Retry cleanup record upload once
+        id: cleanup_upload_retry
+        if: always() && env.KIN_CI_SIMULATOR != '' && steps.cleanup_upload.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-cleanup-retry-unit
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Require retained simulator cleanup record
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        env:
+          FIRST_OUTCOME: ${{ steps.cleanup_upload.outcome }}
+          RETRY_OUTCOME: ${{ steps.cleanup_upload_retry.outcome }}
+        run: |
+          if [ "$FIRST_OUTCOME" = success ]; then
+            echo "Cleanup record retained on first attempt."
+          elif [ "$FIRST_OUTCOME" = failure ] && [ "$RETRY_OUTCOME" = success ]; then
+            echo "::warning::Cleanup record retained on the second upload attempt; the first attempt failed."
+          else
+            echo "::error::Simulator cleanup record was not retained."
+            exit 1
+          fi
   release-validation:
     runs-on: xcode-27
     timeout-minutes: 30
@@ -132,10 +163,97 @@ jobs:
           STRIP_INSTALLED_PRODUCT=YES STRIP_STYLE=debugging
       - name: Validate simulator Release app
         run: python3 scripts/check-release.py DerivedData/Build/Products/Release-iphonesimulator/Kin.app
+  # Essential UI journeys; broad UI shards remain independently visible.
+  candidate-smoke:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_CI_ORDER: ${{ github.ref == 'refs/heads/diagnostic/kin13-trial-random' && 'random' || 'standard' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify test toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
+      - name: Create isolated iOS 27 simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin smoke ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+      - name: Run proposed UI smoke
+        timeout-minutes: 45
+        run: python3 scripts/ci-observe.py smoke
+      - name: Require finalized exact smoke results
+        if: always()
+        run: |
+          test -d "$RUNNER_TEMP/KinTests.xcresult"
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+          result=0
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json" || result=1
+          python3 scripts/ci-test-shards.py smoke "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json" || result=1
+          exit "$result"
+      - name: Package synthetic progress and result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - name: Retain synthetic progress and result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-tests-candidate-smoke
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove this run's isolated simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
+            python3 scripts/ci-simulator.py cleanup
+          fi
+      - name: Retain synthetic cleanup outcome
+        id: cleanup_upload
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-cleanup-candidate-smoke
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Retry cleanup record upload once
+        id: cleanup_upload_retry
+        if: always() && env.KIN_CI_SIMULATOR != '' && steps.cleanup_upload.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: kin-cleanup-retry-candidate-smoke
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Require retained simulator cleanup record
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        env:
+          FIRST_OUTCOME: ${{ steps.cleanup_upload.outcome }}
+          RETRY_OUTCOME: ${{ steps.cleanup_upload_retry.outcome }}
+        run: |
+          if [ "$FIRST_OUTCOME" = success ]; then
+            echo "Cleanup record retained on first attempt."
+          elif [ "$FIRST_OUTCOME" = failure ] && [ "$RETRY_OUTCOME" = success ]; then
+            echo "::warning::Cleanup record retained on the second upload attempt."
+          else
+            echo "::error::Simulator cleanup record was not retained."
+            exit 1
+          fi
   # Keep the existing required check, and require every independent job to finish.
   # Completed assertions alone never turn a hung/cancelled xcodebuild into success.
   validate:
-    needs: [core-validation, simulator-tests, release-validation]
+    needs: [core-validation, ios-tests, candidate-smoke, release-validation]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -143,5 +261,7 @@ jobs:
       - name: Require all validation jobs
         run: |
           test "${{ needs.core-validation.result }}" = success
-          test "${{ needs.simulator-tests.result }}" = success
+          test "${{ needs.ios-tests.result }}" = success
+          test "${{ needs.candidate-smoke.result }}" = success
           test "${{ needs.release-validation.result }}" = success
+

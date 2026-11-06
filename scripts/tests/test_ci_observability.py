@@ -1,8 +1,207 @@
-import importlib.util, json, os, pathlib, subprocess, sys, tempfile, unittest, zipfile
+import importlib.util, json, os, pathlib, re, subprocess, sys, tempfile, unittest, zipfile
+from unittest.mock import patch
+import xml.etree.ElementTree as ET
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 def load(name):
     spec=importlib.util.spec_from_file_location('observe',ROOT/'scripts'/name); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 class ObservabilityTests(unittest.TestCase):
+    def test_smoke_does_not_require_contacts_and_keeps_full_suite_checks(self):
+        observer = load('ci-observe.py')
+        self.assertFalse(observer.requires_contact_authorization('smoke'))
+        self.assertTrue(observer.requires_contact_authorization('ui-0'))
+        self.assertTrue(observer.requires_contact_authorization('ui-3'))
+        self.assertFalse(set(observer.shards.selections('smoke')) & set(observer.CLEANUP_SCOPES))
+
+    def test_unit_order_records_only_fixed_test_names_without_values(self):
+        observer = load('ci-observe.py')
+        line = '◇ Test "Reviewed adult photo survives saving and reopening without another Contacts read" started.'
+        self.assertEqual(observer.parse(line, {'KinTests'}), {'kind':'unit_order','id':'photo-reopen','event':'started'})
+        self.assertIsNone(observer.parse(line, {'KinUITests/Example/testA'}))
+        self.assertIsNone(observer.parse('◇ Test "Private synthetic value" started.', {'KinTests'}))
+        self.assertIsNone(observer.parse('◇ Test case passing 1 argument "private" started.', {'KinTests'}))
+
+    def test_progress_flushes_actions_and_syncs_critical_records(self):
+        observer = load('ci-observe.py')
+        with tempfile.TemporaryDirectory() as root:
+            path = pathlib.Path(root) / 'progress.jsonl'
+            with path.open('w') as out, patch.object(observer.os, 'fsync') as sync:
+                observer.append(out, {'kind': 'action', 'stage': 'exists'})
+                self.assertEqual(json.loads(path.read_text())['stage'], 'exists')
+                sync.assert_not_called()
+                observer.append(out, {'kind': 'test', 'event': 'failed'})
+                observer.append(out, {'kind': 'heartbeat', 'elapsed': 1})
+                observer.append(out, {'kind': 'contact_cleanup', 'status': 'verified'})
+                observer.append(out, {'kind': 'exit', 'code': 65})
+                self.assertEqual(sync.call_count, 4)
+
+    def test_flushed_action_survives_terminated_writer(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = pathlib.Path(root) / 'progress.jsonl'
+            child_code = '''
+import importlib.util, pathlib, sys, time
+spec=importlib.util.spec_from_file_location("observer","scripts/ci-observe.py"); m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+out=pathlib.Path(sys.argv[1]).open("w"); m.append(out,{"kind":"action","stage":"exists"})
+print("ready",flush=True); time.sleep(30)
+'''
+            child = subprocess.Popen([sys.executable, '-c', child_code, str(path)], cwd=ROOT,
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            try:
+                import select
+                readable, _, _ = select.select([child.stdout], [], [], 5)
+                self.assertTrue(readable, 'writer did not flush')
+                self.assertEqual(child.stdout.readline().strip(), 'ready')
+            finally:
+                child.kill()
+                child.wait(timeout=3)
+                child.stdout.close()
+            self.assertEqual(json.loads(path.read_text()), {'kind': 'action', 'stage': 'exists'})
+
+    def test_real_contact_fixture_journeys_keep_distinct_required_cleanup_scopes(self):
+        observer = load('ci-observe.py')
+        required = {
+            'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForAdult': 'native-adult',
+            'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportForMinor': 'native-minor',
+            'KinUITests/KinUITests/testMissingBirthdayReviewCancelWithSavedPhoto': 'missing-birthday-review-cancel',
+            'KinUITests/KinUITests/testMissingBirthdayUnknownCancelWithSavedPhoto': 'missing-birthday-unknown-cancel',
+            'KinUITests/KinUITests/testRealPhotoContactEstimatedImportAndRelaunch': 'missing-birthday-real-photo-save',
+        }
+        discovered = set(observer.shards.discover())
+        self.assertTrue(set(required).issubset(discovered))
+        for ident, scope in required.items():
+            self.assertEqual(observer.CLEANUP_SCOPES.get(ident), scope)
+        self.assertEqual(len(set(required.values())), len(required))
+
+    def test_split_missing_birthday_cleanup_markers_are_allowlisted(self):
+        observer = load('ci-observe.py')
+        for scope in ('missing-birthday-review-cancel', 'missing-birthday-unknown-cancel',
+                      'missing-birthday-real-photo-save'):
+            self.assertEqual(observer.parse(f'KIN_CI_CONTACT_CLEANUP {scope} verified PRIVATE', set()),
+                             {'kind': 'contact_cleanup', 'scope': scope, 'status': 'verified'})
+
+    def test_both_native_cleanup_markers_are_required_independently(self):
+        observer = load('ci-observe.py')
+        for kind in ('adult', 'minor'):
+            scope = 'native-' + kind
+            parsed = observer.parse(f'KIN_CI_CONTACT_CLEANUP {scope} verified PRIVATE', set())
+            self.assertEqual(parsed, {'kind': 'contact_cleanup', 'scope': scope, 'status': 'verified'})
+            ident = 'KinUITests/NativeContactsTests/testNativeFullBirthdayAndPhotoImportFor' + kind.capitalize()
+            self.assertEqual(observer.CLEANUP_SCOPES[ident], scope)
+        self.assertIsNone(observer.parse('KIN_CI_CONTACT_CLEANUP native-full verified', set()))
+
+    def test_split_cleanup_rejects_each_missing_or_duplicate_scope(self):
+        observer = load('ci-observe.py')
+        with tempfile.TemporaryDirectory() as d:
+            fake = pathlib.Path(d) / 'xcodebuild'
+            env = dict(os.environ, PATH=d + ':' + os.environ['PATH'], RUNNER_TEMP=d, KIN_CI_SIMULATOR='synthetic')
+            for group in observer.shards.GROUPS[1:]:
+                scopes = sorted(observer.CLEANUP_SCOPES[i] for i in observer.shards.selections(group) if i in observer.CLEANUP_SCOPES)
+                for scope in scopes:
+                    for markers in ([s for s in scopes if s != scope], scopes + [scope]):
+                        fake.write_text('#!/bin/sh\necho "KIN_CI_AUTH authorized"\n' + ''.join(
+                            f'echo "KIN_CI_CONTACT_CLEANUP {item} verified"\n' for item in markers) + 'exit 0\n')
+                        fake.chmod(0o755)
+                        result = subprocess.run([sys.executable, str(ROOT/'scripts/ci-observe.py'), group],
+                                                cwd=ROOT, env=env, capture_output=True, text=True)
+                        self.assertNotEqual(result.returncode, 0, (group, scope, markers))
+
+    def test_release_guard_rejects_synthetic_contacts_adapter_markers(self):
+        release = load('check-release.py')
+        for marker in (b'--kin-ui-fixture', b'SyntheticNotebookFixture', b'named-friend', b'filter-records', b'cancel-standard', b'cancel-large', b'long-friend', b'partner-friends', b'young-parent-friends', b'role-label-friends', b'estimated-age-boundary', b'estimated-age-largest', b'estimated-photo', b'estimated-contact-draft', b'estimated-contact-photo', b'--kin-ui-synthetic-contact', b'synthetic-contact-selection', b'--kin-ui-synthetic-contact-with-photo', b'synthetic-contact-with-photo-selection', b'syntheticMissingBirthdayWithPhoto', b'--kin-ui-preservation-contacts', b'synthetic-preservation-contact-'):
+            self.assertIsNotNone(re.search(release.DEBUG_PATTERN, marker))
+
+    def test_coverage_map_accounts_for_every_current_ui_method(self):
+        shards = load('ci-test-shards.py')
+        document = (ROOT / 'scripts/kin13-coverage-map.md').read_text()
+        entries = re.findall(r'^\| `([A-Za-z0-9_]+)\.(test[A-Za-z0-9_]+)` \|', document, re.MULTILINE)
+        self.assertEqual(len(entries), len(set(entries)))
+        mapped = {f'KinUITests/{klass}/{method}' for klass, method in entries}
+        self.assertTrue(set(shards.discover()).issubset(mapped), 'Every current UI method needs a coverage-map row')
+
+    def test_order_comparison_requires_exact_identities_and_real_change(self):
+        m=load('ci-compare-order.py')
+        expected={'ui-0':['a','b','c'],'ui-1':['d','e']}
+        before={'ui-0':['a','b','c'],'ui-1':['d','e']}
+        self.assertEqual(m.compare(before,{'ui-0':['b','a','c'],'ui-1':['d','e']},expected),['ui-0'])
+        with self.assertRaises(ValueError):m.compare(before,before,expected)
+        with self.assertRaises(ValueError):m.compare(before,{'ui-0':['a','a','c'],'ui-1':['d','e']},expected)
+        with self.assertRaises(ValueError):m.compare(before,{'ui-0':['a','b','c']},expected)
+
+    def test_smoke_order_cli_rejects_unchanged_and_missing_starts(self):
+        shards = load('ci-test-shards.py')
+        identities = shards.selections('smoke')
+        with tempfile.TemporaryDirectory() as directory:
+            left = pathlib.Path(directory) / 'left'; right = pathlib.Path(directory) / 'right'
+            left.mkdir(); right.mkdir()
+            def write(path, values):
+                (path / 'smoke.jsonl').write_text(''.join(json.dumps({'kind':'test','event':'started','id':v})+'\n' for v in values))
+            def compare():
+                return subprocess.run([sys.executable, str(ROOT/'scripts/ci-compare-order.py'), str(left), str(right), '--smoke'], capture_output=True)
+            write(left, identities); write(right, identities)
+            self.assertNotEqual(compare().returncode, 0)
+            write(right, list(reversed(identities)))
+            self.assertEqual(compare().returncode, 0)
+            write(right, identities[:-1])
+            self.assertNotEqual(compare().returncode, 0)
+
+    def test_unit_order_comparison_uses_fixed_allowlist(self):
+        observer = load('ci-observe.py'); m = load('ci-compare-order.py')
+        names = list(observer.UNIT_ORDER_NAMES.values())
+        self.assertEqual(set(names), {'photo-reopen','row-render','notebook-lifecycle'})
+        sources = '\n'.join(p.read_text() for p in (ROOT/'KinTests').rglob('*.swift'))
+        for title in observer.UNIT_ORDER_NAMES:
+            self.assertEqual(sources.count('@Test("' + title + '")'), 1)
+        self.assertEqual(m.compare({'unit':names}, {'unit':list(reversed(names))}, {'unit':names}), ['unit'])
+        with self.assertRaises(ValueError): m.compare({'unit':names}, {'unit':names}, {'unit':names})
+        with self.assertRaises(ValueError): m.compare({'unit':names}, {'unit':names[:-1]}, {'unit':names})
+
+    def test_random_order_changes_only_diagnostic_trial_scheme(self):
+        m=load('ci-observe.py')
+        self.assertEqual(m.test_scheme('unit','standard'),'Kin')
+        self.assertEqual(m.test_scheme('unit','random'),'KinRandomOrder')
+        self.assertEqual(m.test_scheme('smoke','standard'),'Kin')
+        self.assertEqual(m.test_scheme('smoke','random'),'KinRandomOrder')
+        self.assertEqual(m.test_scheme('ui-0','standard'),'Kin')
+        self.assertEqual(m.test_scheme('ui-0','random'),'KinRandomOrder')
+        with self.assertRaises(ValueError):m.test_scheme('ui-0','unknown')
+        generator=load('ci-random-plan.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory)
+            original_path=ROOT/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            copied=root/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            copied.parent.mkdir(parents=True)
+            copied.write_bytes(original_path.read_bytes())
+            self.assertEqual(generator.generate(root),'KinRandomOrder')
+            self.assertEqual(copied.read_bytes(),original_path.read_bytes())
+            plan=json.loads((root/'KinRandomOrder.xctestplan').read_text())
+            alternate=ET.parse(root/'Kin.xcodeproj/xcshareddata/xcschemes/KinRandomOrder.xcscheme').getroot()
+            with self.assertRaises(ValueError):generator.generate(root)
+        self.assertEqual(plan['configurations'][0]['options']['testExecutionOrdering'],'random')
+        self.assertEqual({t['target']['name'] for t in plan['testTargets']},{'KinTests','KinUITests'})
+        self.assertTrue(all(t.get('parallelizable') is False for t in plan['testTargets']))
+        original=ET.parse(ROOT/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme').getroot()
+        old_test=original.find('TestAction');new_test=alternate.find('TestAction')
+        self.assertEqual(old_test.attrib,new_test.attrib)
+        refs=old_test.findall('.//BuildableReference')
+        self.assertEqual({(r.get('BlueprintIdentifier'),r.get('BlueprintName')) for r in refs},
+                         {(t['target']['identifier'],t['target']['name']) for t in plan['testTargets']})
+        self.assertEqual(new_test.find('./TestPlans/TestPlanReference').get('reference'),
+                         'container:KinRandomOrder.xctestplan')
+        for tag in ('BuildAction','LaunchAction','ProfileAction','AnalyzeAction','ArchiveAction'):
+            def canonical(node):
+                return (node.tag,tuple(sorted(node.attrib.items())),tuple(canonical(child) for child in node))
+            self.assertEqual(canonical(original.find(tag)),canonical(alternate.find(tag)))
+
+    def test_random_plan_rejects_changed_or_skipped_targets(self):
+        generator=load('ci-random-plan.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);scheme=root/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme'
+            scheme.parent.mkdir(parents=True)
+            source=(ROOT/'Kin.xcodeproj/xcshareddata/xcschemes/Kin.xcscheme').read_text()
+            scheme.write_text(source.replace('skipped="NO"','skipped="YES"',1))
+            with self.assertRaises(ValueError):generator.generate(root)
+            self.assertFalse((root/'KinRandomOrder.xctestplan').exists())
+            self.assertFalse(scheme.with_name('KinRandomOrder.xcscheme').exists())
+
     def test_allowlist_drops_private_payloads(self):
         m=load('ci-observe.py');ids={'KinUITests/KinUITests/testFoo'}
         self.assertEqual(m.parse("Test Case '-[KinUITests.KinUITests testFoo]' started. SECRET",ids),{'kind':'test','id':'KinUITests/KinUITests/testFoo','event':'started'})
@@ -13,6 +212,96 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(m.parse('KIN_CI_DELETE after=169 completed=true SECRET',ids),{'kind':'deletion','stage':'after','length':169,'completed':True})
         self.assertEqual(m.parse('KIN_CI_CONTACT candidate=1 inside=false SECRET',ids),{'kind':'contact_candidate','index':1,'inside':False})
         self.assertEqual(m.parse('KIN_CI_CONTACT count=2 SECRET',ids),{'kind':'contact_candidates','count':2})
+    def test_cleanup_markers_are_fixed_and_redacted(self):
+        m=load('ci-observe.py')
+        self.assertEqual(m.parse('KIN_CI_CONTACT_CLEANUP native-adult failed PRIVATE_PAYLOAD',set()),
+                         {'kind':'contact_cleanup','scope':'native-adult','status':'failed'})
+        self.assertIsNone(m.parse('KIN_CI_CONTACT_CLEANUP arbitrary failed',set()))
+        self.assertIsNone(m.parse('KIN_CI_CONTACT_CLEANUP native-adult unknown',set()))
+
+    def test_passing_run_requires_exact_verified_cleanup_markers(self):
+        m=load('ci-observe.py')
+        group=next(g for g in m.shards.GROUPS[1:] if any(ident in m.CLEANUP_SCOPES for ident in m.shards.selections(g)))
+        ids=m.shards.selections(group)
+        expected=sorted(m.CLEANUP_SCOPES[ident] for ident in ids if ident in m.CLEANUP_SCOPES)
+        self.assertTrue(expected)
+        with tempfile.TemporaryDirectory() as d:
+            p=pathlib.Path(d); fake=p/'xcodebuild'; env=dict(os.environ,PATH=d+':'+os.environ['PATH'],
+                RUNNER_TEMP=d,KIN_CI_SIMULATOR='synthetic')
+            def run(markers, code=0):
+                fake.write_text('#!/bin/sh\necho "KIN_CI_AUTH authorized"\n'
+                    + ''.join(f'echo "KIN_CI_CONTACT_CLEANUP {scope} {status} PRIVATE_PAYLOAD"\n' for scope,status in markers)
+                    + f'exit {code}\n')
+                fake.chmod(0o755)
+                return subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),group],
+                                      cwd=ROOT,env=env,capture_output=True,text=True)
+            verified=[(scope,'verified') for scope in expected]
+            self.assertEqual(run(verified).returncode,0)
+            for markers in (verified[:-1], verified+[verified[0]],
+                            [(expected[0],'failed')]+verified[1:],
+                            [(expected[0],'empty')]+verified[1:]):
+                with self.subTest(markers=markers):
+                    outcome=run(markers)
+                    self.assertNotEqual(outcome.returncode,0)
+                    self.assertNotIn('PRIVATE_PAYLOAD',outcome.stdout)
+            outcome=run([(expected[0],'failed')],code=65)
+            self.assertNotEqual(outcome.returncode,0)
+            self.assertIn(f'CI_CONTACT_CLEANUP {expected[0]} failed',outcome.stdout)
+            events=[json.loads(line) for line in (p/'KinTests-progress.jsonl').read_text().splitlines()]
+            self.assertIn({'kind':'contact_cleanup','scope':expected[0],
+                           'status':'failed','elapsed':events[1]['elapsed']},events)
+            self.assertNotIn('PRIVATE_PAYLOAD',(p/'KinTests-progress.jsonl').read_text())
+            for markers, state in (([], 'missing'),
+                                   ([(expected[0],'verified')]*2, 'duplicate')):
+                outcome=run(markers,code=65)
+                self.assertEqual(outcome.returncode,65)
+                self.assertIn(f'CI_CONTACT_CLEANUP_ACCOUNTING {expected[0]} {state}',outcome.stderr)
+                events=[json.loads(line) for line in (p/'KinTests-progress.jsonl').read_text().splitlines()]
+                self.assertTrue(any(e.get('kind')=='contact_cleanup_accounting' and e.get('scope')==expected[0] and e.get('status')==state for e in events))
+
+    def test_live_test_events_are_allowlisted_and_do_not_emit_raw_output(self):
+        shards=load('ci-test-shards.py')
+        ident=shards.selections('ui-3')[0]
+        _,klass,method=ident.split('/')
+        with tempfile.TemporaryDirectory() as d:
+            p=pathlib.Path(d);fake=p/'xcodebuild'
+            fake.write_text('#!/bin/sh\n'
+                            + f'echo "Test Case \'-[KinUITests.{klass} {method}]\' started. PRIVATE_PAYLOAD"\n'
+                            + 'echo "KIN_CI_AUTH authorized PRIVATE_PAYLOAD"\n'
+                            + f'echo "Test Case \'-[KinUITests.{klass} {method}]\' failed. PRIVATE_PAYLOAD"\n'
+                            + 'exit 1\n')
+            fake.chmod(0o755)
+            env=dict(os.environ,PATH=d+':'+os.environ['PATH'],RUNNER_TEMP=d,
+                     KIN_CI_SIMULATOR='synthetic')
+            run=subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),'ui-3'],
+                               cwd=ROOT,env=env,capture_output=True,text=True)
+            self.assertNotEqual(run.returncode,0)
+            self.assertIn(f'CI_TEST started {ident} elapsed=',run.stdout)
+            self.assertIn(f'CI_TEST failed {ident} elapsed=',run.stdout)
+            self.assertNotIn('PRIVATE_PAYLOAD',run.stdout)
+            self.assertNotIn('PRIVATE_PAYLOAD',(p/'KinTests-progress.jsonl').read_text())
+
+    def test_original_and_cleanup_failures_are_both_retained(self):
+        m=load('ci-observe.py')
+        group=next(g for g in m.shards.GROUPS[1:] if any(i in m.CLEANUP_SCOPES for i in m.shards.selections(g)))
+        ident=next(i for i in m.shards.selections(group) if i in m.CLEANUP_SCOPES)
+        _,klass,method=ident.split('/')
+        scope=m.CLEANUP_SCOPES[ident]
+        with tempfile.TemporaryDirectory() as d:
+            p=pathlib.Path(d);fake=p/'xcodebuild'
+            fake.write_text('#!/bin/sh\n'
+                            + f'echo "Test Case \'-[KinUITests.{klass} {method}]\' failed. PRIVATE_PAYLOAD"\n'
+                            + f'echo "KIN_CI_CONTACT_CLEANUP {scope} failed PRIVATE_PAYLOAD"\n'
+                            + 'exit 65\n')
+            fake.chmod(0o755)
+            env=dict(os.environ,PATH=d+':'+os.environ['PATH'],RUNNER_TEMP=d,KIN_CI_SIMULATOR='synthetic')
+            run=subprocess.run([sys.executable,str(ROOT/'scripts/ci-observe.py'),group],
+                               cwd=ROOT,env=env,capture_output=True,text=True)
+            self.assertNotEqual(run.returncode,0)
+            events=[json.loads(line) for line in (p/'KinTests-progress.jsonl').read_text().splitlines()]
+            self.assertTrue(any(e.get('kind')=='test' and e.get('id')==ident and e.get('event')=='failed' for e in events))
+            self.assertTrue(any(e.get('kind')=='contact_cleanup' and e.get('scope')==scope and e.get('status')=='failed' for e in events))
+            self.assertNotIn('PRIVATE_PAYLOAD',(p/'KinTests-progress.jsonl').read_text())
     def test_retention_distinguishes_partial_and_complete(self):
         with tempfile.TemporaryDirectory() as d:
             root=pathlib.Path(d);env=dict(os.environ,RUNNER_TEMP=d);bundle=root/'KinTests.xcresult';bundle.mkdir()

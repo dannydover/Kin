@@ -35,4 +35,21 @@ import Testing
         #expect(!ExistingPersonChoices.needsReference(for: source,in: choices))
         #expect(ExistingPersonChoices.results([first,second,source],sourceID: source.id,query: "Alex").map(\.id) == choices.map(\.id))
     }
+    @Test("Clearing an empty search restores both duplicate choices without selecting the source")
+    func emptySearchResetPreservesDuplicateIdentity() {
+        let source = person("Alex Example", reference: 1, listed: true)
+        let hidden = person("Alex Example", reference: 2)
+        let listed = person("Alex Example", reference: 3, listed: true)
+        let people = [listed, source, hidden]
+        let original = people
+        let first = ExistingPersonChoices.results(people, sourceID: source.id, query: "alex")
+        #expect(first.map(\.id) == [hidden.id, listed.id])
+        #expect(ExistingPersonChoices.results(people, sourceID: source.id, query: "no synthetic match").isEmpty)
+        let restored = ExistingPersonChoices.results(people, sourceID: source.id, query: "  \n")
+        #expect(restored.map(\.id) == first.map(\.id))
+        #expect(!restored.contains { $0.id == source.id })
+        #expect(ExistingPersonChoices.needsReference(for: hidden, in: people))
+        #expect(ExistingPersonChoices.needsReference(for: listed, in: people))
+        #expect(people == original)
+    }
 }

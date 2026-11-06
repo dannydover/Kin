@@ -46,15 +46,21 @@ final class RelationshipChooserTests: XCTestCase {
             XCTAssertTrue(app.navigationBars["Add relationship"].waitForExistence(timeout: 5))
             XCTAssertEqual(app.navigationBars.matching(identifier: "Add relationship").count,1)
             app.navigationBars["Add relationship"].buttons["Save"].doubleTap()
+            // Share the existing five-second post-save budget with the profile
+            // transition; the exact selected identity must still be reached.
+            let deadline = ProcessInfo.processInfo.systemUptime + 5
             XCTAssertTrue(app.buttons["Edit relationship with Synthetic Blair Example"].waitForExistence(timeout: 5))
             XCTAssertEqual(app.buttons.matching(identifier: "Edit relationship with Synthetic Blair Example").count,1)
             app.staticTexts["Synthetic Blair Example"].tap()
-            XCTAssertTrue(app.buttons["edit-person-" + identity].exists)
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { XCTFail("Profile transition exceeded the existing five-second budget"); return }
+            XCTAssertTrue(app.buttons["edit-person-" + identity].waitForExistence(timeout: remaining))
             app.terminate()
         }
     }
     @MainActor func testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails() {
-        let app = XCUIApplication(); launch(app); options(app,route: "Add child")
+        let app = XCUIApplication(); addTeardownBlock { app.terminate() }
+        launch(app); options(app,route: "Add child")
         app.buttons["relationship-details"].tap(); app.buttons["Parent relationship, Unspecified"].tap(); app.buttons["Step"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@","Relationship details (optional)")).firstMatch.tap()
         chooser(app)
@@ -88,10 +94,9 @@ final class RelationshipChooserTests: XCTestCase {
         app.navigationBars.buttons["Synthetic Source"].tap(); app.navigationBars.buttons["People"].tap()
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
         XCTAssertEqual(app.cells.count,5)
-        app.terminate()
     }
     @MainActor func testEmptyChooserAndPartnerDetailsSurviveBackAndCancel() {
-        let app = XCUIApplication()
+        let app = XCUIApplication(); addTeardownBlock { app.terminate() }
         app.launchArguments = ["--kin-preview","relationships-empty"]; app.launch()
         XCTAssertTrue(app.staticTexts["Synthetic Source"].waitForExistence(timeout: 10))
         options(app,route: "Add partner")
@@ -103,7 +108,6 @@ final class RelationshipChooserTests: XCTestCase {
         XCTAssertTrue(app.buttons["Partner status, Former"].exists)
         app.navigationBars["Add partner"].buttons["Cancel"].tap()
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@","Edit relationship with")).firstMatch.exists)
-        app.terminate()
     }
     @MainActor func testSyntheticRelationshipReviewScreenshots() throws {
         #if targetEnvironment(simulator)
@@ -128,3 +132,4 @@ final class RelationshipChooserTests: XCTestCase {
         #endif
     }
 }
+

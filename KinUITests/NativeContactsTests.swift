@@ -7,7 +7,58 @@ import UIKit
 final class NativeContactsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    @MainActor func testNativeFullBirthdayAndPhotoImportForAdultAndMinor() throws {
+    func testSyntheticCardResolutionFailsClosedForMissingAndAmbiguousMatches() {
+        XCTAssertEqual(syntheticCardResolution(0), .absent)
+        XCTAssertEqual(syntheticCardResolution(1), .unique)
+        XCTAssertEqual(syntheticCardResolution(2), .ambiguous)
+        XCTAssertEqual(syntheticCardResolution(20), .ambiguous)
+    }
+
+    func testPreciseFormFrameRejectsEmptyAndClippedTargets() {
+        XCTAssertTrue(preciseFormFrameIsVisible(CGRect(x: 1,y: 145,width: 100,height: 40), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 145,width: 0,height: 40), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 145,width: 100,height: 0), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 144,width: 100,height: 40), lowerBound: 145, upperBound: 500))
+        XCTAssertFalse(preciseFormFrameIsVisible(CGRect(x: 1,y: 480,width: 100,height: 21), lowerBound: 145, upperBound: 500))
+    }
+
+    func testNativeContactRevealRequiresUniqueMovementAndStableVisibleTarget() {
+        let deadline = NativeContactRevealDeadline(start: 100, timeout: 10)
+        XCTAssertEqual(deadline.remaining(now: 103), 7)
+        XCTAssertEqual(deadline.remaining(now: 110), 0)
+        XCTAssertEqual(deadline.remaining(now: 111), 0)
+        var policy = NativeContactRevealPolicy()
+        let offscreen = CGRect(x: 20, y: 900, width: 200, height: 50)
+        let moved = CGRect(x: 20, y: 800, width: 200, height: 50)
+        let visible = CGRect(x: 20, y: 300, width: 200, height: 50)
+        func observe(_ count: Int, _ visibleCount: Int, _ frame: CGRect?, _ sole: CGRect?, _ now: TimeInterval) -> NativeContactRevealDecision {
+            policy.observe(candidateCount: count, visibleCount: visibleCount, visibleFrame: frame,
+                           soleFrame: sole, lowerBound: 700, now: now)
+        }
+        XCTAssertEqual(observe(0, 0, nil, nil, 0), .wait)
+        XCTAssertEqual(observe(2, 0, nil, nil, 0), .wait)
+        XCTAssertEqual(observe(1, 0, nil, offscreen, 0), .scrollUp)
+        policy.didScroll(from: offscreen)
+        XCTAssertEqual(observe(1, 0, nil, offscreen, 0.1), .wait, "Do not repeat a drag without observed movement")
+        XCTAssertEqual(observe(1, 0, nil, moved, 0.2), .scrollUp)
+        XCTAssertEqual(observe(1, 1, visible, visible, 0.3), .wait)
+        XCTAssertEqual(observe(1, 1, visible, visible, 1.2), .wait)
+        XCTAssertEqual(observe(1, 1, visible, visible, 1.4), .select)
+        XCTAssertEqual(observe(2, 2, nil, nil, 1.5), .wait)
+        for _ in 1..<16 { policy.didScroll(from: offscreen) }
+        XCTAssertEqual(policy.scrolls, 16)
+        XCTAssertEqual(observe(1, 0, nil, moved, 2), .wait, "Keep the existing reveal limit")
+    }
+
+    @MainActor func testNativeFullBirthdayAndPhotoImportForAdult() throws {
+        try checkNativeFullBirthdayAndPhotoImport(isAdult: true, scope: .nativeAdult)
+    }
+
+    @MainActor func testNativeFullBirthdayAndPhotoImportForMinor() throws {
+        try checkNativeFullBirthdayAndPhotoImport(isAdult: false, scope: .nativeMinor)
+    }
+
+    @MainActor private func checkNativeFullBirthdayAndPhotoImport(isAdult: Bool, scope: SyntheticContactsCleanupScope) throws {
         #if targetEnvironment(simulator)
         let contacts = CNContactStore()
         try XCTUnwrap(CNContactStore.authorizationStatus(for: .contacts) == .authorized ? true : nil,
@@ -20,42 +71,29 @@ final class NativeContactsTests: XCTestCase {
         let fixtures = [("Kin Synthetic Adult " + suffix,year - 30,true),
                         ("Kin Synthetic Minor " + suffix,year - 8,false)]
         var created: [CNMutableContact] = []
-        defer {
-            let request = CNSaveRequest()
-            for contact in created { request.delete(contact) }
-            try? contacts.execute(request)
-        }
+        var creationUncertain = false
+        // XCTest runs teardown even when the test records an earlier failure;
+        // a cleanup error is reported separately instead of being discarded.
+        addTeardownBlock { try cleanupOwnedSyntheticContacts(created, store: contacts, scope: scope, creationUncertain: creationUncertain) }
         for (name,birthYear,_) in fixtures {
             let contact = CNMutableContact(); contact.givenName = name
             contact.birthday = DateComponents(year: birthYear,month: 1,day: 2)
             contact.imageData = image
             let request = CNSaveRequest(); request.add(contact,toContainerWithIdentifier: nil)
+            creationUncertain = true
             try contacts.execute(request); created.append(contact)
+            creationUncertain = false
         }
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook",UUID().uuidString]
         app.launch(); defer { app.terminate() }
-        for (name,birthYear,isAdult) in fixtures {
+        for (name,birthYear,fixtureIsAdult) in fixtures where fixtureIsAdult == isAdult {
             app.buttons["Add person"].tap(); app.buttons["Import from Contacts"].tap()
             XCTAssertTrue(waitForNativeContactsPicker(app))
-            let nativeSearches = app.searchFields.matching(identifier: "Search")
-            func requireVisibleSearch() throws -> XCUIElement {
-                var chosen: XCUIElement?
-                let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                    let candidates = nativeSearches.allElementsBoundByIndex.filter {
-                        let frame = $0.frame
-                        return frame.minY >= 62 && frame.maxY <= app.frame.maxY - 30 && $0.isHittable
-                    }
-                    guard candidates.count == 1 else { return false }
-                    chosen = candidates[0]; return true
-                }, object: nil)
-                XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
-                               "Require one visible native Contacts search field")
-                return try XCTUnwrap(chosen)
-            }
-            try requireVisibleSearch().tap()
+            let search = try requireNativeContactsSearch(app)
+            search.tap()
             // The out-of-process picker may own the keyboard outside app.keyboards.
-            // Resolve its field again after activation; typeText requires focus.
-            try requireVisibleSearch().typeText(name)
+            // Its exact search result remains mandatory after typing.
+            try requireNativeContactsSearch(app).typeText(name)
             let card = app.collectionViews["Search results"].cells[name].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
@@ -91,9 +129,10 @@ final class NativeContactsTests: XCTestCase {
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = isAdult ? "Eligible Contacts preview - synthetic" : "Ineligible Contacts preview - synthetic"
             attachment.lifetime = .keepAlways; add(attachment)
-            let exactBirthday = app.buttons["Birth information, Exact birthday"]
+            let exactBirthday = app.buttons["contact-birth-information"]
             for _ in 0..<8 { if exactBirthday.exists { break }; app.swipeUp() }
             XCTAssertTrue(exactBirthday.exists)
+            XCTAssertEqual(exactBirthday.label, "Birth information, Exact birthday")
             app.buttons["contact-import"].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
             if isAdult { XCTAssertTrue(app.staticTexts["Gender: Female"].exists) }

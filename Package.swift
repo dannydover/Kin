@@ -6,7 +6,8 @@ let package = Package(
     products: [.library(name: "Kin", targets: ["Kin"])],
     targets: [
         .target(name: "Kin", path: "Kin/Core", resources: [.process("Resources")]),
-        .testTarget(name: "KinTests", dependencies: ["Kin"], path: "KinTests/Core")
+        .target(name: "SyntheticContactsTestSupport", path: "KinTests/Shared"),
+        .testTarget(name: "KinTests", dependencies: ["Kin", "SyntheticContactsTestSupport"], path: "KinTests/Core")
     ],
     swiftLanguageModes: [.v6]
 )
