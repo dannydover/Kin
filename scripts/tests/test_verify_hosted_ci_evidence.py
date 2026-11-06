@@ -72,6 +72,24 @@ class HostedEvidenceTests(unittest.TestCase):
     def test_github_redirects_are_not_followed(self):
         self.assertIsNone(evidence.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://example.invalid'))
 
+    def test_proposed_environment_requires_all_protections(self):
+        env = {'name': 'kin-signing', 'can_admins_bypass': False,
+               'deployment_branch_policy': {'protected_branches': False, 'custom_branch_policies': True},
+               'protection_rules': [{'type': 'required_reviewers', 'prevent_self_review': False,
+                                     'reviewers': [{'type': 'User', 'reviewer': {'id': evidence.OWNER_REVIEWER_ID}}]}]}
+        branches = {'total_count': 1, 'branch_policies': [{'name': 'main', 'type': 'branch'}]}
+        self.assertTrue(evidence.verify_signing_environment(env, branches))
+        for scenario in ('missing_bypass', 'bypass', 'no_reviewer', 'other_reviewer', 'no_branch_policy', 'extra_branch'):
+            with self.subTest(scenario=scenario):
+                candidate, policies = copy.deepcopy(env), copy.deepcopy(branches)
+                if scenario == 'missing_bypass': candidate.pop('can_admins_bypass')
+                if scenario == 'bypass': candidate['can_admins_bypass'] = True
+                if scenario == 'no_reviewer': candidate['protection_rules'] = []
+                if scenario == 'other_reviewer': candidate['protection_rules'][0]['reviewers'][0]['reviewer']['id'] = 1
+                if scenario == 'no_branch_policy': candidate['deployment_branch_policy'] = None
+                if scenario == 'extra_branch': policies['branch_policies'].append({'name': '*', 'type': 'branch'}); policies['total_count'] = 2
+                with self.assertRaises(ValueError): evidence.verify_signing_environment(candidate, policies)
+
     def test_main_checks_exact_checkout_workflow_and_toolchain(self):
         environment = {'GITHUB_SHA': self.sha, 'GITHUB_TOKEN': 'synthetic-token',
                        'GITHUB_REPOSITORY': evidence.REPOSITORY, 'GITHUB_EVENT_NAME': 'workflow_dispatch',

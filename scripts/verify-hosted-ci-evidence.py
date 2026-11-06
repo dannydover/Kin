@@ -20,6 +20,7 @@ REPOSITORY = 'dannydover/Kin'
 CI_SHA256 = '2924126f6af03e12c84ce196271fc04a048653892bc29ba20f9a31028229b986'
 REQUIRED = {'core-validation', 'ios-tests', 'candidate-smoke', 'release-validation', 'validate'}
 API = 'https://api.github.com/repos/' + REPOSITORY
+OWNER_REVIEWER_ID = 136573
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -78,6 +79,35 @@ def verify_latest(source, response, fetch_jobs):
                 and job.get('run_id') == run_id and job.get('run_attempt') == attempt
                 and job.get('head_sha') == source, 'Required job did not pass on source and attempt')
     return run_id, attempt
+
+
+def verify_signing_environment(environment, branch_policies):
+    """Proposed strict contract; not yet wired to any signing workflow.
+
+    In particular, lack of an authoritative administrator-bypass field is an
+    error, not evidence that bypass is disabled. GitHub API compatibility and
+    the required owner-approved configuration remain unverified.
+    """
+    require(isinstance(environment, dict) and environment.get('name') == 'kin-signing'
+            and environment.get('can_admins_bypass') is False, 'Environment missing or bypass not verified')
+    policy = environment.get('deployment_branch_policy')
+    require(isinstance(policy, dict) and policy.get('protected_branches') is False
+            and policy.get('custom_branch_policies') is True, 'Environment branch policy differs')
+    rules = environment.get('protection_rules')
+    require(isinstance(rules, list), 'Environment rules unavailable')
+    reviewers = [r for r in rules if isinstance(r, dict) and r.get('type') == 'required_reviewers']
+    require(len(reviewers) == 1 and reviewers[0].get('prevent_self_review') is False,
+            'Required reviewer policy differs')
+    entries = reviewers[0].get('reviewers')
+    require(isinstance(entries, list) and len(entries) == 1 and isinstance(entries[0], dict)
+            and entries[0].get('type') == 'User' and isinstance(entries[0].get('reviewer'), dict)
+            and entries[0]['reviewer'].get('id') == OWNER_REVIEWER_ID, 'Owner is not the sole required reviewer')
+    require(isinstance(branch_policies, dict) and branch_policies.get('total_count') == 1
+            and isinstance(branch_policies.get('branch_policies'), list) and len(branch_policies['branch_policies']) == 1
+            and isinstance(branch_policies['branch_policies'][0], dict)
+            and branch_policies['branch_policies'][0].get('name') == 'main'
+            and branch_policies['branch_policies'][0].get('type') == 'branch', 'Environment must allow only main')
+    return True
 
 
 def main():

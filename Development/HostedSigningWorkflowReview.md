@@ -44,6 +44,22 @@ may initiate and approve. Never use a pull-request workflow, untrusted fork
 code, or dynamically downloaded unpinned scripts in a credential-bearing job.
 The signing job should have `contents: read` only unless a specific additional
 permission is justified. Actions must be pinned to reviewed immutable versions.
+GitHub automatically creates a referenced nonexistent environment without
+protection rules. Therefore do not activate an environment-referencing workflow
+until the existing environment and its required reviewer, branch restriction and
+bypass settings have been explicitly configured and independently verified.
+An unprivileged preflight must fail if those protections cannot be read or do not
+match the reviewed policy. Do not rely on the environment name alone. GitHub's
+documented environment response shows reviewer and branch-policy fields but does
+not document an administrator-bypass field in its example. A supported way to
+verify the intended bypass setting remains unresolved; a missing field must not
+be interpreted as disabled. See
+https://docs.github.com/en/rest/deployments/environments . The script's
+`verify_signing_environment` is a synthetic contract only: `main()` does not
+call it and it performs no API fetch. GitHub's documented branch-policy
+example also omits the `type` field that the contract requires. Until those
+fields and enforcement can be verified through a supported source, this
+contract must fail closed and must not be treated as an operational guard.
 
 ## Inputs and execution
 
