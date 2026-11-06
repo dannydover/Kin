@@ -127,6 +127,19 @@ and extraction are separate calls, so the caller must prevent mutation between
 them. This does not establish profile authorization, current revocation,
 entitlement policy, provenance or authorization to hand off a build.
 
+The read-only `scripts/verify-signed-candidate.py` integrates that signer check
+with bounded app-metadata, exact reviewed profile-hash, and exact reviewed
+signed-entitlements comparisons. It rejects `get-task-allow` and bounds and
+cleans up its own entitlement-inspection process. Its `verify_with_preflight`
+entry point invokes source/CI/environment checks before and after candidate
+checks. It does not lock the source, environment or app; the future caller must
+use a protected immutable workspace. A profile-hash match only identifies the
+owner-reviewed bytes; it does not prove Apple issued or currently authorizes
+them. No check binds the artifact to the source, and no signing or handoff
+workflow invokes this module. Tests use synthetic data and fake signer output;
+the entitlement subprocess limits have also been exercised with a harmless
+local child. No signed Kin app has been verified.
+
 Verify the signed app and export with `codesign` and Apple profile decoding;
 compare signature certificate, explicit bundle ID, team, entitlements, version,
 build, architecture and executable/dSYM identities with the approved inputs.
