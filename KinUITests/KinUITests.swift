@@ -1324,6 +1324,24 @@ final class KinUITests: XCTestCase {
     @MainActor private func openAllPeople(_ app: XCUIApplication) {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
     }
+    @MainActor private func snapshotAttributes(_ app: XCUIApplication) throws -> [String: Bool] {
+        let root = try app.snapshot()
+        func descendants(_ parent: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+            parent.children.flatMap { [$0] + descendants($0) }
+        }
+        let all = descendants(root)
+        let wrappers = all.filter { $0.elementType == .switch && $0.identifier == "Friend" }
+        let controls = wrappers.count == 1 ? descendants(wrappers[0]).filter { $0.elementType == .switch } : []
+        let editors = all.filter { $0.elementType == .navigationBar && $0.identifier == "Add person" }
+        let saves = editors.count == 1 ? descendants(editors[0]).filter { $0.elementType == .button && $0.identifier == "Save" } : []
+        return ["friendUnique": wrappers.count == 1,
+                "controlUnique": controls.count == 1,
+                "friendOn": wrappers.count == 1 && (wrappers[0].value as? String) == "1",
+                "controlOn": controls.count == 1 && (controls[0].value as? String) == "1",
+                "saveUnique": saves.count == 1,
+                "saveEnabled": saves.count == 1 && saves[0].isEnabled]
+    }
+    
     @MainActor private func addPerson(_ app: XCUIApplication, name: String) {
         let add = app.buttons.matching(identifier: "Add person")
         guard requireTestState(app, "Add person action ready", {
@@ -1366,12 +1384,45 @@ final class KinUITests: XCTestCase {
             app.swipeUp()
         }
         let save = editor.buttons.matching(identifier: "Save")
-        guard requireTestState(app, "Friend on and Save enabled", {
-            friends.count == 1 && controls.count == 1
-                && friends.element.value as? String == "1" && controls.element.value as? String == "1"
-                && friends.element.isHittable && controls.element.isHittable && save.count == 1
-                && save.element.isEnabled && save.element.isHittable
-        }, deadline: readinessDeadline) else { return }
+        // Diagnostic-only: record outcomes of the existing short-circuit reads.
+        var observations: [String] = []
+        func observed(_ label: String, _ read: () -> Bool) -> Bool {
+            let start = ProcessInfo.processInfo.systemUptime
+            let value = read()
+            let end = ProcessInfo.processInfo.systemUptime
+            if observations.count < 100 {
+                observations.append("\(label)=\(value ? "true" : "false"); start=\(String(format: "%.3f", start - readinessDeadline)); duration=\(String(format: "%.3f", end - start))")
+            }
+            return value
+        }
+        func retainFriendObservations() {
+            let observation = XCTAttachment(string: observations.joined(separator: "\n"))
+            observation.name = "Friend readiness existing reads"
+            observation.lifetime = .keepAlways
+            self.add(observation)
+        }
+        let friendReady = requireTestState(app, "Friend on and Save enabled", {
+            observed("friendUnique") { friends.count == 1 } && observed("controlUnique") { controls.count == 1 }
+                && observed("friendOn") { friends.element.value as? String == "1" } && observed("controlOn") { controls.element.value as? String == "1" }
+                && observed("friendHittable") { friends.element.isHittable } && observed("controlHittable") { controls.element.isHittable } && observed("saveUnique") { save.count == 1 }
+                && observed("saveEnabled") { save.element.isEnabled } && observed("saveHittable") { save.element.isHittable }
+        }, deadline: readinessDeadline, beforeFailure: retainFriendObservations)
+        guard friendReady else { return }
+        retainFriendObservations()
+        // Diagnostic-only: compare one post-read snapshot to the six
+        // non-hittability checks. Original nine reads already completed.
+        do {
+            let parity = try snapshotAttributes(app)
+            let labels = ["friendUnique", "controlUnique", "friendOn", "controlOn", "saveUnique", "saveEnabled"]
+            let report = labels.map { "\($0)=\(parity[$0] == true ? "true" : "false")" }.joined(separator: "; ")
+            let attachment = XCTAttachment(string: report)
+            attachment.name = "Snapshot readiness parity"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            XCTAssertTrue(labels.allSatisfy { parity[$0] == true }, "Snapshot readiness parity failed")
+        } catch {
+            XCTFail("Snapshot readiness observation unavailable")
+        }
         save.element.tap()
         guard requireTestState(app, "Direct save opens saved profile", {
             app.navigationBars[name].exists && !editor.exists
@@ -1387,6 +1438,7 @@ final class KinUITests: XCTestCase {
     @MainActor private func requireTestState(_ app: XCUIApplication, _ stage: String,
                                              _ condition: @escaping () -> Bool,
                                              deadline: TimeInterval? = nil,
+                                             beforeFailure: (() -> Void)? = nil,
                                              file: StaticString = #filePath, line: UInt = #line) -> Bool {
         let initiallyReady = condition()
         if initiallyReady && (deadline == nil || ProcessInfo.processInfo.systemUptime < deadline!) { return true }
@@ -1395,6 +1447,7 @@ final class KinUITests: XCTestCase {
         let ready = timeout > 0 && XCTWaiter.wait(for: [expected], timeout: timeout) == .completed
             && (deadline == nil || ProcessInfo.processInfo.systemUptime < deadline!)
         if !ready {
+            beforeFailure?()
             recordTestState(app, stage: stage)
             XCTFail("UI precondition failed: " + stage, file: file, line: line)
         }
