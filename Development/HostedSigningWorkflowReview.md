@@ -95,6 +95,14 @@ failure-safe cleanup step. A test must simulate failures at every stage, confirm
 cleanup was attempted, and fail if cleanup cannot be verified. Hosted runner
 termination is not proof of cleanup. Do not alter the owner's local keychain.
 
+The currently unwired keychain component handles SIGTERM, SIGINT and SIGHUP
+on the main thread as interruption failures and attempts cleanup, restoring
+prior signal handlers. Synthetic tests exercise interruption during import
+and cleanup. This is best effort, not a guarantee: SIGKILL, runner loss and
+some signal timing windows can prevent or interrupt cleanup. A complete workflow
+must use an owned, bounded post-job cleanup strategy and fail closed on missing
+evidence; the component does not install or clean a provisioning profile.
+
 An unwired `scripts/isolated-signing-keychain.py` component stages this lifecycle:
 it permits only a GitHub-hosted runner, creates its own temporary workspace and
 keychain, suppresses raw command output, bounds each security/cleanup subprocess,

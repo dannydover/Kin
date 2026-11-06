@@ -2,8 +2,10 @@
 import importlib.util
 import os
 from pathlib import Path
+import signal
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -34,6 +36,50 @@ class KeychainLifecycleTests(unittest.TestCase):
             self.assertTrue(self.exercise(root, fake))
             self.assertEqual(fake.calls, ['create-keychain', 'unlock-keychain', 'import',
                                           'set-key-partition-list', 'delete-keychain'])
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_termination_during_import_cleans_owned_state_and_restores_handlers(self):
+        with tempfile.TemporaryDirectory() as root:
+            previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+            class InterruptedSecurity(FakeSecurity):
+                def __call__(self, *args):
+                    if args[0] == 'import':
+                        self.calls.append('import')
+                        os.kill(os.getpid(), signal.SIGTERM)
+                    return super().__call__(*args)
+            fake = InterruptedSecurity()
+            with self.assertRaises(keychain.TransactionFailed) as result: self.exercise(root, fake)
+            self.assertEqual(result.exception.primary_error, 'interrupted')
+            self.assertFalse(result.exception.cleanup_failed)
+            self.assertIn('delete-keychain', fake.calls)
+            self.assertEqual(list(Path(root).iterdir()), [])
+            self.assertEqual({sig: signal.getsignal(sig) for sig in previous}, previous)
+
+    def test_worker_thread_rejected_before_workspace_creation(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
+            outcomes = []
+            def worker():
+                try:
+                    keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True, backend=FakeSecurity())
+                except ValueError:
+                    outcomes.append('rejected')
+            thread = threading.Thread(target=worker); thread.start(); thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(outcomes, ['rejected'])
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_signal_during_keychain_cleanup_is_reported(self):
+        with tempfile.TemporaryDirectory() as root:
+            class InterruptedCleanup(FakeSecurity):
+                def __call__(self, *args):
+                    if args[0] == 'delete-keychain':
+                        self.calls.append('delete-keychain')
+                        os.kill(os.getpid(), signal.SIGTERM)
+                    return super().__call__(*args)
+            fake = InterruptedCleanup()
+            with self.assertRaises(keychain.TransactionFailed) as result: self.exercise(root, fake)
+            self.assertTrue(result.exception.cleanup_failed)
+            self.assertIn('keychain:interrupted', result.exception.cleanup_errors)
             self.assertEqual(list(Path(root).iterdir()), [])
 
     def test_each_setup_failure_still_attempts_cleanup(self):

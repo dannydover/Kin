@@ -7,8 +7,10 @@ been reviewed and explicitly approved. Tests inject a fake security backend.
 import os
 from pathlib import Path
 import secrets
+import signal
 import subprocess
 import tempfile
+import threading
 
 
 class TransactionFailed(Exception):
@@ -18,6 +20,10 @@ class TransactionFailed(Exception):
         self.primary_failed = primary_error is not None
         self.cleanup_failed = bool(cleanup_errors)
         super().__init__('Signing keychain transaction failed')
+
+
+class _RequestedStop(Exception):
+    pass
 
 
 def _security(*args):
@@ -34,6 +40,8 @@ def _remove_owned_workspace(workspace):
 
 
 def _error_category(exc):
+    if isinstance(exc, _RequestedStop):
+        return 'interrupted'
     if isinstance(exc, subprocess.TimeoutExpired):
         return 'timeout'
     if isinstance(exc, subprocess.CalledProcessError):
@@ -58,6 +66,8 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
     """
     if os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         raise ValueError('GitHub-hosted runner required')
+    if threading.current_thread() is not threading.main_thread():
+        raise ValueError('Main thread required for cleanup signal handling')
     if not isinstance(p12_bytes, bytes) or not p12_bytes or not isinstance(p12_password, str) or not p12_password:
         raise ValueError('Signing material is unavailable')
     supplied_root = Path(runner_temp)
@@ -78,7 +88,17 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
     primary_error = None
     cleanup_errors = []
     attempted_create = False
+    old_handlers = {}
+    interrupted = False
+    def request_stop(_signum, _frame):
+        nonlocal interrupted
+        if not interrupted:
+            interrupted = True
+            raise _RequestedStop()
     try:
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            old_handlers[sig] = signal.getsignal(sig)
+            signal.signal(sig, request_stop)
         os.chmod(workspace, 0o700)
         keychain_password = secrets.token_urlsafe(32)
         fd = os.open(p12_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -109,6 +129,11 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
                 cleanup_errors.append('workspace:StillPresent')
         except Exception as exc:
             cleanup_errors.append('workspace:' + _error_category(exc))
+        for sig, handler in old_handlers.items():
+            try:
+                signal.signal(sig, handler)
+            except (OSError, ValueError):
+                cleanup_errors.append('signal:restore-error')
     if primary_error is not None or cleanup_errors:
         raise TransactionFailed(primary_error, cleanup_errors)
     return True
