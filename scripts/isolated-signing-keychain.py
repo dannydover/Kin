@@ -5,12 +5,16 @@ credentials until its caller, environment protection and security model have
 been reviewed and explicitly approved. Tests inject a fake security backend.
 """
 import os
+import hashlib
 from pathlib import Path
+import re
 import secrets
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
+import uuid
 
 
 class TransactionFailed(Exception):
@@ -54,7 +58,7 @@ def _error_category(exc):
 
 
 def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_security,
-                 remove_workspace=_remove_owned_workspace):
+                 remove_workspace=_remove_owned_workspace, profile=None):
     """Run a caller operation with a disposable keychain and fail-closed cleanup.
 
     This component alone does not validate an environment, signing identity,
@@ -70,6 +74,18 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
         raise ValueError('Main thread required for cleanup signal handling')
     if not isinstance(p12_bytes, bytes) or not p12_bytes or not isinstance(p12_password, str) or not p12_password:
         raise ValueError('Signing material is unavailable')
+    if profile is not None:
+        if not isinstance(profile, dict) or set(profile) != {'directory', 'uuid', 'bytes', 'sha256'}:
+            raise ValueError('Invalid profile configuration')
+        profile_uuid, profile_bytes, profile_sha = profile['uuid'], profile['bytes'], profile['sha256']
+        try:
+            valid_uuid = isinstance(profile_uuid, str) and str(uuid.UUID(profile_uuid)).upper() == profile_uuid
+        except (ValueError, AttributeError):
+            valid_uuid = False
+        if (not valid_uuid or not isinstance(profile_bytes, bytes) or not 0 < len(profile_bytes) <= 8 * 1024 * 1024
+                or not isinstance(profile_sha, str) or not re.fullmatch(r'[0-9a-f]{64}', profile_sha)
+                or hashlib.sha256(profile_bytes).hexdigest() != profile_sha):
+            raise ValueError('Invalid reviewed profile')
     supplied_root = Path(runner_temp)
     if supplied_root.is_symlink():
         raise ValueError('Invalid runner temporary directory')
@@ -88,6 +104,10 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
     primary_error = None
     cleanup_errors = []
     attempted_create = False
+    profile_dir_fd = None
+    profile_identity = None
+    profile_name = None
+    profile_complete = False
     old_handlers = {}
     interrupted = False
     def request_stop(_signum, _frame):
@@ -103,6 +123,31 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
             old_handlers[sig] = previous
             signal.signal(sig, request_stop)
         os.chmod(workspace, 0o700)
+        if profile is not None:
+            directory = Path(profile['directory'])
+            if not directory.is_absolute() or directory.is_symlink() or directory.resolve(strict=True) != directory:
+                raise ValueError('Invalid profile directory')
+            profile_dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            directory_stat = os.fstat(profile_dir_fd)
+            if directory_stat.st_uid != os.geteuid() or directory_stat.st_mode & 0o077:
+                raise ValueError('Profile directory is not private and owned')
+            profile_name = profile_uuid + '.mobileprovision'
+            profile_fd = os.open(profile_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                 0o600, dir_fd=profile_dir_fd)
+            try:
+                created = os.fstat(profile_fd)
+                profile_identity = (created.st_dev, created.st_ino)
+                if not stat.S_ISREG(created.st_mode) or created.st_uid != os.geteuid() or created.st_nlink != 1:
+                    raise ValueError('Invalid owned profile')
+                view = memoryview(profile_bytes)
+                while view:
+                    written = os.write(profile_fd, view)
+                    if written <= 0:
+                        raise OSError('Profile write failed')
+                    view = view[written:]
+            finally:
+                os.close(profile_fd)
+            profile_complete = True
         keychain_password = secrets.token_urlsafe(32)
         fd = os.open(p12_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'wb') as handle:
@@ -121,6 +166,43 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
         # exception text, command arguments or tool output.
         primary_error = _error_category(exc)
     finally:
+        if profile_dir_fd is not None:
+            if profile_identity is not None:
+                try:
+                    current = os.stat(profile_name, dir_fd=profile_dir_fd, follow_symlinks=False)
+                    if ((current.st_dev, current.st_ino) != profile_identity or not stat.S_ISREG(current.st_mode)
+                            or current.st_uid != os.geteuid() or current.st_nlink != 1):
+                        cleanup_errors.append('profile:ownership-changed')
+                    else:
+                        check_fd = os.open(profile_name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=profile_dir_fd)
+                        try:
+                            opened = os.fstat(check_fd)
+                            content = bytearray()
+                            while len(content) <= 8 * 1024 * 1024:
+                                chunk = os.read(check_fd, min(65536, 8 * 1024 * 1024 + 1 - len(content)))
+                                if not chunk: break
+                                content.extend(chunk)
+                            latest = os.stat(profile_name, dir_fd=profile_dir_fd, follow_symlinks=False)
+                            if ((opened.st_dev, opened.st_ino) != profile_identity
+                                    or (latest.st_dev, latest.st_ino) != profile_identity
+                                    or len(content) > 8 * 1024 * 1024
+                                    or (profile_complete and hashlib.sha256(content).hexdigest() != profile_sha)):
+                                cleanup_errors.append('profile:content-or-ownership-changed')
+                            else:
+                                os.unlink(profile_name, dir_fd=profile_dir_fd)
+                                try:
+                                    os.stat(profile_name, dir_fd=profile_dir_fd, follow_symlinks=False)
+                                    cleanup_errors.append('profile:still-present')
+                                except FileNotFoundError:
+                                    pass
+                        finally:
+                            os.close(check_fd)
+                except Exception as exc:
+                    cleanup_errors.append('profile:' + _error_category(exc))
+            try:
+                os.close(profile_dir_fd)
+            except Exception as exc:
+                cleanup_errors.append('profile-directory:' + _error_category(exc))
         if attempted_create:
             try:
                 backend('delete-keychain', str(keychain_path))

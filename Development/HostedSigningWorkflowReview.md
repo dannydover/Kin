@@ -102,7 +102,16 @@ and cleanup. An unknown prior handler aborts before keychain creation; a
 handler-restoration failure is reported. This is best effort, not a guarantee: SIGKILL, runner loss and
 some signal timing windows can prevent or interrupt cleanup. A complete workflow
 must use an owned, bounded post-job cleanup strategy and fail closed on missing
-evidence; the component does not install or clean a provisioning profile.
+evidence. The component can optionally stage owner-reviewed profile bytes by
+UUID and SHA-256 in a pre-existing private, owned directory. It creates the
+file exclusively without following a final symlink, refuses an existing file,
+and attempts to remove only the file it created after checking identity and
+content. Changed or missing files produce cleanup failure rather than deleting
+a replacement. These are synthetic tests only: actual Xcode discovery and
+profile authorization are not verified. Directory and file checks do not
+defend against a hostile same-user process racing the final unlink; runner
+isolation and independent cleanup are still required. No workflow calls this
+component or installs a profile.
 
 An unwired `scripts/isolated-signing-keychain.py` component stages this lifecycle:
 it permits only a GitHub-hosted runner, creates its own temporary workspace and
