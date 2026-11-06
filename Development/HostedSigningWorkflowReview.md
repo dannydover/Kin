@@ -98,6 +98,14 @@ categories without secret-bearing messages; a category is not a full diagnosis.
 
 ## Verification and outputs
 
+The unwired `scripts/verify-signature-integrity.py` runs a bounded, quiet
+`codesign --verify --strict --all-architectures` check on an app bundle. Its
+local tests mock the command; no signed product has been checked. This proves
+only that the tool accepted the seal when eventually run: an ad hoc signature
+can also pass. It does not verify the signing identity, trust, embedded-code
+policy, profile or entitlements and cannot authorize handoff. These checks must
+be implemented separately before it is used in a release workflow.
+
 Verify the signed app and export with `codesign` and Apple profile decoding;
 compare signature certificate, explicit bundle ID, team, entitlements, version,
 build, architecture and executable/dSYM identities with the approved inputs.
