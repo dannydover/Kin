@@ -55,13 +55,17 @@ def verify_latest(source, response, fetch_jobs):
             and response['total_count'] == len(runs), 'Incomplete or missing run list')
     require(all(isinstance(r, dict) and isinstance(r.get('created_at'), str)
                 and type(r.get('id')) is int for r in runs), 'Invalid run metadata')
+    require(all(r.get('head_sha') == source and r.get('head_branch') == 'main'
+                and r.get('event') == 'push' and r.get('path') == '.github/workflows/ci.yml'
+                and r.get('status') == 'completed' and r.get('conclusion') == 'success'
+                for r in runs), 'Nonpassing main CI evidence exists for source')
     run = max(runs, key=lambda r: (r['created_at'], r['id']))
     require(run.get('head_sha') == source and run.get('head_branch') == 'main'
             and run.get('event') == 'push' and run.get('path') == '.github/workflows/ci.yml'
             and run.get('status') == 'completed' and run.get('conclusion') == 'success',
             'Latest main CI run is not successful for source')
     run_id, attempt = run['id'], run.get('run_attempt')
-    require(type(attempt) is int and attempt > 0, 'Missing run attempt')
+    require(type(attempt) is int and attempt == 1, 'Rerun requires separate review')
     jobs_data = fetch_jobs(run_id, attempt)
     require(isinstance(jobs_data, dict) and isinstance(jobs_data.get('jobs'), list), 'Invalid jobs response')
     jobs = jobs_data['jobs']
@@ -94,6 +98,10 @@ def main():
         require(isinstance(ref, dict) and ref.get('ref') == 'refs/heads/main'
                 and isinstance(ref.get('object'), dict) and ref['object'].get('type') == 'commit'
                 and ref['object'].get('sha') == source, 'Main changed during preflight')
+        branch = fetch('/branches/main', token)
+        require(isinstance(branch, dict) and branch.get('name') == 'main'
+                and branch.get('protected') is True and isinstance(branch.get('commit'), dict)
+                and branch['commit'].get('sha') == source, 'Main is unprotected or changed')
     verify_remote_main()
     query = urlencode({'branch': 'main', 'event': 'push', 'head_sha': source, 'per_page': 100})
     runs = fetch('/actions/workflows/ci.yml/runs?' + query, token)

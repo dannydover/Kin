@@ -35,10 +35,14 @@ class HostedEvidenceTests(unittest.TestCase):
         newer = dict(self.run, id=5, created_at='2026-11-02T00:00:00Z', conclusion='failure')
         with self.assertRaises(ValueError): self.check({'total_count': 2, 'workflow_runs': [self.run, newer]})
 
+    def test_newer_pass_does_not_erase_older_failure(self):
+        older = dict(self.run, id=3, created_at='2026-10-31T00:00:00Z', conclusion='failure')
+        with self.assertRaises(ValueError): self.check({'total_count': 2, 'workflow_runs': [older, self.run]})
+
     def test_wrong_run_identity_or_incomplete_run_fails(self):
         for key, value in [('head_sha', 'b' * 40), ('head_branch', 'other'), ('event', 'pull_request'),
                            ('path', '.github/workflows/other.yml'), ('status', 'in_progress'),
-                           ('conclusion', 'failure'), ('run_attempt', 0)]:
+                           ('conclusion', 'failure'), ('run_attempt', 0), ('run_attempt', 2)]:
             with self.subTest(key=key):
                 response = copy.deepcopy(self.response); response['workflow_runs'][0][key] = value
                 with self.assertRaises(ValueError): self.check(response)
@@ -76,6 +80,8 @@ class HostedEvidenceTests(unittest.TestCase):
             self.assertEqual(token, 'synthetic-token')
             if path == '/git/ref/heads/main':
                 return {'ref': 'refs/heads/main', 'object': {'type': 'commit', 'sha': self.sha}}
+            if path == '/branches/main':
+                return {'name': 'main', 'protected': True, 'commit': {'sha': self.sha}}
             if '/jobs?' in path: return self.jobs
             if path == '/actions/runs/4': return self.run
             return self.response
@@ -108,13 +114,15 @@ class HostedEvidenceTests(unittest.TestCase):
         values = {('git', 'rev-parse', 'HEAD'): self.sha, ('git', 'rev-parse', 'refs/remotes/origin/main'): self.sha,
                   ('git', 'status', '--porcelain'): '', ('xcodebuild', '-version'): 'Xcode 27.0\nBuild version 27A266a',
                   ('uname', '-m'): 'arm64'}
-        for scenario in ('main', 'ci'):
+        for scenario in ('main', 'ci', 'unprotected'):
             seen = {'main': 0, 'runs': 0}
             def fetch(path, _):
                 if path == '/git/ref/heads/main':
                     seen['main'] += 1
                     sha = 'b' * 40 if scenario == 'main' and seen['main'] == 2 else self.sha
                     return {'ref': 'refs/heads/main', 'object': {'type': 'commit', 'sha': sha}}
+                if path == '/branches/main':
+                    return {'name': 'main', 'protected': scenario != 'unprotected', 'commit': {'sha': self.sha}}
                 if '/jobs?' in path: return self.jobs
                 if path == '/actions/runs/4': return self.run
                 seen['runs'] += 1

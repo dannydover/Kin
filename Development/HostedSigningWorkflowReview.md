@@ -7,14 +7,20 @@ archive exercise is the only implemented hosted archive path so far.
 
 The separate `scripts/verify-hosted-ci-evidence.py` is a working, read-only
 preflight component, not an authorized signing workflow. It requires a clean
-checkout of the exact workflow-dispatch main SHA, the reviewed CI workflow
+checkout of the exact workflow-dispatch main SHA, verifies GitHub reports main
+as protected, and requires the reviewed CI workflow
 digest, Xcode 27.0 build 27A266a on arm64, and the latest exact-source main-push
-CI attempt with all five required jobs successful. It fetches GitHub's API
+CI attempt with all five required jobs successful. For this draft it also
+rejects any other failed or incomplete main-push run for the same source and
+rejects rerun attempts; a later pass cannot silently erase an earlier failure.
+This deliberately conservative policy
+requires review before use. It fetches GitHub's API
 directly with the ephemeral Actions token, refuses redirects and incomplete
 responses, and prints no raw response or token. It requires `contents: read`
 and `actions: read` when eventually wired into a workflow. It does not itself
 authenticate a signed artifact or prove that supporting test scripts have not
-been changed maliciously; protected-main code review remains essential. A
+been changed maliciously, or verify which branch rules are enforced and who can
+bypass them; protected-main code review remains essential. A
 successful preflight would not authorize signing. The current merged main CI is
 failed, so this preflight must not claim that source is ready.
 
@@ -65,8 +71,21 @@ Record exact source/tree, Xcode/SDK builds, manifest hashes and verification
 outcomes in a small allowlisted provenance manifest; fail closed on a mismatch.
 No raw build output, credential, profile, keychain, device identifier, private
 path or personal data may be sent to public logs or artifacts. Do not publish a
-signed archive as a public GitHub artifact. The secure handoff needed for device
-QA is undecided and requires separate review.
+signed archive as a public GitHub artifact. GitHub documents that people with
+repository read access may download workflow artifacts; this repository is
+public. A GitHub artifact is therefore not the proposed private handoff.
+
+The candidate handoff is direct upload of the verified signed IPA from the
+ephemeral runner to Apple's App Store Connect, followed by processing and an
+explicitly approved TestFlight distribution to existing authorized testers. The
+same verified build would be selected for later App Review. This path requires
+separate approval for Apple credentials and each applicable upload/distribution;
+it is not implemented or tested here. Apple supports build uploads through
+Transporter or altool, but this repository's account access, selected tool and
+API-key compatibility remain unverified. If direct transfer cannot be supported
+securely, stop: no private artifact store has been identified or approved as a
+fallback. Record IPA hash and Apple's returned build identity without logging
+secrets or treating an upload request as proof of processing or publication.
 
 ## Synthetic verification required before approval
 
@@ -85,3 +104,7 @@ an upload role, but App Manager or higher for submission; confirm the applicable
 account, available role and actual API authentication path before deciding which
 credential to request. Individual and team API keys differ in scope. Device QA
 of the actual signed release candidate remains a separate requirement.
+
+References: https://docs.github.com/actions/managing-workflow-runs/downloading-workflow-artifacts ;
+https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/ ;
+https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles .
