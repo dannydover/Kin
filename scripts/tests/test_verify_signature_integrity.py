@@ -18,7 +18,7 @@ class SignatureIntegrityTests(unittest.TestCase):
             with mock.patch.object(signature.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
                 self.assertTrue(signature.verify(app))
             args, options = run.call_args
-            self.assertEqual(args[0], ['/usr/bin/codesign', '--verify', '--strict', '--all-architectures', str(app)])
+            self.assertEqual(args[0], ['/usr/bin/codesign', '--verify', '--deep', '--strict', '--all-architectures', str(app)])
             self.assertEqual(options['timeout'], 60)
             self.assertEqual(options['stdout'], subprocess.DEVNULL)
             self.assertEqual(options['stderr'], subprocess.DEVNULL)

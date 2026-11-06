@@ -114,11 +114,12 @@ categories without secret-bearing messages; a category is not a full diagnosis.
 ## Verification and outputs
 
 The unwired `scripts/verify-signature-integrity.py` runs a bounded, quiet
-`codesign --verify --strict --all-architectures` check on an app bundle. Its
+`codesign --verify --deep --strict --all-architectures` check on an app bundle. Its
 local tests mock the command; no signed product has been checked. This proves
 only that the tool accepted the seal when eventually run: an ad hoc signature
-can also pass. It does not verify the signing identity, trust, embedded-code
-policy, profile or entitlements and cannot authorize handoff. These checks must
+can also pass. Recursive checking is limited to nested code recognized by
+`codesign`; it is not an inventory of all executable content. It does not
+verify the signing identity, distribution profile or entitlements and cannot authorize handoff. These checks must
 be implemented separately before it is used in a release workflow.
 
 Verify the signed app and export with `codesign` and Apple profile decoding;
@@ -134,6 +135,15 @@ path or personal data may be sent to public logs or artifacts. Do not publish a
 signed archive as a public GitHub artifact. GitHub documents that people with
 repository read access may download workflow artifacts; this repository is
 public. A GitHub artifact is therefore not the proposed private handoff.
+
+Apple TN3125 states that the profile's DER-encoded form, not the decoded
+property-list view, is the source of truth on modern iOS; it also warns that
+the profile format is undocumented and its examples are for debugging. Merely
+decoding the plist and comparing its values cannot establish profile
+authorization or revocation. Do not promote the synthetic identity contract to
+a release guard on that basis. A supported validation and processing path and
+its assurance boundaries still need review and a separately approved real
+trial. See https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles .
 
 The candidate handoff is direct upload of the verified signed IPA from the
 ephemeral runner to Apple's App Store Connect, followed by processing and an

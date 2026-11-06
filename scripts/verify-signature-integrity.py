@@ -19,7 +19,7 @@ def verify(app):
         raise SignatureIntegrityError('invalid app bundle')
     try:
         result = subprocess.run(
-            ['/usr/bin/codesign', '--verify', '--strict', '--all-architectures', str(path)],
+            ['/usr/bin/codesign', '--verify', '--deep', '--strict', '--all-architectures', str(path)],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             timeout=60, check=False,
         )
