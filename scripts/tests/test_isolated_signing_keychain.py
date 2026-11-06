@@ -82,6 +82,26 @@ class KeychainLifecycleTests(unittest.TestCase):
             self.assertIn('keychain:interrupted', result.exception.cleanup_errors)
             self.assertEqual(list(Path(root).iterdir()), [])
 
+    def test_unknown_existing_signal_handler_fails_before_keychain_creation(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.object(keychain.signal, 'getsignal', return_value=None):
+            fake = FakeSecurity()
+            with self.assertRaises(keychain.TransactionFailed) as result: self.exercise(root, fake)
+            self.assertEqual(result.exception.primary_error, 'validation-error')
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_signal_handler_restore_failure_is_reported(self):
+        with tempfile.TemporaryDirectory() as root:
+            calls = []
+            def fake_signal(sig, handler):
+                calls.append((sig, handler))
+                if len(calls) == 4: raise TypeError('private')
+            with mock.patch.object(keychain.signal, 'signal', side_effect=fake_signal):
+                with self.assertRaises(keychain.TransactionFailed) as result: self.exercise(root, FakeSecurity())
+            self.assertIn('signal:restore-error', result.exception.cleanup_errors)
+            self.assertEqual(len(calls), 6)
+            self.assertEqual(list(Path(root).iterdir()), [])
+
     def test_each_setup_failure_still_attempts_cleanup(self):
         for stage in ('create-keychain', 'unlock-keychain', 'import', 'set-key-partition-list'):
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as root:

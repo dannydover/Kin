@@ -97,7 +97,10 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
             raise _RequestedStop()
     try:
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-            old_handlers[sig] = signal.getsignal(sig)
+            previous = signal.getsignal(sig)
+            if previous is None:
+                raise ValueError('Existing signal handler cannot be restored')
+            old_handlers[sig] = previous
             signal.signal(sig, request_stop)
         os.chmod(workspace, 0o700)
         keychain_password = secrets.token_urlsafe(32)
@@ -132,7 +135,7 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
         for sig, handler in old_handlers.items():
             try:
                 signal.signal(sig, handler)
-            except (OSError, ValueError):
+            except (OSError, ValueError, TypeError):
                 cleanup_errors.append('signal:restore-error')
     if primary_error is not None or cleanup_errors:
         raise TransactionFailed(primary_error, cleanup_errors)
