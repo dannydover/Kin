@@ -39,6 +39,10 @@ class HostedEvidenceTests(unittest.TestCase):
         older = dict(self.run, id=3, created_at='2026-10-31T00:00:00Z', conclusion='failure')
         with self.assertRaises(ValueError): self.check({'total_count': 2, 'workflow_runs': [older, self.run]})
 
+    def test_newer_pass_does_not_hide_earlier_rerun(self):
+        older = dict(self.run, id=3, created_at='2026-10-31T00:00:00Z', run_attempt=2)
+        with self.assertRaises(ValueError): self.check({'total_count': 2, 'workflow_runs': [older, self.run]})
+
     def test_wrong_run_identity_or_incomplete_run_fails(self):
         for key, value in [('head_sha', 'b' * 40), ('head_branch', 'other'), ('event', 'pull_request'),
                            ('path', '.github/workflows/other.yml'), ('status', 'in_progress'),

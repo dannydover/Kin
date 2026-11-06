@@ -21,7 +21,9 @@ and `actions: read` when eventually wired into a workflow. It does not itself
 authenticate a signed artifact or prove that supporting test scripts have not
 been changed maliciously, or verify which branch rules are enforced and who can
 bypass them; protected-main code review remains essential. A
-successful preflight would not authorize signing. The current merged main CI is
+successful preflight would not authorize signing. Main or CI can change after
+the check: the eventual signing design must revalidate at the point of use and
+cannot claim a cross-system atomic lock. The current merged main CI is
 failed, so this preflight must not claim that source is ready.
 
 ## Intended trust boundary
@@ -67,6 +69,9 @@ termination is not proof of cleanup. Do not alter the owner's local keychain.
 Verify the signed app and export with `codesign` and Apple profile decoding;
 compare signature certificate, explicit bundle ID, team, entitlements, version,
 build, architecture and executable/dSYM identities with the approved inputs.
+The signed entitlements must match the reviewed app policy and be authorized by
+the profile; Apple's profile entitlement allowlist can include extra entries
+and wildcards, so raw dictionary equality is not a correct profile check.
 Record exact source/tree, Xcode/SDK builds, manifest hashes and verification
 outcomes in a small allowlisted provenance manifest; fail closed on a mismatch.
 No raw build output, credential, profile, keychain, device identifier, private

@@ -58,6 +58,7 @@ def verify_latest(source, response, fetch_jobs):
     require(all(r.get('head_sha') == source and r.get('head_branch') == 'main'
                 and r.get('event') == 'push' and r.get('path') == '.github/workflows/ci.yml'
                 and r.get('status') == 'completed' and r.get('conclusion') == 'success'
+                and type(r.get('run_attempt')) is int and r.get('run_attempt') == 1
                 for r in runs), 'Nonpassing main CI evidence exists for source')
     run = max(runs, key=lambda r: (r['created_at'], r['id']))
     require(run.get('head_sha') == source and run.get('head_branch') == 'main'
