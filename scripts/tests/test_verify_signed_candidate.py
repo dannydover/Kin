@@ -8,11 +8,15 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location('candidate', Path(__file__).resolve().parents[1] / 'verify-signed-candidate.py')
 candidate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(candidate)
+keychain_spec = importlib.util.spec_from_file_location('keychain', Path(__file__).resolve().parents[1] / 'isolated-signing-keychain.py')
+keychain = importlib.util.module_from_spec(keychain_spec)
+keychain_spec.loader.exec_module(keychain)
 
 
 class CandidateTests(unittest.TestCase):
@@ -104,6 +108,95 @@ class CandidateTests(unittest.TestCase):
              mock.patch.object(candidate.time, 'monotonic', side_effect=[0, 61]):
             with self.assertRaises(candidate.CandidateError) as error: candidate._entitlements(self.app)
             self.assertEqual(str(error.exception), 'entitlement inspection and process cleanup failed')
+
+    def test_archive_export_and_profile_transaction_synthetic_integration(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
+            os.chmod(profiles, 0o700)
+            profile_uuid = str(uuid.UUID(int=1)).upper()
+            profile = {'directory': str(Path(profiles).resolve()), 'uuid': profile_uuid,
+                       'bytes': self.profile, 'sha256': hashlib.sha256(self.profile).hexdigest()}
+            expected_uuid = str(uuid.UUID(int=2)).upper()
+            calls = []
+            def security(*args):
+                calls.append(args[0])
+                if args[0] == 'create-keychain': Path(args[-1]).write_bytes(b'synthetic')
+                if args[0] == 'delete-keychain': Path(args[-1]).unlink(missing_ok=True)
+            def operation(keychain_path):
+                workspace = keychain_path.parent
+                archive = workspace / 'Kin.xcarchive'
+                archive_app = archive / 'Products/Applications/Kin.app'; archive_app.mkdir(parents=True)
+                for app in (archive_app, self.app):
+                    (app / 'Info.plist').write_bytes(plistlib.dumps(self.info))
+                    (app / 'embedded.mobileprovision').write_bytes(self.profile)
+                    (app / 'Kin').write_bytes(b'synthetic-executable')
+                dsym = archive / 'dSYMs/Kin.app.dSYM/Contents/Resources/DWARF/Kin'
+                dsym.parent.mkdir(parents=True); dsym.write_bytes(b'synthetic-dsym')
+                self.assertTrue((Path(profiles) / (profile_uuid + '.mobileprovision')).is_file())
+                result = candidate.verify_archive_export_with_preflight(archive, self.app, **self.inputs)
+                self.assertEqual(result['source_sha'], 'a' * 40)
+                self.assertEqual(result['uuid'], expected_uuid)
+                self.assertEqual(result['kind'], 'local-observation-not-build-attestation')
+                return True
+            with mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'GITHUB_SHA': 'a' * 40}), \
+                 mock.patch.object(candidate._evidence, 'main') as preflight, \
+                 mock.patch.object(candidate._evidence, 'command', return_value='b' * 40), \
+                 mock.patch.object(candidate, '_entitlements', return_value=self.entitlements), \
+                 mock.patch.object(candidate._signature, 'verify', return_value=True), \
+                 mock.patch.object(candidate, '_binary_uuid', return_value=expected_uuid):
+                self.assertTrue(keychain.run_isolated(root, b'synthetic', 'synthetic', operation,
+                                                     backend=security, profile=profile))
+                self.assertEqual(preflight.call_count, 2)
+            self.assertIn('delete-keychain', calls)
+            self.assertEqual(list(Path(root).iterdir()), [])
+            self.assertEqual(list(Path(profiles).iterdir()), [])
+
+    def test_uuid_parser_rejects_multiple_or_wrong_architecture(self):
+        with tempfile.TemporaryDirectory() as root:
+            binary = Path(root) / 'binary'; binary.write_bytes(b'synthetic')
+            value = str(uuid.UUID(int=2)).upper()
+            with mock.patch.object(candidate, '_bounded_output', return_value=('UUID: ' + value + ' (arm64) synthetic\n').encode()):
+                self.assertEqual(candidate._binary_uuid(binary), value)
+            for data in (('UUID: ' + value + ' (x86_64) synthetic\n').encode(), b'not a UUID\n',
+                         ('UUID: ' + value + ' (arm64) synthetic\n') .encode() * 2):
+                with self.subTest(data=data), mock.patch.object(candidate, '_bounded_output', return_value=data):
+                    with self.assertRaises(candidate.CandidateError): candidate._binary_uuid(binary)
+
+    def test_archive_uuid_mismatch_cannot_return_observation(self):
+        archive = Path(self.temp.name) / 'Kin.xcarchive'; archive.mkdir()
+        values = [str(uuid.UUID(int=2)).upper(), str(uuid.UUID(int=3)).upper()]
+        with mock.patch.dict(os.environ, {'GITHUB_SHA': 'a' * 40}), \
+             mock.patch.object(candidate._evidence, 'main') as preflight, \
+             mock.patch.object(candidate._evidence, 'command', return_value='b' * 40), \
+             mock.patch.object(candidate, '_verify_candidate', return_value=True), \
+             mock.patch.object(candidate, '_binary_uuid', side_effect=values):
+            with self.assertRaises(candidate.CandidateError):
+                candidate.verify_archive_export_with_preflight(archive, self.app, **self.inputs)
+            self.assertEqual(preflight.call_count, 1)
+
+    def test_archive_mismatch_still_cleans_profile_and_keychain(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
+            os.chmod(profiles, 0o700)
+            profile = {'directory': str(Path(profiles).resolve()), 'uuid': str(uuid.UUID(int=1)).upper(),
+                       'bytes': self.profile, 'sha256': hashlib.sha256(self.profile).hexdigest()}
+            values = [str(uuid.UUID(int=2)).upper(), str(uuid.UUID(int=3)).upper()]
+            calls = []
+            def security(*args):
+                calls.append(args[0])
+                if args[0] == 'create-keychain': Path(args[-1]).write_bytes(b'synthetic')
+                if args[0] == 'delete-keychain': Path(args[-1]).unlink(missing_ok=True)
+            def operation(keychain_path):
+                archive = keychain_path.parent / 'Kin.xcarchive'; archive.mkdir()
+                return candidate.verify_archive_export_with_preflight(archive, self.app, **self.inputs)
+            with mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'GITHUB_SHA': 'a' * 40}), \
+                 mock.patch.object(candidate._evidence, 'main'), \
+                 mock.patch.object(candidate._evidence, 'command', return_value='b' * 40), \
+                 mock.patch.object(candidate, '_verify_candidate', return_value=True), \
+                 mock.patch.object(candidate, '_binary_uuid', side_effect=values):
+                with self.assertRaises(keychain.TransactionFailed):
+                    keychain.run_isolated(root, b'synthetic', 'synthetic', operation, backend=security, profile=profile)
+            self.assertIn('delete-keychain', calls)
+            self.assertEqual(list(Path(root).iterdir()), [])
+            self.assertEqual(list(Path(profiles).iterdir()), [])
 
 
 if __name__ == '__main__': unittest.main()

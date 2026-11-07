@@ -158,6 +158,17 @@ workflow invokes this module. Tests use synthetic data and fake signer output;
 the entitlement subprocess limits have also been exercised with a harmless
 local child. No signed Kin app has been verified.
 
+The same module now also compares the signed archive app and exported app
+against the reviewed identity, profile bytes and entitlements, checks that the
+archive binary, exported binary and dSYM report the same arm64 UUID, and
+returns their hashes alongside preflight-observed source identifiers only
+after a second preflight. Synthetic tests compose this check inside the actual
+temporary-keychain/profile transaction, including a mismatch and cleanup path.
+The build/export steps and signer outputs in those tests are fake. This is a
+local consistency observation, not proof that Xcode built either binary from
+that source: no controlled Xcode archive/export orchestration or IPA-container
+verification is implemented yet. No workflow calls the signed-output check.
+
 Verify the signed app and export with `codesign` and Apple profile decoding;
 compare signature certificate, explicit bundle ID, team, entitlements, version,
 build, architecture and executable/dSYM identities with the approved inputs.

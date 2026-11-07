@@ -14,6 +14,7 @@ import re
 import selectors
 import subprocess
 import time
+import uuid
 
 _spec = importlib.util.spec_from_file_location('signature_integrity', Path(__file__).with_name('verify-signature-integrity.py'))
 _signature = importlib.util.module_from_spec(_spec)
@@ -37,15 +38,15 @@ def _read_file(path, limit):
     return data
 
 
-def _entitlements(app):
-    """Read at most 64 KiB from codesign; kill and reap only our own process."""
+def _bounded_output(args, label):
+    """Read at most 64 KiB from one child; kill and reap only that child."""
     deadline = time.monotonic() + 60
     proc = None
     primary = None
     cleanup_failed = False
     result = None
     try:
-        proc = subprocess.Popen(['/usr/bin/codesign', '--display', '--entitlements', '-', '--xml', str(app)],
+        proc = subprocess.Popen(args,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         output = bytearray()
         with selectors.DefaultSelector() as selector:
@@ -53,21 +54,21 @@ def _entitlements(app):
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or not selector.select(remaining):
-                    raise CandidateError('entitlement inspection timed out')
+                    raise CandidateError(label + ' timed out')
                 chunk = os.read(proc.stdout.fileno(), 65537 - len(output))
                 if not chunk:
                     break
                 output.extend(chunk)
                 if len(output) > 65536:
-                    raise CandidateError('entitlement output exceeds limit')
+                    raise CandidateError(label + ' output exceeds limit')
         remaining = deadline - time.monotonic()
         if remaining <= 0 or proc.wait(timeout=remaining) != 0:
-            raise CandidateError('entitlement inspection failed')
-        result = plistlib.loads(bytes(output))
+            raise CandidateError(label + ' failed')
+        result = bytes(output)
     except CandidateError as exc:
         primary = exc
     except (OSError, ValueError, plistlib.InvalidFileException, subprocess.TimeoutExpired):
-        primary = CandidateError('entitlement inspection unavailable')
+        primary = CandidateError(label + ' unavailable')
     finally:
         if proc is not None:
             try:
@@ -83,12 +84,40 @@ def _entitlements(app):
                     except OSError:
                         cleanup_failed = True
     if primary is not None and cleanup_failed:
-        raise CandidateError('entitlement inspection and process cleanup failed') from None
+        raise CandidateError(label + ' and process cleanup failed') from None
     if primary is not None:
         raise primary from None
     if cleanup_failed:
-        raise CandidateError('entitlement process cleanup failed') from None
+        raise CandidateError(label + ' process cleanup failed') from None
     return result
+
+
+def _entitlements(app):
+    try:
+        return plistlib.loads(_bounded_output(
+            ['/usr/bin/codesign', '--display', '--entitlements', '-', '--xml', str(app)],
+            'entitlement inspection'))
+    except (ValueError, plistlib.InvalidFileException):
+        raise CandidateError('entitlement inspection unavailable') from None
+
+
+def _binary_uuid(path):
+    if path.is_symlink() or not path.is_file():
+        raise CandidateError('binary or dSYM unavailable')
+    data = _bounded_output(['/usr/bin/xcrun', 'dwarfdump', '--uuid', str(path)], 'UUID inspection')
+    try:
+        lines = data.decode('utf-8').splitlines()
+        if len(lines) != 1:
+            raise ValueError('unexpected architecture count')
+        match = re.fullmatch(r'UUID: ([0-9A-Fa-f-]{36}) \(arm64\) .+', lines[0])
+        if match is None:
+            raise ValueError('invalid UUID output')
+        parsed = str(uuid.UUID(match.group(1))).upper()
+        if parsed != match.group(1).upper():
+            raise ValueError('noncanonical UUID')
+        return parsed
+    except (UnicodeError, ValueError):
+        raise CandidateError('invalid arm64 UUID evidence') from None
 
 
 def _verify_candidate(app, *, team_id, certificate_sha256, profile_sha256,
@@ -147,3 +176,52 @@ def verify_with_preflight(app, **reviewed_inputs):
         raise CandidateError('candidate verification failed')
     _evidence.main()
     return True
+
+
+def _binary_hash(path):
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 1024 * 1024 * 1024:
+        raise CandidateError('binary unavailable')
+    digest = hashlib.sha256(); size = 0
+    with path.open('rb') as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk: break
+            size += len(chunk)
+            if size > 1024 * 1024 * 1024:
+                raise CandidateError('binary exceeds limit')
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_archive_export_with_preflight(archive, exported_app, **reviewed_inputs):
+    """Compare signed archive/export app and dSYM under the read-only preflight.
+
+    The caller must keep every path immutable. This does not run Xcode, prove
+    either app came from the source, validate the IPA container or establish
+    profile authorization. The returned observation is not an attestation.
+    """
+    archive = Path(archive); exported_app = Path(exported_app)
+    if archive.is_symlink() or not archive.is_dir() or archive.suffix != '.xcarchive':
+        raise CandidateError('invalid archive')
+    archive_app = archive / 'Products/Applications/Kin.app'
+    binary = archive_app / 'Kin'; exported_binary = exported_app / 'Kin'
+    dsym = archive / 'dSYMs/Kin.app.dSYM/Contents/Resources/DWARF/Kin'
+    _evidence.main()
+    source = os.environ.get('GITHUB_SHA', '')
+    tree = _evidence.command('git', 'rev-parse', 'HEAD^{tree}')
+    if not re.fullmatch(r'[0-9a-f]{40}', source) or not re.fullmatch(r'[0-9a-f]{40}', tree):
+        raise CandidateError('invalid source identity')
+    if _verify_candidate(archive_app, **reviewed_inputs) is not True:
+        raise CandidateError('archive app verification failed')
+    if _verify_candidate(exported_app, **reviewed_inputs) is not True:
+        raise CandidateError('exported app verification failed')
+    binary_id = _binary_uuid(binary)
+    if _binary_uuid(exported_binary) != binary_id or _binary_uuid(dsym) != binary_id:
+        raise CandidateError('archive, export and dSYM UUID mismatch')
+    archive_hash = _binary_hash(binary); export_hash = _binary_hash(exported_binary)
+    _evidence.main()
+    if _evidence.command('git', 'rev-parse', 'HEAD^{tree}') != tree:
+        raise CandidateError('source tree changed')
+    return {'kind': 'local-observation-not-build-attestation', 'source_sha': source,
+            'source_tree': tree, 'architecture': 'arm64', 'uuid': binary_id,
+            'archive_binary_sha256': archive_hash, 'export_binary_sha256': export_hash}
