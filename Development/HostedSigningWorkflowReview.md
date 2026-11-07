@@ -245,17 +245,25 @@ cannot guarantee cleanup of detached or surviving children, or after runner
 loss or SIGKILL. Its environment allowlist is not a substitute for validating
 the values supplied by a future workflow.
 The shared control flow extracts the inspected app from the IPA; it no longer
-assumes an unpacked Payload exists beside the IPA. The runner receives the
-observed checkout directory and a restricted environment. The checkout check
+assumes an unpacked Payload exists beside the IPA. The runner receives a
+read-only-mode source image and a restricted environment. The checkout check
 compares HEAD and tree, rejects dirty or ignored files, unsupported index flags,
 symlinks, submodules, configuration files, package references and known project
 or scheme script actions. It is not a filesystem lock or a complete inventory
-of SDK, compiler and generated inputs. A same-user process could change and
-restore files during a build. The observed source and artifact hashes are not
-proof that the source produced the artifacts. After the transaction, the flow
+of SDK, compiler and generated inputs. The image is generated from the selected
+Git commit; each extracted file is checked against the Git tree's blob ID, size
+and executable bit, and a SHA-256 image digest is checked after the commands.
+Source image compatibility with a real Xcode build is unverified. A same-user
+process could change and restore files during a build; the source and output
+hashes recorded in one job are not an independent build attestation. After the transaction, the flow
 independently rechecks the owned workspace and profile paths are absent and the
 search list matches its initial observation, and invokes a separate observer.
 These checks are subject to same-user races and do not run after runner loss.
+The synthetic observation includes hashes of the planned argument vectors and
+restricted environment, not the raw paths or values. Those hashes show what the
+flow planned; an injected runner can execute different commands and they do not
+prove execution. A real integration must bind a trusted runner and verify its
+toolchain and environment rather than accepting caller-supplied claims.
 The production entry remains
 disabled, its environment and actual Xcode export behavior are unverified, and
 keychain discovery by Xcode has not been demonstrated.
@@ -264,7 +272,9 @@ A local unsigned archive probe used an older clean source commit and Xcode 27.2,
 not the hosted 27.0 baseline. The bounded command exited unsuccessfully; its
 local activity log included an invalid CoreSimulatorService connection. This
 observation does not establish the cause or validate the PR source, and the
-probe was not retried unchanged.
+probe was not retried unchanged. A read-only simulator-runtime listing exited
+unsuccessfully under both the isolated and existing home directories; its raw
+output was not retained, so it does not identify the cause.
 GitHub's documented hosted signing example adds the temporary keychain to the
 user keychain search list before building. The transaction can optionally snapshot,
 extend, compare and restore a supplied search list; the synthetic path tests it

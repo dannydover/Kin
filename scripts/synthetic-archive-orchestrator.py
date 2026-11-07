@@ -6,6 +6,7 @@ them. This is not a production signing workflow or build attestation.
 """
 import hashlib
 import importlib.util
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -14,6 +15,7 @@ import shlex
 import signal
 import stat
 import subprocess
+import tarfile
 import uuid
 
 
@@ -36,7 +38,25 @@ class BoundedProcessError(Exception):
         super().__init__('Bounded process failed')
 
 
-def _run_bounded(command, timeout, *, cwd, env):
+class SourceImageError(Exception):
+    """Fixed source failure and cleanup categories, without paths or output."""
+    def __init__(self, primary_error, cleanup_errors):
+        self.primary_error = primary_error
+        self.cleanup_errors = tuple(cleanup_errors)
+        super().__init__('Source image operation failed')
+
+
+def _source_primary(exc):
+    if isinstance(exc, BoundedProcessError):
+        reason = exc.reason if exc.reason in {'start', 'timeout', 'interrupted', 'wait', 'exit'} else 'other'
+        return 'source-process:' + reason
+    if isinstance(exc, (KeyboardInterrupt, SystemExit, _keychain._RequestedStop)): return 'source:interrupted'
+    if isinstance(exc, ValueError): return 'source:validation'
+    if isinstance(exc, OSError): return 'source:filesystem'
+    return 'source:other'
+
+
+def _run_bounded(command, timeout, *, cwd, env, output_fd=None):
     """Run an owned subprocess without logs, with bounded termination/reaping.
 
     This helper does not authorize a command and is not wired to real signing.
@@ -46,8 +66,12 @@ def _run_bounded(command, timeout, *, cwd, env):
     if (not isinstance(command, (tuple, list)) or not command or
             any(not isinstance(part, str) or not part or '\x00' in part for part in command) or
             not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 < timeout <= 1200 or
-            not isinstance(env, dict) or not set(env).issubset({'PATH', 'HOME', 'TMPDIR', 'DEVELOPER_DIR', 'LANG', 'LC_ALL'}) or
+            not isinstance(env, dict) or not set(env).issubset({'PATH', 'HOME', 'TMPDIR', 'DEVELOPER_DIR', 'LANG', 'LC_ALL',
+                                                               'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GIT_TERMINAL_PROMPT'}) or
             any(not isinstance(value, str) or '\x00' in value for value in env.values()) or
+            any(env.get(k, v) != v for k, v in {'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
+                                                 'GIT_TERMINAL_PROMPT': '0'}.items()) or
+            (output_fd is not None and (type(output_fd) is not int or output_fd < 0)) or
             not isinstance(cwd, (str, Path))):
         raise ValueError('Invalid bounded process input')
     try:
@@ -59,7 +83,7 @@ def _run_bounded(command, timeout, *, cwd, env):
         raise ValueError('Invalid bounded process directory') from None
     try:
         process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL if output_fd is None else output_fd, stderr=subprocess.DEVNULL,
                                    close_fds=True, start_new_session=True, shell=False)
     except OSError:
         raise BoundedProcessError('start') from None
@@ -78,7 +102,7 @@ def _run_bounded(command, timeout, *, cwd, env):
         except (subprocess.TimeoutExpired, OSError):
             cleanup_failed = True
         reason = ('timeout' if isinstance(exc, subprocess.TimeoutExpired) else
-                  'interrupted' if isinstance(exc, (KeyboardInterrupt, SystemExit)) else 'wait')
+                  'interrupted' if isinstance(exc, (KeyboardInterrupt, SystemExit, _keychain._RequestedStop)) else 'wait')
         raise BoundedProcessError(reason, cleanup_failed) from None
     if code != 0:
         raise BoundedProcessError('exit')
@@ -169,6 +193,196 @@ def _checkout_snapshot(source_directory, expected_sha):
         if any(marker in scheme for marker in (b'<ExecutionAction', b'<PreActions', b'<PostActions', b'scriptText=')):
             raise ValueError('Unsupported scheme build inputs')
     return {'source_sha': head, 'source_tree': tree}
+
+
+def _source_image_digest(directory):
+    """Hash a restricted source image without following links or printing paths."""
+    directory = Path(directory); records = []; size = 0
+    for root, dirs, files in os.walk(directory, followlinks=False):
+        current = Path(root)
+        if current.is_symlink() or current.stat().st_mode & 0o777 != 0o500:
+            raise ValueError('Source image directory changed')
+        for name in dirs:
+            path = current / name
+            if path.is_symlink(): raise ValueError('Source image link detected')
+            records.append(('directory', path.relative_to(directory).as_posix(), 0o500, ''))
+        for name in files:
+            path = current / name
+            info = path.lstat(); mode = info.st_mode & 0o777
+            if not stat.S_ISREG(info.st_mode) or mode not in (0o400, 0o500):
+                raise ValueError('Source image file changed')
+            size += info.st_size
+            if size > 128 * 1024 * 1024: raise ValueError('Source image size limit')
+            digest = hashlib.sha256()
+            with path.open('rb') as data:
+                while True:
+                    chunk = data.read(1024 * 1024)
+                    if not chunk: break
+                    digest.update(chunk)
+            records.append(('file', path.relative_to(directory).as_posix(), mode, digest.hexdigest()))
+        if len(records) > 10000: raise ValueError('Source image entry limit')
+    if not records: raise ValueError('Source image empty')
+    return hashlib.sha256(json.dumps(sorted(records), ensure_ascii=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def _restore_source_directory(directory):
+    """Make only the owned source image removable before transaction cleanup."""
+    directory = Path(directory)
+    pending = [os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)]
+    count = 0
+    try:
+        while pending:
+            current = pending.pop()
+            try:
+                if os.fstat(current).st_uid != os.geteuid(): raise ValueError('Source image ownership changed')
+                os.fchmod(current, 0o700)
+                for name in os.listdir(current):
+                    count += 1
+                    if count > 10000: raise ValueError('Source image entry limit')
+                    info = os.stat(name, dir_fd=current, follow_symlinks=False)
+                    if stat.S_ISDIR(info.st_mode):
+                        child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current)
+                        try:
+                            opened = os.fstat(child)
+                            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                                raise ValueError('Source image ownership changed')
+                        except BaseException:
+                            os.close(child); raise
+                        pending.append(child)
+                    elif not stat.S_ISREG(info.st_mode):
+                        raise ValueError('Source image entry unsupported')
+            finally:
+                os.close(current)
+    finally:
+        for descriptor in pending:
+            os.close(descriptor)
+
+
+def _materialize_source(source_directory, expected_sha, workspace):
+    """Build a read-only image from Git objects, not working-tree file copies.
+
+    This is a same-job observation, not an attestation or protection against a
+    same-user process changing and restoring files during the build.
+    """
+    source = Path(source_directory); workspace = Path(workspace)
+    try:
+        info = workspace.lstat()
+        if (not workspace.is_absolute() or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or
+                info.st_mode & 0o077 or workspace.resolve(strict=True) != workspace or
+                source == workspace or source in workspace.parents or workspace in source.parents):
+            raise ValueError('Invalid source image workspace')
+    except (OSError, RuntimeError):
+        raise ValueError('Invalid source image workspace') from None
+    _checkout_snapshot(str(source), expected_sha)
+    env = {'PATH': '/usr/bin:/bin', 'HOME': '/tmp', 'LC_ALL': 'C',
+           'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
+    git = ['/usr/bin/git', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false',
+           '-c', 'core.hooksPath=/dev/null', '-C', str(source)]
+    entries = _candidate._bounded_output(git + ['ls-tree', '-r', '-l', '-z', expected_sha],
+                                         'source tree inspection', cwd=str(source), env=env).split(b'\0')
+    total = 0; expected = {}
+    for entry in entries:
+        if not entry: continue
+        meta, separator, raw_name = entry.partition(b'\t'); fields = meta.split()
+        if not separator or len(fields) != 4 or fields[0] not in (b'100644', b'100755') or fields[1] != b'blob':
+            raise ValueError('Unsupported source tree')
+        try:
+            length = int(fields[3]); name = raw_name.decode('utf-8'); blob = fields[2].decode('ascii')
+        except (ValueError, UnicodeError): raise ValueError('Invalid source entry') from None
+        if (length < 0 or not re.fullmatch(r'[0-9a-f]{40}', blob) or name in expected or
+                '\\' in name or any(part in ('', '.', '..') for part in name.split('/'))):
+            raise ValueError('Invalid source entry')
+        expected[name] = (fields[0], length, blob); total += length
+        if len(expected) > 10000 or total > 128 * 1024 * 1024: raise ValueError('Source tree limit')
+    if not expected: raise ValueError('Source tree empty')
+    expected_dirs = set()
+    for name in expected:
+        parts = name.split('/')
+        expected_dirs.update('/'.join(parts[:index]) for index in range(1, len(parts)))
+    tar_path = workspace / 'source.tar'; image = workspace / 'source-image'
+    fd = os.open(tar_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    archive_error = None; close_failed = False
+    try:
+        _run_bounded(tuple(git + ['archive', '--format=tar', expected_sha]), 60,
+                     cwd=str(source), env=env, output_fd=fd)
+    except BaseException as exc:
+        archive_error = exc
+    finally:
+        try: os.close(fd)
+        except OSError: close_failed = True
+    if archive_error is not None:
+        if close_failed:
+            errors = ('source:archive-close-failed',)
+            if isinstance(archive_error, BoundedProcessError) and archive_error.cleanup_failed:
+                errors += ('process:cleanup-failed',)
+            raise SourceImageError(_source_primary(archive_error), errors) from None
+        raise archive_error
+    if close_failed: raise SourceImageError(None, ('source:archive-close-failed',))
+    if not 0 < tar_path.stat().st_size <= 160 * 1024 * 1024: raise ValueError('Source archive limit')
+    os.mkdir(image, 0o700)
+    try:
+        rootfd = os.open(image, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            seen = set(); extracted = 0; verified_files = set()
+            with tarfile.open(tar_path, mode='r:') as archive:
+                for member in archive:
+                    name = member.name.rstrip('/'); parts = name.split('/')
+                    if (not name or name in seen or '\\' in name or any(p in ('', '.', '..') for p in parts) or
+                            any(ord(c) < 32 or ord(c) == 127 for c in name) or
+                            not (member.isdir() or member.isfile()) or member.mode & 0o7000):
+                        raise ValueError('Unsupported source archive entry')
+                    seen.add(name)
+                    if len(seen) > 10000: raise ValueError('Source archive entry limit')
+                    parent = os.dup(rootfd)
+                    try:
+                        for part in parts[:-1]:
+                            try: os.mkdir(part, 0o700, dir_fd=parent)
+                            except FileExistsError: pass
+                            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                            os.close(parent); parent = child
+                        if member.isdir():
+                            if name not in expected_dirs:
+                                raise ValueError('Unexpected source directory')
+                            try: os.mkdir(parts[-1], 0o700, dir_fd=parent)
+                            except FileExistsError: pass
+                        else:
+                            if name not in expected: raise ValueError('Unexpected source file')
+                            expected_mode, expected_size, expected_blob = expected[name]
+                            if (member.size != expected_size or
+                                    bool(member.mode & 0o111) != (expected_mode == b'100755')):
+                                raise ValueError('Source archive metadata differs')
+                            extracted += member.size
+                            if member.size < 0 or extracted > total: raise ValueError('Source archive size mismatch')
+                            output = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                             0o600, dir_fd=parent)
+                            try:
+                                data = archive.extractfile(member)
+                                if data is None: raise ValueError('Source archive file unavailable')
+                                copied = 0; blob_hash = hashlib.sha1(('blob ' + str(member.size) + '\0').encode())
+                                with data, os.fdopen(output, 'wb', closefd=False) as out:
+                                    while True:
+                                        chunk = data.read(1024 * 1024)
+                                        if not chunk: break
+                                        copied += len(chunk); blob_hash.update(chunk); out.write(chunk)
+                                if copied != member.size or blob_hash.hexdigest() != expected_blob:
+                                    raise ValueError('Source archive file differs')
+                                os.fchmod(output, 0o500 if member.mode & 0o111 else 0o400)
+                                verified_files.add(name)
+                            finally: os.close(output)
+                    finally: os.close(parent)
+            if extracted != total or verified_files != set(expected): raise ValueError('Source archive incomplete')
+        finally: os.close(rootfd)
+        for root, dirs, _files in os.walk(image, topdown=False, followlinks=False):
+            if any((Path(root) / name).is_symlink() for name in dirs): raise ValueError('Source image link detected')
+            Path(root).chmod(0o500)
+        return image, _source_image_digest(image)
+    except BaseException as exc:
+        try:
+            if image.is_symlink(): raise ValueError('Source image ownership changed')
+            if image.exists(): _restore_source_directory(image)
+        except Exception:
+            raise SourceImageError(_source_primary(exc), ('source:cleanup-failed',)) from None
+        raise
 
 
 def _reviewed_plan(reviewed, profile_uuid, workspace, keychain_path):
@@ -297,6 +511,8 @@ def _execute_controlled(runner_temp, profile, reviewed, identity_bytes, identity
     if (identity_bytes != b'kin-synthetic-identity-only' or identity_password != 'kin-synthetic-password-only' or
             profile['bytes'] != b'kin-synthetic-profile-only'):
         raise BoundedProcessError('production-disabled')
+    if runner_env != {'PATH': '/usr/bin:/bin'}:
+        raise ValueError('Synthetic runner environment differs')
     profile_uuid = profile['uuid']; profile_directory = profile['directory']
     directory = Path(profile_directory)
     if not directory.is_absolute() or directory.is_symlink() or directory.resolve(strict=True) != directory:
@@ -313,36 +529,54 @@ def _execute_controlled(runner_temp, profile, reviewed, identity_bytes, identity
     if not re.fullmatch(r'[0-9a-f]{40}', tree) or checkout['source_tree'] != tree:
         raise ValueError('Invalid source tree')
     observation = []; keychains = []; process_failure = []; artifact_failure = []
+    source_cleanup_failure = []; source_creation_failure = []
 
     def operation(keychain_path):
         keychains.append(keychain_path)
         workspace = keychain_path.parent
         archive, export_dir, options_path, options, archive_cmd, export_cmd = _reviewed_plan(
             reviewed, profile_uuid, workspace, keychain_path)
+        plan_hash = hashlib.sha256(json.dumps([archive_cmd, export_cmd], separators=(',', ':')).encode()).hexdigest()
+        environment_hash = hashlib.sha256(json.dumps(runner_env, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         with options_path.open('xb') as handle:
             plistlib.dump(options, handle)
         try:
-            if (runner(archive_cmd, 1200, cwd=source_directory, env=runner_env) is not True or
-                    runner(export_cmd, 600, cwd=source_directory, env=runner_env) is not True):
-                raise ValueError('Controlled build did not succeed')
+            image, source_image_hash = _materialize_source(source_directory, source, workspace)
+        except SourceImageError as exc:
+            source_creation_failure.append(exc)
+            raise
         except BoundedProcessError as exc:
-            reason = exc.reason if exc.reason in {'start', 'timeout', 'interrupted', 'wait', 'exit', 'production-disabled'} else 'other'
+            reason = exc.reason if exc.reason in {'start', 'timeout', 'interrupted', 'wait', 'exit'} else 'other'
             process_failure.append((reason, exc.cleanup_failed is True))
             raise
         try:
-            ipa = export_dir / 'Kin.ipa'
-            ipa_hash = _candidate._binary_hash(ipa)
-            inspected_app = _candidate.extract_ipa_for_inspection(ipa, workspace)
-            value = _candidate.verify_archive_export_ipa_with_preflight(archive, inspected_app, ipa, **reviewed)
-            if value.get('ipa_sha256') != ipa_hash:
-                raise ValueError('IPA changed during inspection')
-        except (_candidate.CandidateError, OSError, ValueError):
-            artifact_failure.append(True)
-            raise
-        if value.get('source_sha') != source or value.get('source_tree') != tree:
-            raise ValueError('Observed source changed')
-        observation.append(value)
-        return True
+            try:
+                if (runner(archive_cmd, 1200, cwd=str(image), env=runner_env) is not True or
+                        runner(export_cmd, 600, cwd=str(image), env=runner_env) is not True):
+                    raise ValueError('Controlled build did not succeed')
+            except BoundedProcessError as exc:
+                reason = exc.reason if exc.reason in {'start', 'timeout', 'interrupted', 'wait', 'exit', 'production-disabled'} else 'other'
+                process_failure.append((reason, exc.cleanup_failed is True))
+                raise
+            try:
+                ipa = export_dir / 'Kin.ipa'
+                ipa_hash = _candidate._binary_hash(ipa)
+                inspected_app = _candidate.extract_ipa_for_inspection(ipa, workspace)
+                value = _candidate.verify_archive_export_ipa_with_preflight(archive, inspected_app, ipa, **reviewed)
+                if value.get('ipa_sha256') != ipa_hash:
+                    raise ValueError('IPA changed during inspection')
+            except (_candidate.CandidateError, OSError, ValueError):
+                artifact_failure.append(True)
+                raise
+            if (value.get('source_sha') != source or value.get('source_tree') != tree or
+                    _source_image_digest(image) != source_image_hash):
+                raise ValueError('Observed source changed')
+            observation.append(dict(value, source_image_sha256=source_image_hash,
+                                    command_plan_sha256=plan_hash, runner_environment_sha256=environment_hash))
+            return True
+        finally:
+            try: _restore_source_directory(image)
+            except Exception: source_cleanup_failure.append(True)
 
     failure = None
     try:
@@ -350,6 +584,15 @@ def _execute_controlled(runner_temp, profile, reviewed, identity_bytes, identity
                                operation, backend=security_backend, profile=profile, search_list=search_list)
     except _keychain.TransactionFailed as exc:
         failure = exc
+    if failure is not None and source_creation_failure:
+        source_error = source_creation_failure[0]
+        failure = _keychain.TransactionFailed(source_error.primary_error,
+                                              failure.cleanup_errors + source_error.cleanup_errors)
+    if source_cleanup_failure:
+        if failure is None:
+            failure = _keychain.TransactionFailed(None, ('source:cleanup-failed',))
+        else:
+            failure = _keychain.TransactionFailed(failure.primary_error, failure.cleanup_errors + ('source:cleanup-failed',))
     if failure is not None and process_failure:
         reason, process_cleanup_failed = process_failure[0]
         errors = failure.cleanup_errors + (('process:cleanup-failed',) if process_cleanup_failed else ())

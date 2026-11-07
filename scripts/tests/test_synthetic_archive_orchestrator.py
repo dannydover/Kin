@@ -1,12 +1,14 @@
 """Only fake tools and synthetic data; never sign or contact a provider."""
 import importlib.util
 import hashlib
+import io
 import os
 from pathlib import Path
 import plistlib
 import subprocess
 import sys
 import tempfile
+import tarfile
 import time
 import unittest
 import uuid
@@ -35,6 +37,7 @@ class SyntheticOrchestratorTests(unittest.TestCase):
                         mock.patch.object(orchestrator._candidate._evidence, 'command', return_value='b' * 40),
                         mock.patch.object(orchestrator, '_checkout_snapshot',
                                           return_value={'source_sha': 'a' * 40, 'source_tree': 'b' * 40}),
+                        mock.patch.object(orchestrator, '_materialize_source', side_effect=self.materialize),
                         mock.patch.object(orchestrator._candidate._signature, 'verify', return_value=True),
                         mock.patch.object(orchestrator._candidate, '_binary_uuid', return_value='synthetic-uuid'),
                         mock.patch.object(orchestrator._candidate, '_entitlements', return_value={
@@ -50,9 +53,15 @@ class SyntheticOrchestratorTests(unittest.TestCase):
             if self.failure == 'cleanup': raise OSError('private')
             Path(args[-1]).unlink(missing_ok=True); self.registered = False
 
+    def materialize(self, _source, _sha, workspace):
+        image = workspace / 'source-image'; image.mkdir()
+        (image / 'synthetic').write_bytes(b'source'); (image / 'synthetic').chmod(0o400); image.chmod(0o500)
+        return image, orchestrator._source_image_digest(image)
+
     def runner(self, command, timeout, *, cwd, env):
         self.commands.append((command, timeout))
-        self.assertEqual(cwd, str(Path.cwd().resolve()))
+        self.assertEqual(Path(cwd).name, 'source-image')
+        self.assertNotEqual(cwd, str(Path.cwd().resolve()))
         self.assertEqual(env, {'PATH': '/usr/bin:/bin'})
         if self.failure == 'timeout':
             orchestrator._run_bounded((sys.executable, '-c', 'import time;time.sleep(30)'), 0.15,
@@ -78,6 +87,8 @@ class SyntheticOrchestratorTests(unittest.TestCase):
             for item in app.iterdir(): item.unlink()
             app.rmdir(); app.parent.rmdir()
             if self.failure == 'ipa': (export / 'Kin.ipa').write_bytes(b'invalid')
+            if self.failure == 'source':
+                source = Path(cwd); source.chmod(0o700); (source / 'extra').write_bytes(b'changed'); source.chmod(0o500)
         return True
 
     def make_app(self, app):
@@ -99,6 +110,9 @@ class SyntheticOrchestratorTests(unittest.TestCase):
     def test_full_synthetic_path_verifies_then_cleans_before_return(self):
         result = self.run_case()
         self.assertEqual(result['kind'], 'synthetic-control-flow-not-build-attestation')
+        self.assertEqual(len(result['command_plan_sha256']), 64)
+        self.assertEqual(len(result['runner_environment_sha256']), 64)
+        self.assertEqual(len(result['source_image_sha256']), 64)
         self.assertEqual([timeout for _, timeout in self.commands], [1200, 600])
         self.assertNotIn('-allowProvisioningUpdates', sum((list(c) for c, _ in self.commands), []))
         settings = dict(part.split('=', 1) for part in self.commands[0][0] if '=' in part)
@@ -112,7 +126,7 @@ class SyntheticOrchestratorTests(unittest.TestCase):
         self.assertEqual(len(self.search.writes), 2)
 
     def test_failed_stages_and_cleanup_cannot_return_success(self):
-        for failure in ('archive', 'export', 'ipa', 'cleanup'):
+        for failure in ('archive', 'export', 'ipa', 'source', 'cleanup'):
             with self.subTest(failure=failure):
                 self.failure = failure; self.commands = []; self.calls = []; self.cleanup_checks = 0
                 with self.assertRaises(orchestrator._keychain.TransactionFailed) as error: self.run_case()
@@ -214,6 +228,21 @@ class SyntheticOrchestratorTests(unittest.TestCase):
         self.assertTrue(error.exception.cleanup_failed)
         self.assertNotIn('private', str(error.exception))
 
+    def test_interruption_keeps_interrupted_category_after_reaping(self):
+        class FakeProcess:
+            pid = 123
+            calls = 0
+            def wait(self, timeout):
+                self.calls += 1
+                if self.calls == 1: raise orchestrator._keychain._RequestedStop()
+                return -9
+        with mock.patch.object(orchestrator.subprocess, 'Popen', return_value=FakeProcess()), \
+             mock.patch.object(orchestrator.os, 'killpg'):
+            with self.assertRaises(orchestrator.BoundedProcessError) as error:
+                orchestrator._run_bounded(('fake',), 1, cwd=str(Path(self.root.name).resolve()), env={})
+        self.assertEqual(error.exception.reason, 'interrupted')
+        self.assertFalse(error.exception.cleanup_failed)
+
     def test_timeout_stops_same_group_child_before_it_writes(self):
         marker = Path(self.root.name) / 'marker'
         child = 'import time,pathlib;time.sleep(0.6);pathlib.Path(' + repr(str(marker)) + ').write_text("late")'
@@ -243,6 +272,18 @@ class SyntheticOrchestratorTests(unittest.TestCase):
         self.assertEqual(error.exception.primary_error, 'process:timeout')
         self.assertEqual(self.cleanup_checks, 1)
         self.assertEqual(self.search.read(), ['/synthetic/original.keychain'])
+        self.assertEqual(list(Path(self.root.name).iterdir()), [])
+
+    def test_timeout_and_source_cleanup_failure_are_both_preserved(self):
+        self.failure = 'timeout'
+        restore = orchestrator._restore_source_directory
+        def fail_after_restore(image):
+            restore(image)
+            raise OSError('private')
+        with mock.patch.object(orchestrator, '_restore_source_directory', side_effect=fail_after_restore):
+            with self.assertRaises(orchestrator._keychain.TransactionFailed) as error: self.run_case()
+        self.assertEqual(error.exception.primary_error, 'process:timeout')
+        self.assertIn('source:cleanup-failed', error.exception.cleanup_errors)
         self.assertEqual(list(Path(self.root.name).iterdir()), [])
 
     def test_changed_search_list_is_not_overwritten(self):
@@ -348,6 +389,148 @@ class SourceCheckoutTests(unittest.TestCase):
             else: path.write_bytes(old)
         self.git('update-index', '--assume-unchanged', 'Kin.xcodeproj/project.pbxproj')
         with self.assertRaises(ValueError): orchestrator._checkout_snapshot(str(self.root), self.head)
+
+    def test_real_git_archive_materializes_and_detects_source_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp).resolve()
+            image, digest = orchestrator._materialize_source(str(self.root), self.head, workspace)
+            try:
+                self.assertEqual(image.stat().st_mode & 0o777, 0o500)
+                source_file = image / 'Kin.xcodeproj/project.pbxproj'
+                self.assertEqual(source_file.stat().st_mode & 0o777, 0o400)
+                self.assertEqual(orchestrator._source_image_digest(image), digest)
+                source_file.chmod(0o600); source_file.write_text('changed'); source_file.chmod(0o400)
+                self.assertNotEqual(orchestrator._source_image_digest(image), digest)
+            finally:
+                orchestrator._restore_source_directory(image)
+
+    def test_real_checkout_through_synthetic_archive_and_ipa_flow(self):
+        tree = self.git('rev-parse', 'HEAD^{tree}').decode().strip()
+        class FakeSearch:
+            def __init__(self): self.paths = ['/synthetic/original.keychain']
+            def read(self): return list(self.paths)
+            def write(self, paths): self.paths = list(paths)
+        search = FakeSearch(); calls = []
+        def security(*args):
+            if args[0] == 'create-keychain': Path(args[-1]).write_bytes(b'fake')
+            if args[0] == 'delete-keychain': Path(args[-1]).unlink(missing_ok=True)
+        def make_app(app):
+            app.mkdir(parents=True)
+            (app / 'Info.plist').write_bytes(plistlib.dumps({
+                'CFBundleIdentifier': 'com.intriguingideas.Kin', 'CFBundleExecutable': 'Kin',
+                'CFBundleShortVersionString': '1.3.0', 'CFBundleVersion': '7'}))
+            (app / 'embedded.mobileprovision').write_bytes(b'kin-synthetic-profile-only')
+            (app / 'Kin').write_bytes(b'fake executable')
+        def runner(command, timeout, *, cwd, env):
+            calls.append(command)
+            self.assertEqual(Path(cwd).name, 'source-image')
+            self.assertTrue(orchestrator._run_bounded((sys.executable, '-c', 'pass'), 5, cwd=cwd, env=env))
+            if len(calls) == 1:
+                archive = Path(command[command.index('-archivePath') + 1])
+                make_app(archive / 'Products/Applications/Kin.app')
+                dsym = archive / 'dSYMs/Kin.app.dSYM/Contents/Resources/DWARF/Kin'
+                dsym.parent.mkdir(parents=True); dsym.write_bytes(b'fake dsym')
+            else:
+                export = Path(command[command.index('-exportPath') + 1]); export.mkdir()
+                with tempfile.TemporaryDirectory() as fixture:
+                    app = Path(fixture) / 'Kin.app'; make_app(app)
+                    with zipfile.ZipFile(export / 'Kin.ipa', 'w') as ipa:
+                        for item in app.iterdir(): ipa.write(item, 'Payload/Kin.app/' + item.name)
+            return True
+        entitlements = {'application-identifier': 'ABCDEFGHIJ.com.intriguingideas.Kin',
+                        'com.apple.developer.team-identifier': 'ABCDEFGHIJ', 'get-task-allow': False}
+        old_cwd = Path.cwd(); os.chdir(self.root); self.addCleanup(os.chdir, old_cwd)
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as profiles, \
+             mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'GITHUB_SHA': self.head}), \
+             mock.patch.object(orchestrator._candidate._evidence, 'main'), \
+             mock.patch.object(orchestrator._candidate._evidence, 'command', return_value=tree), \
+             mock.patch.object(orchestrator._candidate._signature, 'verify', return_value=True), \
+             mock.patch.object(orchestrator._candidate, '_binary_uuid', return_value='synthetic-uuid'), \
+             mock.patch.object(orchestrator._candidate, '_entitlements', return_value=entitlements):
+            os.chmod(profiles, 0o700)
+            result = orchestrator.run_synthetic(temp, str(Path(profiles).resolve()), runner=runner,
+                security_backend=security, cleanup_check=lambda keychain, profile: not keychain.exists() and not profile.exists(),
+                search_list=search)
+            self.assertEqual(result['source_sha'], self.head)
+            self.assertEqual(result['source_tree'], tree)
+            self.assertEqual(len(result['source_image_sha256']), 64)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(list(Path(temp).iterdir()), [])
+            self.assertEqual(list(Path(profiles).iterdir()), [])
+
+    def test_source_archive_traversal_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp).resolve()
+            def malicious(_command, _timeout, *, cwd, env, output_fd):
+                data = io.BytesIO()
+                with tarfile.open(fileobj=data, mode='w') as archive:
+                    entry = tarfile.TarInfo('../escape'); entry.size = 1
+                    archive.addfile(entry, io.BytesIO(b'x'))
+                os.write(output_fd, data.getvalue())
+                return True
+            with mock.patch.object(orchestrator, '_run_bounded', side_effect=malicious):
+                with self.assertRaises(ValueError):
+                    orchestrator._materialize_source(str(self.root), self.head, workspace)
+            self.assertFalse((workspace / 'escape').exists())
+
+    def test_source_archive_link_and_nested_workspace_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp).resolve()
+            def malicious(_command, _timeout, *, cwd, env, output_fd):
+                data = io.BytesIO()
+                with tarfile.open(fileobj=data, mode='w') as archive:
+                    entry = tarfile.TarInfo('link'); entry.type = tarfile.SYMTYPE; entry.linkname = '/synthetic/target'
+                    archive.addfile(entry)
+                os.write(output_fd, data.getvalue())
+                return True
+            with mock.patch.object(orchestrator, '_run_bounded', side_effect=malicious):
+                with self.assertRaises(ValueError):
+                    orchestrator._materialize_source(str(self.root), self.head, workspace)
+        nested = self.root / 'nested-workspace'; nested.mkdir(mode=0o700)
+        with self.assertRaises(ValueError): orchestrator._materialize_source(str(self.root), self.head, nested)
+
+    def test_source_restore_does_not_follow_a_replaced_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve(); target = root / 'target'; target.mkdir(mode=0o700)
+            image = root / 'image'; image.mkdir(mode=0o700); (image / 'link').symlink_to(target)
+            image.chmod(0o500)
+            with self.assertRaises(ValueError): orchestrator._restore_source_directory(image)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o700)
+
+    def test_source_failure_and_cleanup_failure_are_both_preserved(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp).resolve()
+            def malicious(_command, _timeout, *, cwd, env, output_fd):
+                data = io.BytesIO()
+                with tarfile.open(fileobj=data, mode='w') as archive:
+                    entry = tarfile.TarInfo('../escape'); entry.size = 1
+                    archive.addfile(entry, io.BytesIO(b'x'))
+                os.write(output_fd, data.getvalue())
+                return True
+            with mock.patch.object(orchestrator, '_run_bounded', side_effect=malicious), \
+                 mock.patch.object(orchestrator, '_restore_source_directory', side_effect=OSError('private')):
+                with self.assertRaises(orchestrator.SourceImageError) as error:
+                    orchestrator._materialize_source(str(self.root), self.head, workspace)
+            self.assertEqual(error.exception.primary_error, 'source:validation')
+            self.assertIn('source:cleanup-failed', error.exception.cleanup_errors)
+            self.assertNotIn('private', str(error.exception))
+
+    def test_source_archive_with_same_size_changed_blob_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp).resolve()
+            def malicious(_command, _timeout, *, cwd, env, output_fd):
+                data = io.BytesIO()
+                with tarfile.open(fileobj=data, mode='w') as archive:
+                    for name in ('.gitignore', 'Kin.xcodeproj/project.pbxproj'):
+                        content = (self.root / name).read_bytes()
+                        if name.endswith('project.pbxproj'): content = b'X' + content[1:]
+                        entry = tarfile.TarInfo(name); entry.size = len(content); entry.mode = 0o644
+                        archive.addfile(entry, io.BytesIO(content))
+                os.write(output_fd, data.getvalue())
+                return True
+            with mock.patch.object(orchestrator, '_run_bounded', side_effect=malicious):
+                with self.assertRaises(ValueError):
+                    orchestrator._materialize_source(str(self.root), self.head, workspace)
 
     def test_tracked_symlink_and_project_script_are_rejected(self):
         (self.root / 'link').symlink_to('Kin.xcodeproj')
