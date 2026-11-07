@@ -234,12 +234,24 @@ and keychain transaction, fixed archive/export command plans, archive/export/IPA
 comparison, and a separate injected cleanup observation. Its injected runner,
 security backend and cleanup observer must be fakes; it has no CLI and no
 workflow calls it. It uses fixed synthetic credentials and fabricates the app
-and IPA in tests. Requested command deadlines are not enforced by this module.
+and IPA in tests. A bounded runner is exercised on harmless child processes;
+the injected synthetic command runner is responsible for enforcing deadlines.
+Production Xcode execution is explicitly disabled. On timeout, the bounded
+runner kills its owned process group and reports failure if reaping fails; it
+cannot guarantee cleanup of detached or surviving children, or after runner
+loss or SIGKILL. Its environment allowlist is not a substitute for validating
+the values supplied by a future workflow.
 Its fake exported app layout has not been established as actual Xcode output,
 and keychain discovery by Xcode has not been demonstrated. The observed source
 and artifact hashes are not proof that the source produced the artifacts.
-A real path still needs a bounded process runner, isolated source and external
-build-input controls, verified profile/keychain discovery, safe IPA inspection,
+GitHub's documented hosted signing example adds the temporary keychain to the
+user keychain search list before building. The current transaction does not
+change or restore that list; the planned archive flag alone has not been shown
+to make export find the identity. A real workflow needs a reviewed isolation,
+restoration and verification strategy, or another supported demonstrated route.
+See https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications.
+A real path still needs reviewed integration of the bounded runner, isolated
+source and external build-input controls, verified profile/keychain discovery, safe IPA inspection,
 independent hosted post-job cleanup, and a secure delivery decision. Its fake
 cleanup observer is not evidence of cleanup after runner loss or SIGKILL.
 

@@ -3,8 +3,12 @@ import importlib.util
 import os
 from pathlib import Path
 import plistlib
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
+import uuid
 import zipfile
 from unittest import mock
 
@@ -40,6 +44,8 @@ class SyntheticOrchestratorTests(unittest.TestCase):
 
     def runner(self, command, timeout):
         self.commands.append((command, timeout))
+        self.assertTrue(orchestrator._run_bounded((sys.executable, '-c', 'pass'), 5,
+                                                 cwd=str(Path(self.root.name).resolve()), env={'PATH': '/usr/bin:/bin'}))
         if len(self.commands) == 1:
             if self.failure == 'archive': return False
             archive = Path(command[command.index('-archivePath') + 1])
@@ -78,6 +84,10 @@ class SyntheticOrchestratorTests(unittest.TestCase):
         self.assertEqual(result['kind'], 'synthetic-control-flow-not-build-attestation')
         self.assertEqual([timeout for _, timeout in self.commands], [1200, 600])
         self.assertNotIn('-allowProvisioningUpdates', sum((list(c) for c, _ in self.commands), []))
+        settings = dict(part.split('=', 1) for part in self.commands[0][0] if '=' in part)
+        self.assertEqual(settings['DEVELOPMENT_TEAM'], 'ABCDEFGHIJ')
+        self.assertEqual(settings['PROVISIONING_PROFILE_SPECIFIER'], str(uuid.UUID(int=1)).upper())
+        self.assertTrue(settings['OTHER_CODE_SIGN_FLAGS'].startswith('--keychain /'))
         self.assertEqual(list(Path(self.root.name).iterdir()), [])
         self.assertEqual(list(Path(self.profiles.name).iterdir()), [])
         self.assertIn('delete-keychain', self.calls)
@@ -120,6 +130,70 @@ class SyntheticOrchestratorTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.run_case()
         self.assertEqual(self.cleanup_checks, 1)
         self.assertEqual(list(Path(self.root.name).iterdir()), [])
+
+    def test_bounded_runner_reports_exit_timeout_and_disabled_production(self):
+        for code, reason in [('import sys;sys.exit(3)', 'exit'), ('import time;time.sleep(30)', 'timeout')]:
+            with self.subTest(reason=reason), self.assertRaises(orchestrator.BoundedProcessError) as error:
+                orchestrator._run_bounded((sys.executable, '-c', code), 0.15,
+                                          cwd=str(Path(self.root.name).resolve()), env={'PATH': '/usr/bin:/bin'})
+            self.assertEqual(error.exception.reason, reason)
+            self.assertFalse(error.exception.cleanup_failed)
+        with self.assertRaises(orchestrator.BoundedProcessError) as error:
+            orchestrator.run_production_xcode()
+        self.assertEqual(error.exception.reason, 'production-disabled')
+        with self.assertRaises(ValueError):
+            orchestrator._run_bounded((sys.executable, '-c', 'pass'), 1, cwd=str(Path(self.root.name).resolve()),
+                                      env={'UNREVIEWED_VARIABLE': 'fake'})
+
+    def test_timeout_preserves_cleanup_failure_category(self):
+        class FakeProcess:
+            pid = 123
+            def wait(self, timeout): raise subprocess.TimeoutExpired('redacted', timeout)
+        with mock.patch.object(orchestrator.subprocess, 'Popen', return_value=FakeProcess()), \
+             mock.patch.object(orchestrator.os, 'killpg', side_effect=OSError('private')):
+            with self.assertRaises(orchestrator.BoundedProcessError) as error:
+                orchestrator._run_bounded(('fake',), 1, cwd=str(Path(self.root.name).resolve()), env={})
+        self.assertEqual(error.exception.reason, 'timeout')
+        self.assertTrue(error.exception.cleanup_failed)
+        self.assertNotIn('private', str(error.exception))
+
+    def test_timeout_stops_same_group_child_before_it_writes(self):
+        marker = Path(self.root.name) / 'marker'
+        child = 'import time,pathlib;time.sleep(0.6);pathlib.Path(' + repr(str(marker)) + ').write_text("late")'
+        parent = 'import subprocess,time;subprocess.Popen([' + repr(sys.executable) + ',"-c",' + repr(child) + ']);time.sleep(30)'
+        with self.assertRaises(orchestrator.BoundedProcessError) as error:
+            orchestrator._run_bounded((sys.executable, '-c', parent), 0.2,
+                                      cwd=str(Path(self.root.name).resolve()), env={'PATH': '/usr/bin:/bin'})
+        self.assertEqual(error.exception.reason, 'timeout')
+        self.assertFalse(error.exception.cleanup_failed)
+        time.sleep(0.8)
+        self.assertFalse(marker.exists())
+
+    def test_process_failure_preserves_cause_and_cleanup_failure(self):
+        def fail(_command, _timeout):
+            raise orchestrator.BoundedProcessError('timeout', cleanup_failed=True)
+        with self.assertRaises(orchestrator._keychain.TransactionFailed) as error:
+            orchestrator.run_synthetic(self.root.name, str(Path(self.profiles.name).resolve()),
+                                       runner=fail, security_backend=self.security, cleanup_check=lambda *_: True)
+        self.assertEqual(error.exception.primary_error, 'process:timeout')
+        self.assertIn('process:cleanup-failed', error.exception.cleanup_errors)
+        self.assertIn('delete-keychain', self.calls)
+
+    def test_reviewed_plan_rejects_untrusted_fields(self):
+        entitlements = {'application-identifier': 'ABCDEFGHIJ.com.intriguingideas.Kin',
+                        'com.apple.developer.team-identifier': 'ABCDEFGHIJ', 'get-task-allow': False}
+        reviewed = {'team_id': 'ABCDEFGHIJ', 'certificate_sha256': 'a' * 64, 'profile_sha256': 'b' * 64,
+                    'version': '1.3.0', 'build': '7', 'expected_entitlements': entitlements}
+        root = Path(self.root.name).resolve(); keychain = root / 'keychain'
+        profile_id = str(uuid.UUID(int=1)).upper()
+        for changed in (dict(reviewed, team_id='bad;argument'), dict(reviewed, certificate_sha256='bad'),
+                        dict(reviewed, expected_entitlements=dict(entitlements, **{'get-task-allow': True}))):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                orchestrator._reviewed_plan(changed, profile_id, root, keychain)
+        with self.assertRaises(ValueError):
+            orchestrator._reviewed_plan(reviewed, 'invalid', root, keychain)
+        with self.assertRaises(ValueError):
+            orchestrator._reviewed_plan(reviewed, profile_id, root / 'unsafe path', root / 'unsafe path/keychain')
 
 
 if __name__ == '__main__': unittest.main()
