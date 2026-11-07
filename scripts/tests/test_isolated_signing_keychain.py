@@ -7,12 +7,14 @@ import signal
 import subprocess
 import tempfile
 import threading
+import uuid
 import unittest
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location('keychain', Path(__file__).resolve().parents[1] / 'isolated-signing-keychain.py')
 keychain = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(keychain)
+SYNTHETIC_PROFILE_UUID = str(uuid.UUID(int=1)).upper()
 
 
 class FakeSecurity:
@@ -106,7 +108,7 @@ class KeychainLifecycleTests(unittest.TestCase):
     def test_owned_profile_exists_only_during_operation_and_is_removed(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
             os.chmod(profiles, 0o700)
-            data = b'synthetic-profile'; name = '11111111-2222-3333-4444-555555555555.mobileprovision'
+            data = b'synthetic-profile'; name = SYNTHETIC_PROFILE_UUID + '.mobileprovision'
             profile = {'directory': str(Path(profiles).resolve()), 'uuid': name[:-len('.mobileprovision')],
                        'bytes': data, 'sha256': hashlib.sha256(data).hexdigest()}
             def operation(_):
@@ -121,7 +123,7 @@ class KeychainLifecycleTests(unittest.TestCase):
     def test_existing_profile_is_never_overwritten_or_removed(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
             os.chmod(profiles, 0o700)
-            data = b'synthetic-profile'; name = '11111111-2222-3333-4444-555555555555.mobileprovision'
+            data = b'synthetic-profile'; name = SYNTHETIC_PROFILE_UUID + '.mobileprovision'
             path = Path(profiles) / name; path.write_bytes(b'preexisting')
             profile = {'directory': str(Path(profiles).resolve()), 'uuid': name[:-len('.mobileprovision')],
                        'bytes': data, 'sha256': hashlib.sha256(data).hexdigest()}
@@ -135,7 +137,7 @@ class KeychainLifecycleTests(unittest.TestCase):
     def test_changed_profile_is_not_removed_and_cleanup_fails(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
             os.chmod(profiles, 0o700)
-            data = b'synthetic-profile'; name = '11111111-2222-3333-4444-555555555555.mobileprovision'
+            data = b'synthetic-profile'; name = SYNTHETIC_PROFILE_UUID + '.mobileprovision'
             path = Path(profiles) / name
             profile = {'directory': str(Path(profiles).resolve()), 'uuid': name[:-len('.mobileprovision')],
                        'bytes': data, 'sha256': hashlib.sha256(data).hexdigest()}
@@ -151,7 +153,7 @@ class KeychainLifecycleTests(unittest.TestCase):
     def test_invalid_profile_hash_and_nonprivate_directory_fail_closed(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
             data = b'synthetic-profile'
-            profile = {'directory': str(Path(profiles).resolve()), 'uuid': '11111111-2222-3333-4444-555555555555',
+            profile = {'directory': str(Path(profiles).resolve()), 'uuid': SYNTHETIC_PROFILE_UUID,
                        'bytes': data, 'sha256': '0' * 64}
             with mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
                 with self.assertRaises(ValueError):
@@ -161,11 +163,26 @@ class KeychainLifecycleTests(unittest.TestCase):
                     keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True, backend=FakeSecurity(), profile=profile)
             self.assertEqual(list(Path(profiles).iterdir()), [])
 
+    def test_profile_uuid_requires_canonical_uppercase(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
+            os.chmod(profiles, 0o700)
+            data = b'synthetic-profile'; alpha_uuid = str(uuid.UUID(int=(1 << 128) - 1)).upper()
+            profile = {'directory': str(Path(profiles).resolve()), 'uuid': alpha_uuid,
+                       'bytes': data, 'sha256': hashlib.sha256(data).hexdigest()}
+            with mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}):
+                self.assertTrue(keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True,
+                                                     backend=FakeSecurity(), profile=profile))
+                profile['uuid'] = alpha_uuid.lower()
+                with self.assertRaises(ValueError):
+                    keychain.run_isolated(root, b'synthetic', 'synthetic', lambda _: True,
+                                          backend=FakeSecurity(), profile=profile)
+            self.assertEqual(list(Path(profiles).iterdir()), [])
+
     def test_profile_is_removed_when_operation_is_interrupted(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
             os.chmod(profiles, 0o700)
             data = b'synthetic-profile'
-            profile = {'directory': str(Path(profiles).resolve()), 'uuid': '11111111-2222-3333-4444-555555555555',
+            profile = {'directory': str(Path(profiles).resolve()), 'uuid': SYNTHETIC_PROFILE_UUID,
                        'bytes': data, 'sha256': hashlib.sha256(data).hexdigest()}
             def interrupt(_):
                 os.kill(os.getpid(), signal.SIGTERM)
@@ -183,7 +200,7 @@ class KeychainLifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
             os.chmod(profiles, 0o700)
             data = b'synthetic-profile'
-            profile = {'directory': str(Path(profiles).resolve()), 'uuid': '11111111-2222-3333-4444-555555555555',
+            profile = {'directory': str(Path(profiles).resolve()), 'uuid': SYNTHETIC_PROFILE_UUID,
                        'bytes': data, 'sha256': hashlib.sha256(data).hexdigest()}
             original_unlink = os.unlink
             def deny_owned(path, *args, **kwargs):
@@ -200,7 +217,7 @@ class KeychainLifecycleTests(unittest.TestCase):
     def test_modified_profile_is_preserved_but_partial_write_is_cleaned(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
             os.chmod(profiles, 0o700)
-            data = b'synthetic-profile'; name = '11111111-2222-3333-4444-555555555555.mobileprovision'
+            data = b'synthetic-profile'; name = SYNTHETIC_PROFILE_UUID + '.mobileprovision'
             path = Path(profiles) / name
             profile = {'directory': str(Path(profiles).resolve()), 'uuid': name[:-len('.mobileprovision')],
                        'bytes': data, 'sha256': hashlib.sha256(data).hexdigest()}
