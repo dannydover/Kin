@@ -213,6 +213,13 @@ separately approved validation step. An optional team API key could query curren
 profile state, but it has broader account scope and is not a prerequisite for
 manual signing; do not request one by default.
 
+The unsigned archive exercise runs a bounded read-only `xcodebuild -help` probe
+on its pinned Xcode to check that its help advertises local export, manual
+signing, App Store Connect method and profile/certificate/team options. It
+does not sign, export, check an actual profile, or prove the options will work
+for Kin. Missing or changed help fails the exercise; it does not change the
+required test gate. The probe retains no raw help output.
+
 ## Synthetic verification required before approval
 
 Tests must cover invalid or stale source, missing/failed test evidence, wrong

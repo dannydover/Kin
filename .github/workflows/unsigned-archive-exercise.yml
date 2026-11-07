@@ -23,6 +23,8 @@ jobs:
           xcodebuild -version | grep -Fx 'Build version 27A266a'
           xcrun swift --version | grep -F 'Apple Swift version 6.4'
           test "$(uname -m)" = arm64
+      - name: Check documented manual export options without signing
+        run: python3 scripts/check-xcode-manual-export.py
       - name: Create unsigned archive in ephemeral runner storage
         run: |
           xcodebuild -project Kin.xcodeproj -scheme Kin \

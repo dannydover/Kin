@@ -88,6 +88,8 @@ class CandidateTests(unittest.TestCase):
             return lambda _args, **kwargs: real_popen([sys.executable, '-c', code], **kwargs)
         with mock.patch.object(candidate.subprocess, 'Popen', side_effect=execute('import sys;sys.stdout.buffer.write(' + repr(payload) + ')')):
             self.assertEqual(candidate._entitlements(self.app), self.entitlements)
+        with mock.patch.object(candidate.subprocess, 'Popen', side_effect=execute('import sys;sys.stderr.write("synthetic-help")')):
+            self.assertEqual(candidate._bounded_output(['synthetic'], 'synthetic', merge_stderr=True), b'synthetic-help')
         with mock.patch.object(candidate.subprocess, 'Popen', side_effect=execute('import sys;sys.stdout.buffer.write(b"x"*70000)')):
             with self.assertRaises(candidate.CandidateError): candidate._entitlements(self.app)
         for code in ('import sys;sys.exit(1)', 'print("not a property list")'):

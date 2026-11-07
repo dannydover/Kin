@@ -38,7 +38,7 @@ def _read_file(path, limit):
     return data
 
 
-def _bounded_output(args, label):
+def _bounded_output(args, label, *, merge_stderr=False):
     """Read at most 64 KiB from one child; kill and reap only that child."""
     deadline = time.monotonic() + 60
     proc = None
@@ -46,8 +46,8 @@ def _bounded_output(args, label):
     cleanup_failed = False
     result = None
     try:
-        proc = subprocess.Popen(args,
-                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT if merge_stderr else subprocess.DEVNULL)
         output = bytearray()
         with selectors.DefaultSelector() as selector:
             selector.register(proc.stdout, selectors.EVENT_READ)
