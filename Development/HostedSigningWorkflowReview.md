@@ -229,6 +229,20 @@ or prove Apple authorization, profile freshness, or release readiness. Inputs
 must remain immutable; the comparison does not protect against concurrent
 same-user changes. No workflow invokes this candidate.
 
+The synthetic archive orchestrator exercises preflight, a temporary profile
+and keychain transaction, fixed archive/export command plans, archive/export/IPA
+comparison, and a separate injected cleanup observation. Its injected runner,
+security backend and cleanup observer must be fakes; it has no CLI and no
+workflow calls it. It uses fixed synthetic credentials and fabricates the app
+and IPA in tests. Requested command deadlines are not enforced by this module.
+Its fake exported app layout has not been established as actual Xcode output,
+and keychain discovery by Xcode has not been demonstrated. The observed source
+and artifact hashes are not proof that the source produced the artifacts.
+A real path still needs a bounded process runner, isolated source and external
+build-input controls, verified profile/keychain discovery, safe IPA inspection,
+independent hosted post-job cleanup, and a secure delivery decision. Its fake
+cleanup observer is not evidence of cleanup after runner loss or SIGKILL.
+
 ## Synthetic verification required before approval
 
 Tests must cover invalid or stale source, missing/failed test evidence, wrong
