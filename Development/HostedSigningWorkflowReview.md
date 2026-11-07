@@ -220,6 +220,15 @@ does not sign, export, check an actual profile, or prove the options will work
 for Kin. Missing or changed help fails the exercise; it does not change the
 required test gate. The probe retains no raw help output.
 
+An IPA payload comparison is under synthetic review. It compares
+each regular file in `Payload/Kin.app` with the inspected exported app and
+rejects additional file content and symlinks. It has not been tested on an
+actual Xcode export, which may legitimately contain additional files or links.
+It does not compare file modes, establish that source produced either artifact,
+or prove Apple authorization, profile freshness, or release readiness. Inputs
+must remain immutable; the comparison does not protect against concurrent
+same-user changes. No workflow invokes this candidate.
+
 ## Synthetic verification required before approval
 
 Tests must cover invalid or stale source, missing/failed test evidence, wrong

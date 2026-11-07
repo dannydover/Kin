@@ -9,6 +9,8 @@ import sys
 import tempfile
 import unittest
 import uuid
+import zipfile
+import warnings
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location('candidate', Path(__file__).resolve().parents[1] / 'verify-signed-candidate.py')
@@ -40,6 +42,75 @@ class CandidateTests(unittest.TestCase):
             result = candidate._verify_candidate(self.app, **args)
             verify.assert_called_once_with(self.app, args['team_id'], args['certificate_sha256'])
             return result
+
+    def test_ipa_payload_matches_inspected_export_and_rejects_changes(self):
+        ipa = Path(self.temp.name) / 'candidate.ipa'
+        def make(entries):
+            with zipfile.ZipFile(ipa, 'w') as archive:
+                for name, value in entries:
+                    archive.writestr(name, value)
+        entries = [('Payload/Kin.app/Info.plist', (self.app / 'Info.plist').read_bytes()),
+                   ('Payload/Kin.app/embedded.mobileprovision', self.profile)]
+        make(entries)
+        self.assertEqual(candidate.verify_ipa_payload(ipa, self.app), hashlib.sha256(ipa.read_bytes()).hexdigest())
+        for changed in (entries[:-1], entries + [('Payload/Other.app/x', b'x')],
+                        entries + [('Payload/Kin.app/../other', b'x')],
+                        [(entries[0][0], b'different'), entries[1]]):
+            with self.subTest(changed=changed):
+                make(changed)
+                with self.assertRaises(candidate.CandidateError):
+                    candidate.verify_ipa_payload(ipa, self.app)
+        with zipfile.ZipFile(ipa, 'w') as archive:
+            link = zipfile.ZipInfo('Payload/Kin.app/link')
+            link.create_system = 3; link.external_attr = 0o120777 << 16
+            archive.writestr(link, 'target')
+        with self.assertRaises(candidate.CandidateError):
+            candidate.verify_ipa_payload(ipa, self.app)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            make(entries + [entries[0]])
+        with self.assertRaises(candidate.CandidateError):
+            candidate.verify_ipa_payload(ipa, self.app)
+        (self.app / 'link').symlink_to('Info.plist')
+        make(entries)
+        with self.assertRaises(candidate.CandidateError):
+            candidate.verify_ipa_payload(ipa, self.app)
+
+    def test_ipa_verification_failure_cannot_return_observation(self):
+        observation = {'source_tree': 'a' * 40, 'kind': 'local-observation-not-build-attestation'}
+        with mock.patch.object(candidate, 'verify_archive_export_with_preflight', return_value=observation), \
+             mock.patch.object(candidate, 'verify_ipa_payload', side_effect=candidate.CandidateError('mismatch')), \
+             mock.patch.object(candidate._evidence, 'main') as preflight:
+            with self.assertRaises(candidate.CandidateError):
+                candidate.verify_archive_export_ipa_with_preflight('archive', self.app, 'ipa', **self.inputs)
+            preflight.assert_not_called()
+
+    def test_ipa_mismatch_cleans_owned_profile_and_keychain(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as profiles:
+            os.chmod(profiles, 0o700)
+            profile_uuid = str(uuid.UUID(int=1)).upper()
+            profile = {'directory': str(Path(profiles).resolve()), 'uuid': profile_uuid,
+                       'bytes': self.profile, 'sha256': hashlib.sha256(self.profile).hexdigest()}
+            calls = []
+            def security(*args):
+                calls.append(args[0])
+                if args[0] == 'create-keychain': Path(args[-1]).write_bytes(b'synthetic')
+                if args[0] == 'delete-keychain': Path(args[-1]).unlink(missing_ok=True)
+            def operation(keychain_path):
+                ipa = keychain_path.parent / 'Kin.ipa'
+                with zipfile.ZipFile(ipa, 'w') as container:
+                    container.writestr('Payload/Kin.app/Info.plist', b'wrong')
+                candidate.verify_archive_export_ipa_with_preflight('archive', self.app, ipa, **self.inputs)
+                return True
+            with mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted'}), \
+                 mock.patch.object(candidate, 'verify_archive_export_with_preflight',
+                                   return_value={'source_tree': 'a' * 40}):
+                with self.assertRaises(keychain.TransactionFailed):
+                    keychain.run_isolated(root, b'synthetic', 'synthetic', operation,
+                                          backend=security, profile=profile)
+            self.assertIn('delete-keychain', calls)
+            self.assertEqual(list(Path(root).iterdir()), [])
+            self.assertEqual(list(Path(profiles).iterdir()), [])
 
     def test_integrated_checks_call_signer_and_compare_reviewed_inputs(self):
         self.assertTrue(self.check())
@@ -134,9 +205,14 @@ class CandidateTests(unittest.TestCase):
                 dsym = archive / 'dSYMs/Kin.app.dSYM/Contents/Resources/DWARF/Kin'
                 dsym.parent.mkdir(parents=True); dsym.write_bytes(b'synthetic-dsym')
                 self.assertTrue((Path(profiles) / (profile_uuid + '.mobileprovision')).is_file())
-                result = candidate.verify_archive_export_with_preflight(archive, self.app, **self.inputs)
+                ipa = workspace / 'Kin.ipa'
+                with zipfile.ZipFile(ipa, 'w') as container:
+                    for path in self.app.iterdir():
+                        container.write(path, 'Payload/Kin.app/' + path.name)
+                result = candidate.verify_archive_export_ipa_with_preflight(archive, self.app, ipa, **self.inputs)
                 self.assertEqual(result['source_sha'], 'a' * 40)
                 self.assertEqual(result['uuid'], expected_uuid)
+                self.assertEqual(result['ipa_sha256'], hashlib.sha256(ipa.read_bytes()).hexdigest())
                 self.assertEqual(result['kind'], 'local-observation-not-build-attestation')
                 return True
             with mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'GITHUB_SHA': 'a' * 40}), \
@@ -147,7 +223,7 @@ class CandidateTests(unittest.TestCase):
                  mock.patch.object(candidate, '_binary_uuid', return_value=expected_uuid):
                 self.assertTrue(keychain.run_isolated(root, b'synthetic', 'synthetic', operation,
                                                      backend=security, profile=profile))
-                self.assertEqual(preflight.call_count, 2)
+                self.assertEqual(preflight.call_count, 3)
             self.assertIn('delete-keychain', calls)
             self.assertEqual(list(Path(root).iterdir()), [])
             self.assertEqual(list(Path(profiles).iterdir()), [])

@@ -15,6 +15,8 @@ import selectors
 import subprocess
 import time
 import uuid
+import zipfile
+import stat
 
 _spec = importlib.util.spec_from_file_location('signature_integrity', Path(__file__).with_name('verify-signature-integrity.py'))
 _signature = importlib.util.module_from_spec(_spec)
@@ -225,3 +227,88 @@ def verify_archive_export_with_preflight(archive, exported_app, **reviewed_input
     return {'kind': 'local-observation-not-build-attestation', 'source_sha': source,
             'source_tree': tree, 'architecture': 'arm64', 'uuid': binary_id,
             'archive_binary_sha256': archive_hash, 'export_binary_sha256': export_hash}
+
+
+def verify_ipa_payload(ipa, exported_app):
+    """Fail closed unless the IPA's sole app payload matches the inspected app.
+
+    The caller must keep inputs immutable. This checks content, not file modes,
+    Apple acceptance, or provenance. It does not extract or execute the IPA.
+    """
+    ipa = Path(ipa); exported_app = Path(exported_app)
+    limit = 1024 * 1024 * 1024
+    if ipa.is_symlink() or not ipa.is_file() or not 0 < ipa.stat().st_size <= limit:
+        raise CandidateError('IPA unavailable')
+    if exported_app.is_symlink() or not exported_app.is_dir() or exported_app.name != 'Kin.app':
+        raise CandidateError('exported app unavailable')
+    try:
+        expected = {}
+        for root, dirs, files in os.walk(exported_app, followlinks=False):
+            for name in dirs:
+                if (Path(root) / name).is_symlink():
+                    raise CandidateError('app symlink unsupported')
+            for name in files:
+                path = Path(root) / name
+                if path.is_symlink() or not path.is_file():
+                    raise CandidateError('app file unsupported')
+                relative = path.relative_to(exported_app).as_posix()
+                if len(expected) >= 10000:
+                    raise CandidateError('app entry limit')
+                expected[relative] = path
+        if not expected:
+            raise CandidateError('empty app')
+        found = set(); total = 0
+        with zipfile.ZipFile(ipa) as archive:
+            infos = archive.infolist()
+            if len(infos) > 10000:
+                raise CandidateError('IPA entry limit')
+            seen = set()
+            for info in infos:
+                name = info.filename
+                parts = name.rstrip('/').split('/')
+                if not name or name in seen or '\\' in name or any(p in ('', '.', '..') for p in parts):
+                    raise CandidateError('invalid IPA entry')
+                seen.add(name)
+                mode = (info.external_attr >> 16) & 0xffff
+                kind = stat.S_IFMT(mode)
+                if kind not in (0, stat.S_IFREG, stat.S_IFDIR):
+                    raise CandidateError('unsupported IPA entry')
+                if info.is_dir():
+                    continue
+                if not name.startswith('Payload/Kin.app/'):
+                    raise CandidateError('unexpected IPA content')
+                relative = name[len('Payload/Kin.app/'):]
+                if relative not in expected or relative in found:
+                    raise CandidateError('unexpected IPA payload')
+                total += info.file_size
+                if total > limit or info.file_size != expected[relative].stat().st_size:
+                    raise CandidateError('IPA size mismatch')
+                digest = hashlib.sha256()
+                with archive.open(info) as item:
+                    while True:
+                        chunk = item.read(1024 * 1024)
+                        if not chunk: break
+                        digest.update(chunk)
+                local = hashlib.sha256()
+                with expected[relative].open('rb') as item:
+                    while True:
+                        chunk = item.read(1024 * 1024)
+                        if not chunk: break
+                        local.update(chunk)
+                if digest.digest() != local.digest():
+                    raise CandidateError('IPA content mismatch')
+                found.add(relative)
+        if found != set(expected):
+            raise CandidateError('IPA payload incomplete')
+        return _binary_hash(ipa)
+    except (OSError, ValueError, zipfile.BadZipFile, RuntimeError, EOFError, NotImplementedError):
+        raise CandidateError('IPA inspection failed') from None
+
+
+def verify_archive_export_ipa_with_preflight(archive, exported_app, ipa, **reviewed_inputs):
+    observation = verify_archive_export_with_preflight(archive, exported_app, **reviewed_inputs)
+    ipa_hash = verify_ipa_payload(ipa, exported_app)
+    _evidence.main()
+    if _evidence.command('git', 'rev-parse', 'HEAD^{tree}') != observation['source_tree']:
+        raise CandidateError('source tree changed')
+    return dict(observation, ipa_sha256=ipa_hash)
