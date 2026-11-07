@@ -12,6 +12,7 @@ import plistlib
 import re
 import shlex
 import signal
+import stat
 import subprocess
 import uuid
 
@@ -112,6 +113,64 @@ class SecuritySearchList:
             raise ValueError('Keychain list update failed') from None
 
 
+def _checkout_snapshot(source_directory, expected_sha):
+    """Observe a clean exact checkout and reject known unpinned build inputs.
+
+    This is not a filesystem lock or build attestation. Same-user changes and
+    compiler/SDK, generated and other external inputs require separate controls.
+    """
+    source = Path(source_directory)
+    if (not source.is_absolute() or source.is_symlink() or source.resolve(strict=True) != source or
+            any(ord(char) < 32 or ord(char) == 127 for char in str(source)) or
+            not source.is_dir() or not isinstance(expected_sha, str) or
+            not re.fullmatch(r'[0-9a-f]{40}', expected_sha)):
+        raise ValueError('Invalid source checkout')
+    env = {'PATH': '/usr/bin:/bin', 'HOME': '/tmp', 'LC_ALL': 'C',
+           'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
+    prefix = ['/usr/bin/git', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false',
+              '-c', 'core.hooksPath=/dev/null', '-C', str(source)]
+    def git(*args):
+        return _candidate._bounded_output(prefix + list(args), 'source inspection', cwd=str(source), env=env)
+    try:
+        head = git('rev-parse', 'HEAD').decode('ascii').strip()
+        tree = git('rev-parse', 'HEAD^{tree}').decode('ascii').strip()
+        top = git('rev-parse', '--show-toplevel').decode('utf-8').strip()
+    except UnicodeError:
+        raise ValueError('Source identity unavailable') from None
+    if head != expected_sha or not re.fullmatch(r'[0-9a-f]{40}', tree) or top != str(source):
+        raise ValueError('Source checkout identity differs')
+    entries = git('ls-files', '--stage', '-z').split(b'\0'); schemes = []
+    for entry in entries:
+        if not entry: continue
+        meta, separator, name = entry.partition(b'\t')
+        fields = meta.split(b' ')
+        if (not separator or len(fields) != 3 or fields[0] not in (b'100644', b'100755') or fields[2] != b'0' or
+                b'\\' in name or any(part in (b'', b'.', b'..') for part in name.split(b'/')) or
+                any(byte < 32 or byte == 127 for byte in name) or
+                name.endswith(b'.xcconfig') or
+                name.rsplit(b'/', 1)[-1] in (b'.gitattributes', b'.gitmodules', b'Package.resolved', b'Podfile', b'Cartfile')):
+            raise ValueError('Unsupported source input')
+        if name.endswith(b'.xcscheme'):
+            try: schemes.append(name.decode('utf-8'))
+            except UnicodeError: raise ValueError('Unsupported source input') from None
+    index_flags = [entry for entry in git('ls-files', '-v', '-z').split(b'\0') if entry]
+    if len(index_flags) != len([entry for entry in entries if entry]) or any(not entry.startswith(b'H ') for entry in index_flags):
+        raise ValueError('Unsupported source index flags')
+    if git('status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching'):
+        raise ValueError('Source checkout changed or is not clean')
+    project = _candidate._read_file(source / 'Kin.xcodeproj/project.pbxproj', 5 * 1024 * 1024)
+    if any(marker in project for marker in (b'PBXShellScriptBuildPhase', b'XCRemoteSwiftPackageReference',
+                                             b'XCLocalSwiftPackageReference', b'XCSwiftPackageProductDependency',
+                                             b'PBXBuildRule', b'baseConfigurationReference', b'-load-plugin',
+                                             b'sourceTree = "<absolute>"', b'../')):
+        raise ValueError('Unsupported project build inputs')
+    for name in schemes:
+        scheme = _candidate._read_file(source / name, 2 * 1024 * 1024)
+        if any(marker in scheme for marker in (b'<ExecutionAction', b'<PreActions', b'<PostActions', b'scriptText=')):
+            raise ValueError('Unsupported scheme build inputs')
+    return {'source_sha': head, 'source_tree': tree}
+
+
 def _reviewed_plan(reviewed, profile_uuid, workspace, keychain_path):
     """Construct an argument vector from validated inputs; no shell is used.
 
@@ -153,10 +212,32 @@ def _reviewed_plan(reviewed, profile_uuid, workspace, keychain_path):
     archive_cmd = ('/usr/bin/xcodebuild', '-project', 'Kin.xcodeproj', '-scheme', 'Kin',
                    '-destination', 'generic/platform=iOS', '-configuration', 'Release',
                    '-derivedDataPath', str(workspace / 'derived'), '-archivePath', str(archive),
+                   '-skipPackageUpdates', '-disableAutomaticPackageResolution',
                    'archive') + tuple(key + '=' + value for key, value in settings.items())
     export_cmd = ('/usr/bin/xcodebuild', '-exportArchive', '-archivePath', str(archive),
                   '-exportPath', str(export_dir), '-exportOptionsPlist', str(options_path))
     return archive, export_dir, options_path, options, archive_cmd, export_cmd
+
+
+def _verify_owned_cleanup(keychain_path, profile_path):
+    """Independently observe absence in private owned parent directories."""
+    keychain = Path(keychain_path); profile = Path(profile_path)
+    try:
+        if (not keychain.is_absolute() or keychain.name != 'signing.keychain-db' or
+                not profile.is_absolute() or profile.suffix != '.mobileprovision'):
+            return False
+        for directory in (keychain.parent.parent, profile.parent):
+            info = directory.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or
+                    directory.resolve(strict=True) != directory):
+                return False
+        for path in (keychain.parent, keychain, profile):
+            try: path.lstat()
+            except FileNotFoundError: continue
+            return False
+        return True
+    except (OSError, RuntimeError):
+        return False
 
 
 def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, cleanup_check, search_list):
@@ -185,11 +266,53 @@ def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, c
                 'version': '1.3.0', 'build': '7', 'expected_entitlements': {
                     'application-identifier': team + '.com.intriguingideas.Kin',
                     'com.apple.developer.team-identifier': team, 'get-task-allow': False}}
+    result = _execute_controlled(runner_temp, profile, reviewed, b'kin-synthetic-identity-only',
+                                 'kin-synthetic-password-only', runner=runner, security_backend=security_backend,
+                                 cleanup_check=cleanup_check, search_list=search_list,
+                                 runner_env={'PATH': '/usr/bin:/bin'})
+    return dict(result, kind='synthetic-control-flow-not-build-attestation')
+
+
+def _execute_controlled(runner_temp, profile, reviewed, identity_bytes, identity_password, *,
+                        runner, security_backend, cleanup_check, search_list, runner_env):
+    """Shared transaction flow; not an authorization boundary or workflow.
+
+    Only synthetic inputs are used by this repository. Production entry remains
+    disabled until its execution gate, environment, delivery and real behavior
+    are reviewed. Output is destroyed with the temporary workspace.
+    """
+    if (not callable(runner) or not callable(security_backend) or not callable(cleanup_check) or
+            not callable(getattr(search_list, 'read', None)) or not callable(getattr(search_list, 'write', None)) or
+            not isinstance(profile, dict) or set(profile) != {'directory', 'uuid', 'bytes', 'sha256'} or
+            not isinstance(profile['directory'], str) or
+            not isinstance(profile['bytes'], bytes) or not 0 < len(profile['bytes']) <= 8 * 1024 * 1024 or
+            not isinstance(reviewed, dict) or profile['sha256'] != reviewed.get('profile_sha256') or
+            hashlib.sha256(profile['bytes']).hexdigest() != profile['sha256'] or
+            not isinstance(identity_bytes, bytes) or not 0 < len(identity_bytes) <= 8 * 1024 * 1024 or
+            not isinstance(identity_password, str) or not 0 < len(identity_password) <= 1024 or '\x00' in identity_password or
+            not isinstance(runner_env, dict) or runner_env.get('PATH') != '/usr/bin:/bin' or
+            not set(runner_env).issubset({'PATH', 'HOME', 'TMPDIR', 'DEVELOPER_DIR', 'LANG', 'LC_ALL'}) or
+            any(not isinstance(value, str) or '\x00' in value for value in runner_env.values())):
+        raise ValueError('Invalid controlled inputs')
+    if (identity_bytes != b'kin-synthetic-identity-only' or identity_password != 'kin-synthetic-password-only' or
+            profile['bytes'] != b'kin-synthetic-profile-only'):
+        raise BoundedProcessError('production-disabled')
+    profile_uuid = profile['uuid']; profile_directory = profile['directory']
+    directory = Path(profile_directory)
+    if not directory.is_absolute() or directory.is_symlink() or directory.resolve(strict=True) != directory:
+        raise ValueError('Invalid profile directory')
+    _reviewed_plan(reviewed, profile_uuid, Path('/synthetic/workspace'), Path('/synthetic/workspace/keychain'))
+    source = os.environ.get('GITHUB_SHA', '')
+    if not re.fullmatch(r'[0-9a-f]{40}', source):
+        raise ValueError('Invalid source identity')
     _candidate._evidence.main()
+    source_directory = str(Path.cwd().resolve(strict=True))
+    checkout = _checkout_snapshot(source_directory, source)
+    original_search = _keychain._validated_search_list(search_list.read())
     tree = _candidate._evidence.command('git', 'rev-parse', 'HEAD^{tree}')
-    if not re.fullmatch(r'[0-9a-f]{40}', tree):
+    if not re.fullmatch(r'[0-9a-f]{40}', tree) or checkout['source_tree'] != tree:
         raise ValueError('Invalid source tree')
-    observation = []; keychains = []; process_failure = []
+    observation = []; keychains = []; process_failure = []; artifact_failure = []
 
     def operation(keychain_path):
         keychains.append(keychain_path)
@@ -199,14 +322,23 @@ def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, c
         with options_path.open('xb') as handle:
             plistlib.dump(options, handle)
         try:
-            if runner(archive_cmd, 1200) is not True or runner(export_cmd, 600) is not True:
-                raise ValueError('Synthetic build did not succeed')
+            if (runner(archive_cmd, 1200, cwd=source_directory, env=runner_env) is not True or
+                    runner(export_cmd, 600, cwd=source_directory, env=runner_env) is not True):
+                raise ValueError('Controlled build did not succeed')
         except BoundedProcessError as exc:
             reason = exc.reason if exc.reason in {'start', 'timeout', 'interrupted', 'wait', 'exit', 'production-disabled'} else 'other'
             process_failure.append((reason, exc.cleanup_failed is True))
             raise
-        value = _candidate.verify_archive_export_ipa_with_preflight(
-            archive, export_dir / 'Payload/Kin.app', export_dir / 'Kin.ipa', **reviewed)
+        try:
+            ipa = export_dir / 'Kin.ipa'
+            ipa_hash = _candidate._binary_hash(ipa)
+            inspected_app = _candidate.extract_ipa_for_inspection(ipa, workspace)
+            value = _candidate.verify_archive_export_ipa_with_preflight(archive, inspected_app, ipa, **reviewed)
+            if value.get('ipa_sha256') != ipa_hash:
+                raise ValueError('IPA changed during inspection')
+        except (_candidate.CandidateError, OSError, ValueError):
+            artifact_failure.append(True)
+            raise
         if value.get('source_sha') != source or value.get('source_tree') != tree:
             raise ValueError('Observed source changed')
         observation.append(value)
@@ -214,7 +346,7 @@ def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, c
 
     failure = None
     try:
-        _keychain.run_isolated(runner_temp, b'kin-synthetic-identity-only', 'kin-synthetic-password-only',
+        _keychain.run_isolated(runner_temp, identity_bytes, identity_password,
                                operation, backend=security_backend, profile=profile, search_list=search_list)
     except _keychain.TransactionFailed as exc:
         failure = exc
@@ -222,9 +354,13 @@ def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, c
         reason, process_cleanup_failed = process_failure[0]
         errors = failure.cleanup_errors + (('process:cleanup-failed',) if process_cleanup_failed else ())
         failure = _keychain.TransactionFailed('process:' + reason, errors)
+    elif failure is not None and artifact_failure:
+        failure = _keychain.TransactionFailed('artifact:verification', failure.cleanup_errors)
     try:
-        verified = (len(keychains) == 1 and
-                    cleanup_check(keychains[0], Path(profile_directory) / (profile_uuid + '.mobileprovision')) is True)
+        profile_path = Path(profile_directory) / (profile_uuid + '.mobileprovision')
+        verified = (len(keychains) == 1 and _verify_owned_cleanup(keychains[0], profile_path) and
+                    _keychain._validated_search_list(search_list.read()) == original_search and
+                    cleanup_check(keychains[0], profile_path) is True)
     except Exception:
         verified = False
     if failure is not None:
@@ -233,9 +369,10 @@ def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, c
                                               failure.cleanup_errors + ('independent-cleanup:unverified',)) from None
         raise failure
     if not verified:
-        raise ValueError('Synthetic cleanup could not be independently verified')
+        raise ValueError('Cleanup could not be independently verified')
     _candidate._evidence.main()
     if (os.environ.get('GITHUB_SHA') != source or
-            _candidate._evidence.command('git', 'rev-parse', 'HEAD^{tree}') != tree or len(observation) != 1):
-        raise ValueError('Source or synthetic output changed')
-    return dict(observation[0], kind='synthetic-control-flow-not-build-attestation')
+            _candidate._evidence.command('git', 'rev-parse', 'HEAD^{tree}') != tree or
+            _checkout_snapshot(source_directory, source) != checkout or len(observation) != 1):
+        raise ValueError('Source or output changed')
+    return dict(observation[0], kind='controlled-observation-not-build-attestation')

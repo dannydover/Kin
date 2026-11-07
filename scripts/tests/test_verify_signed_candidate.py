@@ -48,7 +48,8 @@ class CandidateTests(unittest.TestCase):
         def make(entries):
             with zipfile.ZipFile(ipa, 'w') as archive:
                 for name, value in entries:
-                    archive.writestr(name, value)
+                    entry = zipfile.ZipInfo(name); entry.create_system = 3; entry.external_attr = 0o100644 << 16
+                    archive.writestr(entry, value)
         entries = [('Payload/Kin.app/Info.plist', (self.app / 'Info.plist').read_bytes()),
                    ('Payload/Kin.app/embedded.mobileprovision', self.profile)]
         make(entries)
@@ -75,6 +76,41 @@ class CandidateTests(unittest.TestCase):
         make(entries)
         with self.assertRaises(candidate.CandidateError):
             candidate.verify_ipa_payload(ipa, self.app)
+
+    def test_inspection_extraction_preserves_file_modes_and_rejects_unsafe_entries(self):
+        ipa = Path(self.temp.name) / 'extraction.ipa'
+        binary = self.app / 'Kin'; binary.write_bytes(b'fake executable'); binary.chmod(0o755)
+        def make(extra=None):
+            with zipfile.ZipFile(ipa, 'w') as archive:
+                for item in self.app.iterdir():
+                    archive.write(item, 'Payload/Kin.app/' + item.name)
+                if extra is not None: archive.writestr(extra, b'fake')
+        make()
+        workspace = Path(self.temp.name) / 'workspace'; workspace.mkdir()
+        extracted = candidate.extract_ipa_for_inspection(ipa, workspace)
+        self.assertEqual((extracted / 'Kin').read_bytes(), b'fake executable')
+        self.assertEqual((extracted / 'Kin').stat().st_mode & 0o777, 0o755)
+        self.assertEqual(candidate.verify_ipa_payload(ipa, extracted), hashlib.sha256(ipa.read_bytes()).hexdigest())
+        (extracted / 'Kin').chmod(0o644)
+        with self.assertRaises(candidate.CandidateError): candidate.verify_ipa_payload(ipa, extracted)
+        link = zipfile.ZipInfo('Payload/Kin.app/link'); link.create_system = 3; link.external_attr = 0o120777 << 16
+        privileged = zipfile.ZipInfo('Payload/Kin.app/privileged'); privileged.create_system = 3
+        privileged.external_attr = 0o104755 << 16
+        for index, extra in enumerate(('Payload/Kin.app/../../escape', 'Payload/Other.app/file', link, privileged)):
+            with self.subTest(extra=index):
+                make(extra)
+                unsafe_workspace = Path(self.temp.name) / ('unsafe-' + str(index)); unsafe_workspace.mkdir()
+                with self.assertRaises(candidate.CandidateError):
+                    candidate.extract_ipa_for_inspection(ipa, unsafe_workspace)
+        make()
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            with zipfile.ZipFile(ipa, 'a') as archive:
+                archive.writestr('Payload/Kin.app/Kin', b'duplicate')
+        duplicate_workspace = Path(self.temp.name) / 'duplicate'; duplicate_workspace.mkdir()
+        with self.assertRaises(candidate.CandidateError):
+            candidate.extract_ipa_for_inspection(ipa, duplicate_workspace)
+        self.assertFalse((Path(self.temp.name) / 'escape').exists())
 
     def test_ipa_verification_failure_cannot_return_observation(self):
         observation = {'source_tree': 'a' * 40, 'kind': 'local-observation-not-build-attestation'}

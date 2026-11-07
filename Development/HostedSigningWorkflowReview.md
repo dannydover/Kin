@@ -220,11 +220,12 @@ does not sign, export, check an actual profile, or prove the options will work
 for Kin. Missing or changed help fails the exercise; it does not change the
 required test gate. The probe retains no raw help output.
 
-An IPA payload comparison is under synthetic review. It compares
-each regular file in `Payload/Kin.app` with the inspected exported app and
-rejects additional file content and symlinks. It has not been tested on an
-actual Xcode export, which may legitimately contain additional files or links.
-It does not compare file modes, establish that source produced either artifact,
+The IPA inspection path extracts only regular files from the expected app in
+the IPA into a newly created directory, preserves supported file modes, and
+compares the payload with the inspected app. It rejects traversal, symlinks,
+multiple apps and extra file content. It has not been tested on an actual
+Xcode export, which may legitimately contain additional files or links. The
+comparison checks regular-file modes but not directory modes; it does not establish that source produced either artifact,
 or prove Apple authorization, profile freshness, or release readiness. Inputs
 must remain immutable; the comparison does not protect against concurrent
 same-user changes. No workflow invokes this candidate.
@@ -236,14 +237,34 @@ security backend and cleanup observer must be fakes; it has no CLI and no
 workflow calls it. It uses fixed synthetic credentials and fabricates the app
 and IPA in tests. A bounded runner is exercised on harmless child processes;
 the injected synthetic command runner is responsible for enforcing deadlines.
-Production Xcode execution is explicitly disabled. On timeout, the bounded
-runner kills its owned process group and reports failure if reaping fails; it
+Production Xcode execution is explicitly disabled. The shared flow rejects
+non-synthetic identity and profile bytes before staging; it is not yet a
+credential-bearing production entry point. On timeout, the bounded runner kills
+its owned process group and reports failure if reaping fails; it
 cannot guarantee cleanup of detached or surviving children, or after runner
 loss or SIGKILL. Its environment allowlist is not a substitute for validating
 the values supplied by a future workflow.
-Its fake exported app layout has not been established as actual Xcode output,
-and keychain discovery by Xcode has not been demonstrated. The observed source
-and artifact hashes are not proof that the source produced the artifacts.
+The shared control flow extracts the inspected app from the IPA; it no longer
+assumes an unpacked Payload exists beside the IPA. The runner receives the
+observed checkout directory and a restricted environment. The checkout check
+compares HEAD and tree, rejects dirty or ignored files, unsupported index flags,
+symlinks, submodules, configuration files, package references and known project
+or scheme script actions. It is not a filesystem lock or a complete inventory
+of SDK, compiler and generated inputs. A same-user process could change and
+restore files during a build. The observed source and artifact hashes are not
+proof that the source produced the artifacts. After the transaction, the flow
+independently rechecks the owned workspace and profile paths are absent and the
+search list matches its initial observation, and invokes a separate observer.
+These checks are subject to same-user races and do not run after runner loss.
+The production entry remains
+disabled, its environment and actual Xcode export behavior are unverified, and
+keychain discovery by Xcode has not been demonstrated.
+
+A local unsigned archive probe used an older clean source commit and Xcode 27.2,
+not the hosted 27.0 baseline. The bounded command exited unsuccessfully; its
+local activity log included an invalid CoreSimulatorService connection. This
+observation does not establish the cause or validate the PR source, and the
+probe was not retried unchanged.
 GitHub's documented hosted signing example adds the temporary keychain to the
 user keychain search list before building. The transaction can optionally snapshot,
 extend, compare and restore a supplied search list; the synthetic path tests it

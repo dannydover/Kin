@@ -40,7 +40,7 @@ def _read_file(path, limit):
     return data
 
 
-def _bounded_output(args, label, *, merge_stderr=False):
+def _bounded_output(args, label, *, merge_stderr=False, cwd=None, env=None):
     """Read at most 64 KiB from one child; kill and reap only that child."""
     deadline = time.monotonic() + 60
     proc = None
@@ -49,7 +49,8 @@ def _bounded_output(args, label, *, merge_stderr=False):
     result = None
     try:
         proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT if merge_stderr else subprocess.DEVNULL)
+                                stderr=subprocess.STDOUT if merge_stderr else subprocess.DEVNULL,
+                                cwd=cwd, env=env)
         output = bytearray()
         with selectors.DefaultSelector() as selector:
             selector.register(proc.stdout, selectors.EVENT_READ)
@@ -232,8 +233,8 @@ def verify_archive_export_with_preflight(archive, exported_app, **reviewed_input
 def verify_ipa_payload(ipa, exported_app):
     """Fail closed unless the IPA's sole app payload matches the inspected app.
 
-    The caller must keep inputs immutable. This checks content, not file modes,
-    Apple acceptance, or provenance. It does not extract or execute the IPA.
+    The caller must keep inputs immutable. This checks file content and modes,
+    not directory modes, Apple acceptance, or provenance. It does not execute.
     """
     ipa = Path(ipa); exported_app = Path(exported_app)
     limit = 1024 * 1024 * 1024
@@ -271,7 +272,7 @@ def verify_ipa_payload(ipa, exported_app):
                 seen.add(name)
                 mode = (info.external_attr >> 16) & 0xffff
                 kind = stat.S_IFMT(mode)
-                if kind not in (0, stat.S_IFREG, stat.S_IFDIR):
+                if kind not in ((0, stat.S_IFDIR) if info.is_dir() else (0, stat.S_IFREG)) or mode & 0o7000:
                     raise CandidateError('unsupported IPA entry')
                 if info.is_dir():
                     continue
@@ -281,8 +282,10 @@ def verify_ipa_payload(ipa, exported_app):
                 if relative not in expected or relative in found:
                     raise CandidateError('unexpected IPA payload')
                 total += info.file_size
-                if total > limit or info.file_size != expected[relative].stat().st_size:
-                    raise CandidateError('IPA size mismatch')
+                local_stat = expected[relative].stat()
+                if (total > limit or info.file_size != local_stat.st_size or
+                        not mode & 0o400 or mode & 0o777 != local_stat.st_mode & 0o777):
+                    raise CandidateError('IPA size or mode mismatch')
                 digest = hashlib.sha256()
                 with archive.open(info) as item:
                     while True:
@@ -303,6 +306,95 @@ def verify_ipa_payload(ipa, exported_app):
         return _binary_hash(ipa)
     except (OSError, ValueError, zipfile.BadZipFile, RuntimeError, EOFError, NotImplementedError):
         raise CandidateError('IPA inspection failed') from None
+
+
+def extract_ipa_for_inspection(ipa, workspace):
+    """Extract only a bounded, regular-file Kin payload into a new owned folder.
+
+    No archive extraction API is used. Unsupported links, extra files and modes
+    fail closed; legitimate Xcode exports may therefore be rejected. The caller
+    owns and must clean the whole isolated workspace, which must be immutable to
+    other users/processes. Actual signed-export compatibility is unverified.
+    """
+    ipa = Path(ipa); workspace = Path(workspace); limit = 1024 * 1024 * 1024
+    if (ipa.is_symlink() or not ipa.is_file() or not 0 < ipa.stat().st_size <= limit or
+            workspace.is_symlink() or not workspace.is_dir() or not workspace.is_absolute()):
+        raise CandidateError('IPA extraction input unavailable')
+    rootfd = None
+    try:
+        os.mkdir(workspace / 'inspected-ipa', 0o700)
+        rootfd = os.open(workspace / 'inspected-ipa', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        os.mkdir('Kin.app', 0o700, dir_fd=rootfd)
+        appfd = os.open('Kin.app', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=rootfd)
+        try:
+            seen = set(); total = 0; count = 0; directory_modes = {}
+            with zipfile.ZipFile(ipa) as archive:
+                infos = archive.infolist()
+                if len(infos) > 10000: raise CandidateError('IPA entry limit')
+                for info in infos:
+                    name = info.filename; logical = name.rstrip('/'); parts = logical.split('/')
+                    if (not logical or logical in seen or '\\' in name or
+                            any(part in ('', '.', '..') for part in parts)):
+                        raise CandidateError('invalid IPA entry')
+                    seen.add(logical)
+                    mode = (info.external_attr >> 16) & 0xffff
+                    kind = stat.S_IFMT(mode)
+                    is_directory = info.is_dir()
+                    if kind not in ((0, stat.S_IFDIR) if is_directory else (0, stat.S_IFREG)) or mode & 0o7000:
+                        raise CandidateError('unsupported IPA entry')
+                    if parts in (['Payload'], ['Payload', 'Kin.app']):
+                        if not is_directory: raise CandidateError('invalid IPA root')
+                        continue
+                    if len(parts) < 3 or parts[:2] != ['Payload', 'Kin.app']:
+                        raise CandidateError('unexpected IPA content')
+                    relative = parts[2:]; parent = os.dup(appfd)
+                    try:
+                        for part in relative[:-1]:
+                            try: os.mkdir(part, 0o700, dir_fd=parent)
+                            except FileExistsError: pass
+                            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                            os.close(parent); parent = child
+                        namepart = relative[-1]
+                        if is_directory:
+                            try: os.mkdir(namepart, 0o700, dir_fd=parent)
+                            except FileExistsError: pass
+                            directory_modes[tuple(relative)] = mode & 0o777 or 0o755
+                        else:
+                            permissions = mode & 0o777
+                            if not permissions & 0o400: raise CandidateError('unsupported IPA mode')
+                            total += info.file_size; count += 1
+                            if total > limit: raise CandidateError('IPA size limit')
+                            fd = os.open(namepart, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                         0o600, dir_fd=parent)
+                            try:
+                                with os.fdopen(fd, 'wb', closefd=False) as output, archive.open(info) as source:
+                                    while True:
+                                        chunk = source.read(1024 * 1024)
+                                        if not chunk: break
+                                        output.write(chunk)
+                                os.fchmod(fd, permissions)
+                            finally:
+                                os.close(fd)
+                    finally:
+                        os.close(parent)
+            if not count: raise CandidateError('empty IPA payload')
+            for parts, permissions in sorted(directory_modes.items(), key=lambda item: len(item[0]), reverse=True):
+                if permissions & 0o500 != 0o500: raise CandidateError('unsupported IPA directory mode')
+                directory = os.dup(appfd)
+                try:
+                    for part in parts:
+                        child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                        os.close(directory); directory = child
+                    os.fchmod(directory, permissions)
+                finally:
+                    os.close(directory)
+        finally:
+            os.close(appfd)
+    except (OSError, ValueError, zipfile.BadZipFile, RuntimeError, EOFError, NotImplementedError):
+        raise CandidateError('IPA extraction failed') from None
+    finally:
+        if rootfd is not None: os.close(rootfd)
+    return workspace / 'inspected-ipa/Kin.app'
 
 
 def verify_archive_export_ipa_with_preflight(archive, exported_app, ipa, **reviewed_inputs):
