@@ -57,8 +57,17 @@ def _error_category(exc):
     return 'other-error'
 
 
+def _validated_search_list(value):
+    if (not isinstance(value, list) or not 1 <= len(value) <= 32 or
+            any(not isinstance(path, str) or not path.startswith('/') or len(path) > 4096 or
+                any(ord(char) < 32 or ord(char) == 127 for char in path) for path in value) or
+            len(value) != len(set(value))):
+        raise ValueError('Invalid keychain search list')
+    return list(value)
+
+
 def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_security,
-                 remove_workspace=_remove_owned_workspace, profile=None):
+                 remove_workspace=_remove_owned_workspace, profile=None, search_list=None):
     """Run a caller operation with a disposable keychain and fail-closed cleanup.
 
     This component alone does not validate an environment, signing identity,
@@ -108,6 +117,9 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
     profile_identity = None
     profile_name = None
     profile_complete = False
+    search_attempted = False
+    original_search = None
+    desired_search = None
     old_handlers = {}
     interrupted = False
     def request_stop(_signum, _frame):
@@ -159,6 +171,17 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
                 '-T', '/usr/bin/codesign', '-T', '/usr/bin/security')
         backend('set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k',
                 keychain_password, str(keychain_path))
+        if search_list is not None:
+            original_search = _validated_search_list(search_list.read())
+            if str(keychain_path) in original_search:
+                raise ValueError('Temporary keychain already listed')
+            desired_search = _validated_search_list([str(keychain_path)] + original_search)
+            if _validated_search_list(search_list.read()) != original_search:
+                raise ValueError('Keychain list changed')
+            search_attempted = True
+            search_list.write(desired_search)
+            if _validated_search_list(search_list.read()) != desired_search:
+                raise ValueError('Keychain list not installed')
         if operation(keychain_path) is not True:
             raise ValueError('Operation did not succeed')
     except Exception as exc:
@@ -166,6 +189,17 @@ def run_isolated(runner_temp, p12_bytes, p12_password, operation, *, backend=_se
         # exception text, command arguments or tool output.
         primary_error = _error_category(exc)
     finally:
+        if search_attempted:
+            try:
+                current = _validated_search_list(search_list.read())
+                if current == desired_search:
+                    search_list.write(original_search)
+                    if _validated_search_list(search_list.read()) != original_search:
+                        cleanup_errors.append('search-list:restore-unverified')
+                elif current != original_search:
+                    cleanup_errors.append('search-list:changed')
+            except Exception as exc:
+                cleanup_errors.append('search-list:' + _error_category(exc))
         if profile_dir_fd is not None:
             if profile_identity is not None:
                 try:

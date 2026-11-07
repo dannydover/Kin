@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import shlex
 import signal
 import subprocess
 import uuid
@@ -88,6 +89,29 @@ def run_production_xcode(*_args, **_kwargs):
     raise BoundedProcessError('production-disabled')
 
 
+class SecuritySearchList:
+    """Bounded local security-tool adapter; never invoked by a workflow here.
+
+    List contents stay in memory. Concurrent same-user mutations remain a
+    race, so this is only suitable for a reviewed isolated runner. Calling
+    write changes that user's settings and needs the future signing approval.
+    """
+    def read(self):
+        try:
+            data = _candidate._bounded_output(['/usr/bin/security', 'list-keychains', '-d', 'user'],
+                                              'keychain list')
+            return _keychain._validated_search_list(shlex.split(data.decode('utf-8')))
+        except Exception:
+            raise ValueError('Keychain list unavailable') from None
+
+    def write(self, paths):
+        try:
+            paths = _keychain._validated_search_list(paths)
+            _keychain._security('list-keychains', '-d', 'user', '-s', *paths)
+        except Exception:
+            raise ValueError('Keychain list update failed') from None
+
+
 def _reviewed_plan(reviewed, profile_uuid, workspace, keychain_path):
     """Construct an argument vector from validated inputs; no shell is used.
 
@@ -135,14 +159,15 @@ def _reviewed_plan(reviewed, profile_uuid, workspace, keychain_path):
     return archive, export_dir, options_path, options, archive_cmd, export_cmd
 
 
-def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, cleanup_check):
+def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, cleanup_check, search_list):
     """Exercise control flow with fixed fake credentials and injected fakes.
 
     Each planned command has a requested deadline; enforcement is the injected
     runner's responsibility. Real subprocess execution is not implemented.
     The workspace and synthetic IPA are removed before a result is returned.
     """
-    if not callable(runner) or not callable(security_backend) or not callable(cleanup_check):
+    if (not callable(runner) or not callable(security_backend) or not callable(cleanup_check) or
+            not callable(getattr(search_list, 'read', None)) or not callable(getattr(search_list, 'write', None))):
         raise ValueError('Synthetic fakes required')
     source = os.environ.get('GITHUB_SHA', '')
     if not re.fullmatch(r'[0-9a-f]{40}', source):
@@ -190,7 +215,7 @@ def run_synthetic(runner_temp, profile_directory, *, runner, security_backend, c
     failure = None
     try:
         _keychain.run_isolated(runner_temp, b'kin-synthetic-identity-only', 'kin-synthetic-password-only',
-                               operation, backend=security_backend, profile=profile)
+                               operation, backend=security_backend, profile=profile, search_list=search_list)
     except _keychain.TransactionFailed as exc:
         failure = exc
     if failure is not None and process_failure:

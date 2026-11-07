@@ -245,10 +245,13 @@ Its fake exported app layout has not been established as actual Xcode output,
 and keychain discovery by Xcode has not been demonstrated. The observed source
 and artifact hashes are not proof that the source produced the artifacts.
 GitHub's documented hosted signing example adds the temporary keychain to the
-user keychain search list before building. The current transaction does not
-change or restore that list; the planned archive flag alone has not been shown
-to make export find the identity. A real workflow needs a reviewed isolation,
-restoration and verification strategy, or another supported demonstrated route.
+user keychain search list before building. The transaction can optionally snapshot,
+extend, compare and restore a supplied search list; the synthetic path tests it
+with a fake. A local `security` adapter exists but has not changed a real list or
+been exercised with Xcode. It refuses restoration if it observes an unexpected
+list, but comparison and writes are not atomic, and runner loss can leave changes
+behind. The planned archive flag has not been shown to make export find the
+identity. A real workflow needs reviewed isolation and hosted verification.
 See https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications.
 A real path still needs reviewed integration of the bounded runner, isolated
 source and external build-input controls, verified profile/keychain discovery, safe IPA inspection,

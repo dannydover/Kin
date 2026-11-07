@@ -23,6 +23,11 @@ class SyntheticOrchestratorTests(unittest.TestCase):
         self.profiles = tempfile.TemporaryDirectory(); self.addCleanup(self.profiles.cleanup)
         os.chmod(self.profiles.name, 0o700)
         self.commands = []; self.calls = []; self.failure = None; self.registered = False; self.cleanup_checks = 0
+        class FakeSearch:
+            def __init__(self): self.paths = ['/synthetic/original.keychain']; self.writes = []
+            def read(self): return list(self.paths)
+            def write(self, paths): self.paths = list(paths); self.writes.append(list(paths))
+        self.search = FakeSearch()
         self.env = mock.patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'GITHUB_SHA': 'a' * 40})
         self.env.start(); self.addCleanup(self.env.stop)
         self.patches = [mock.patch.object(orchestrator._candidate._evidence, 'main'),
@@ -75,9 +80,11 @@ class SyntheticOrchestratorTests(unittest.TestCase):
     def run_case(self):
         def cleanup_check(keychain, profile):
             self.cleanup_checks += 1
-            return self.failure != 'verify-cleanup' and not self.registered and not keychain.exists() and not profile.exists()
+            return (self.failure != 'verify-cleanup' and not self.registered and not keychain.exists() and
+                    not profile.exists() and self.search.read() == ['/synthetic/original.keychain'])
         return orchestrator.run_synthetic(self.root.name, str(Path(self.profiles.name).resolve()),
-                                          runner=self.runner, security_backend=self.security, cleanup_check=cleanup_check)
+                                          runner=self.runner, security_backend=self.security,
+                                          cleanup_check=cleanup_check, search_list=self.search)
 
     def test_full_synthetic_path_verifies_then_cleans_before_return(self):
         result = self.run_case()
@@ -91,6 +98,8 @@ class SyntheticOrchestratorTests(unittest.TestCase):
         self.assertEqual(list(Path(self.root.name).iterdir()), [])
         self.assertEqual(list(Path(self.profiles.name).iterdir()), [])
         self.assertIn('delete-keychain', self.calls)
+        self.assertEqual(self.search.read(), ['/synthetic/original.keychain'])
+        self.assertEqual(len(self.search.writes), 2)
 
     def test_failed_stages_and_cleanup_cannot_return_success(self):
         for failure in ('archive', 'export', 'ipa', 'cleanup'):
@@ -174,10 +183,66 @@ class SyntheticOrchestratorTests(unittest.TestCase):
             raise orchestrator.BoundedProcessError('timeout', cleanup_failed=True)
         with self.assertRaises(orchestrator._keychain.TransactionFailed) as error:
             orchestrator.run_synthetic(self.root.name, str(Path(self.profiles.name).resolve()),
-                                       runner=fail, security_backend=self.security, cleanup_check=lambda *_: True)
+                                       runner=fail, security_backend=self.security, cleanup_check=lambda *_: True,
+                                       search_list=self.search)
         self.assertEqual(error.exception.primary_error, 'process:timeout')
         self.assertIn('process:cleanup-failed', error.exception.cleanup_errors)
         self.assertIn('delete-keychain', self.calls)
+
+    def test_changed_search_list_is_not_overwritten(self):
+        def changed(command, timeout):
+            self.search.paths = ['/synthetic/changed.keychain']
+            return False
+        with self.assertRaises(orchestrator._keychain.TransactionFailed) as error:
+            orchestrator.run_synthetic(self.root.name, str(Path(self.profiles.name).resolve()),
+                                       runner=changed, security_backend=self.security,
+                                       cleanup_check=lambda *_: False, search_list=self.search)
+        self.assertIn('search-list:changed', error.exception.cleanup_errors)
+        self.assertEqual(self.search.read(), ['/synthetic/changed.keychain'])
+        self.assertEqual(len(self.search.writes), 1)
+
+    def test_search_list_write_that_mutates_then_fails_is_restored(self):
+        original_write = self.search.write
+        calls = []
+        def uncertain_write(paths):
+            calls.append(True); original_write(paths)
+            if len(calls) == 1: raise OSError('private')
+        with mock.patch.object(self.search, 'write', side_effect=uncertain_write):
+            with self.assertRaises(orchestrator._keychain.TransactionFailed) as error: self.run_case()
+        self.assertTrue(error.exception.primary_failed)
+        self.assertEqual(self.search.read(), ['/synthetic/original.keychain'])
+        self.assertIn('delete-keychain', self.calls)
+        self.assertEqual(self.commands, [])
+
+    def test_search_list_restore_failure_cannot_return_success(self):
+        original_write = self.search.write
+        calls = []
+        def fail_restore(paths):
+            calls.append(True)
+            if len(calls) == 2: raise OSError('private')
+            original_write(paths)
+        with mock.patch.object(self.search, 'write', side_effect=fail_restore):
+            with self.assertRaises(orchestrator._keychain.TransactionFailed) as error: self.run_case()
+        self.assertIn('search-list:filesystem-error', error.exception.cleanup_errors)
+        self.assertIn('independent-cleanup:unverified', error.exception.cleanup_errors)
+        self.assertIn('delete-keychain', self.calls)
+
+    def test_security_search_adapter_parses_without_emitting_paths(self):
+        adapter = orchestrator.SecuritySearchList()
+        with mock.patch.object(orchestrator._candidate, '_bounded_output',
+                               return_value=b'"/synthetic/one keychain"\n"/synthetic/two"\n'):
+            self.assertEqual(adapter.read(), ['/synthetic/one keychain', '/synthetic/two'])
+        with mock.patch.object(orchestrator._keychain, '_security') as backend:
+            adapter.write(['/synthetic/one keychain'])
+            backend.assert_called_once_with('list-keychains', '-d', 'user', '-s', '/synthetic/one keychain')
+        with mock.patch.object(orchestrator._keychain, '_security', side_effect=OSError('private path')):
+            with self.assertRaises(ValueError) as error: adapter.write(['/synthetic/one'])
+            self.assertNotIn('private', str(error.exception))
+        for malformed in (b'', b'"/unterminated', b'"relative"', b'"/duplicate"\n"/duplicate"'):
+            with self.subTest(malformed=malformed), \
+                 mock.patch.object(orchestrator._candidate, '_bounded_output', return_value=malformed), \
+                 self.assertRaises(ValueError):
+                adapter.read()
 
     def test_reviewed_plan_rejects_untrusted_fields(self):
         entitlements = {'application-identifier': 'ABCDEFGHIJ.com.intriguingideas.Kin',
