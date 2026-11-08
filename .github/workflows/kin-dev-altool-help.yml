@@ -1,0 +1,31 @@
+name: Kin Dev uploader help probe
+on:
+  push:
+    branches: [diagnostic/kin-dev-altool-help]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check uploader help without credentials or network upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(xcodebuild -version)" = "$(printf 'Xcode 27.0\nBuild version 27A266a')"
+          help="$RUNNER_TEMP/altool-help"
+          trap 'rm -f "$help"' EXIT
+          if ! xcrun altool --help >"$help" 2>&1; then
+            echo "altool help unavailable"
+            exit 1
+          fi
+          python3 - "$help" <<'PY'
+          import pathlib, sys
+          s=pathlib.Path(sys.argv[1]).read_text(errors='replace')
+          if len(s)>2000000: raise SystemExit('help output too large')
+          for flag in ('--upload-app','--apiKey','--apiIssuer','--output-format'):
+              print(flag + '=' + ('present' if flag in s else 'absent'))
+          PY
