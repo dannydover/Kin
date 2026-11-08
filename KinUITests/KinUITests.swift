@@ -1362,7 +1362,15 @@ final class KinUITests: XCTestCase {
             return hittable
         }
         _ = recordFriendStage("before")
+        // Synthetic diagnostic: preserve the same action and deadline while
+        // recording the target and keyboard geometry before the single tap.
+        let targetFrame = controls.element.frame
+        let keyboard = app.keyboards.firstMatch
+        let keyboardFrame = keyboard.exists ? keyboard.frame : .zero
+        print("KIN_FRIEND_GEOMETRY target=\(targetFrame) keyboard=\(keyboardFrame)")
+        let tapStart = ProcessInfo.processInfo.systemUptime
         controls.element.tap()
+        print("KIN_FRIEND_GEOMETRY tapSeconds=\(ProcessInfo.processInfo.systemUptime - tapStart)")
         let wasHittable = recordFriendStage("after")
         // The tap can scroll the switch out of view. Use at most one deliberate
         // reveal, within the same five-second readiness budget; never retap it.

@@ -1,0 +1,63 @@
+name: Friend geometry smoke diagnostic (nonshipping)
+on:
+  push:
+    branches: [diagnostic/kin62-friend-geometry]
+permissions:
+  contents: read
+jobs:
+  targeted:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          test "$(uname -m)" = arm64
+      - name: Create isolated simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin friend diagnostic ${GITHUB_RUN_ID}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+      - name: Run original complete smoke selection
+        timeout-minutes: 45
+        run: |
+          python3 scripts/ci-observe.py smoke
+      - name: Verify finalized smoke identities and result
+        if: always()
+        run: |
+          test -d "$RUNNER_TEMP/KinTests.xcresult"
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json"
+          python3 scripts/ci-test-shards.py smoke "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json"
+      - name: Package finalized or partial synthetic result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - name: Retain synthetic result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kin-friend-full-smoke-result
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove isolated simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then python3 scripts/ci-simulator.py cleanup; fi
+      - name: Retain simulator cleanup
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kin-friend-full-smoke-cleanup
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+
