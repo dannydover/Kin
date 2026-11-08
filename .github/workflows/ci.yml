@@ -1,5 +1,6 @@
 name: Build and test
 on:
+  workflow_call:
   pull_request:
   push:
     # Two standard and one randomized, first-attempt trials can point at the
@@ -11,13 +12,32 @@ concurrency:
   group: kin-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  # Credential-free PR-only probe; does not repeat any existing test job.
+  reusable-probe-source:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+  reusable-probe:
+    if: github.event_name == 'pull_request'
+    needs: reusable-probe-source
+    uses: ./.github/workflows/reusable-ci-probe-target.yml
+    with:
+      expected_sha: ${{ github.sha }}
+    permissions:
+      contents: read
   core-validation:
     runs-on: xcode-27
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           # Identity regression tests compare the frozen production baseline.
@@ -46,7 +66,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
       KIN_CI_ORDER: ${{ github.ref == 'refs/heads/diagnostic/kin13-trial-random' && 'random' || 'standard' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Verify test toolchain
@@ -89,7 +109,7 @@ jobs:
         run: python3 scripts/ci-retain.py
       - name: Retain synthetic progress and finalized result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kin-tests-unit
           path: ${{ runner.temp }}/KinCI-retained/
@@ -105,7 +125,7 @@ jobs:
         id: cleanup_upload
         if: always() && env.KIN_CI_SIMULATOR != ''
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kin-cleanup-unit
           path: ${{ runner.temp }}/KinTests-cleanup.json
@@ -115,7 +135,7 @@ jobs:
         id: cleanup_upload_retry
         if: always() && env.KIN_CI_SIMULATOR != '' && steps.cleanup_upload.outcome == 'failure'
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kin-cleanup-retry-unit
           path: ${{ runner.temp }}/KinTests-cleanup.json
@@ -141,7 +161,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Verify Release toolchain
@@ -171,7 +191,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
       KIN_CI_ORDER: ${{ github.ref == 'refs/heads/diagnostic/kin13-trial-random' && 'random' || 'standard' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Verify test toolchain
@@ -204,7 +224,7 @@ jobs:
         run: python3 scripts/ci-retain.py
       - name: Retain synthetic progress and result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kin-tests-candidate-smoke
           path: ${{ runner.temp }}/KinCI-retained/
@@ -220,7 +240,7 @@ jobs:
         id: cleanup_upload
         if: always() && env.KIN_CI_SIMULATOR != ''
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kin-cleanup-candidate-smoke
           path: ${{ runner.temp }}/KinTests-cleanup.json
@@ -230,7 +250,7 @@ jobs:
         id: cleanup_upload_retry
         if: always() && env.KIN_CI_SIMULATOR != '' && steps.cleanup_upload.outcome == 'failure'
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kin-cleanup-retry-candidate-smoke
           path: ${{ runner.temp }}/KinTests-cleanup.json
