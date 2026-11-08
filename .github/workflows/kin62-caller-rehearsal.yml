@@ -1,0 +1,44 @@
+# Credential-free diagnostic only: not the protected-main release workflow.
+name: Kin release caller rehearsal
+on:
+  push:
+    branches: [diagnostic/kin62-integrated-caller]
+permissions:
+  contents: read
+concurrency:
+  group: kin-release-rehearsal-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source:
+    if: github.ref == 'refs/heads/diagnostic/kin62-integrated-caller'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify PR source and rehearsal-only delta
+        run: |
+          test "$GITHUB_EVENT_NAME" = push
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 6edec45d2f95a846eb983af15499ef8be1b9044b
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/kin62-caller-rehearsal.yml
+          test -z "$(git status --porcelain)"
+          printf 'Rehearsal source %s, PR parent %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD^)"
+  tests:
+    needs: source
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+  signing:
+    # Deliberately inert. No environment, secrets, signing or upload steps.
+    if: ${{ false }}
+    needs: [source, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - run: exit 1
+
