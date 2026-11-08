@@ -1352,17 +1352,22 @@ final class KinUITests: XCTestCase {
         }) else { return }
         // The labeled accessibility wrapper spans the row; its nested switch
         // is the demonstrated action target. Let XCTest scroll it into view.
-        func recordFriendStage(_ stage: String) {
+        func recordFriendStage(_ stage: String) -> Bool {
             func state(_ value: String?) -> String { value == "0" ? "off" : value == "1" ? "on" : "unknown" }
-            print("KIN_CI_FRIEND \(stage) keyboard=\(app.keyboards.firstMatch.exists) wrapper=\(state(friends.element.value as? String)) control=\(state(controls.element.value as? String)) hittable=\(controls.element.isHittable)")
+            let keyboard = app.keyboards.firstMatch.exists
+            let wrapper = state(friends.element.value as? String)
+            let control = state(controls.element.value as? String)
+            let hittable = controls.element.isHittable
+            print("KIN_CI_FRIEND \(stage) keyboard=\(keyboard) wrapper=\(wrapper) control=\(control) hittable=\(hittable)")
+            return hittable
         }
-        recordFriendStage("before")
+        _ = recordFriendStage("before")
         controls.element.tap()
-        recordFriendStage("after")
+        let wasHittable = recordFriendStage("after")
         // The tap can scroll the switch out of view. Use at most one deliberate
         // reveal, within the same five-second readiness budget; never retap it.
         let readinessDeadline = ProcessInfo.processInfo.systemUptime + 5
-        if !controls.element.isHittable && ProcessInfo.processInfo.systemUptime < readinessDeadline {
+        if !wasHittable && ProcessInfo.processInfo.systemUptime < readinessDeadline {
             app.swipeUp()
         }
         let save = editor.buttons.matching(identifier: "Save")

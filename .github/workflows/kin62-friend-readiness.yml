@@ -1,0 +1,100 @@
+# Targeted, credential-free smoke; no signing, no retry.
+name: Friend readiness targeted smoke
+on:
+  push:
+    branches: [diagnostic/kin62-friend-cached-hit]
+permissions:
+  contents: read
+jobs:
+  candidate-smoke:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_CI_ORDER: ${{ github.ref == 'refs/heads/diagnostic/kin13-trial-random' && 'random' || 'standard' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify diagnostic source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 517667fef4dc7040f8ac58f5c387645fb3f89582
+          test "$(git diff --name-only HEAD^ HEAD)" = "$(printf '.github/workflows/kin62-friend-readiness.yml\nKinUITests/KinUITests.swift')"
+      - name: Verify test toolchain
+        run: |
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
+          xcodebuild -version | grep -Fx 'Build version 27A266a'
+          xcrun swift --version | grep -F 'Apple Swift version 6.4'
+          test "$(uname -m)" = arm64
+      - name: Create isolated iOS 27 simulator
+        run: |
+          KIN_CI_SIMULATOR=$(xcrun simctl create "Kin smoke ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "KIN_CI_SIMULATOR=$KIN_CI_SIMULATOR" >> "$GITHUB_ENV"
+          xcrun simctl boot "$KIN_CI_SIMULATOR"
+          xcrun simctl bootstatus "$KIN_CI_SIMULATOR" -b
+      - name: Run proposed UI smoke
+        timeout-minutes: 45
+        run: python3 scripts/ci-observe.py smoke
+      - name: Require finalized exact smoke results
+        if: always()
+        run: |
+          test -d "$RUNNER_TEMP/KinTests.xcresult"
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-summary.json"
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/KinTests.xcresult" > "$RUNNER_TEMP/KinTests-test-tree.json"
+          result=0
+          python3 scripts/check-test-results.py "$RUNNER_TEMP/KinTests-summary.json" || result=1
+          python3 scripts/ci-test-shards.py smoke "$RUNNER_TEMP/KinTests-summary.json" "$RUNNER_TEMP/KinTests-test-tree.json" || result=1
+          exit "$result"
+      - name: Package synthetic progress and result
+        if: always()
+        run: python3 scripts/ci-retain.py
+      - name: Retain synthetic progress and result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kin-tests-candidate-smoke
+          path: ${{ runner.temp }}/KinCI-retained/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove this run's isolated simulator
+        if: always()
+        run: |
+          if [ -n "${KIN_CI_SIMULATOR:-}" ]; then
+            python3 scripts/ci-simulator.py cleanup
+          fi
+      - name: Retain synthetic cleanup outcome
+        id: cleanup_upload
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kin-cleanup-candidate-smoke
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Retry cleanup record upload once
+        id: cleanup_upload_retry
+        if: always() && env.KIN_CI_SIMULATOR != '' && steps.cleanup_upload.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kin-cleanup-retry-candidate-smoke
+          path: ${{ runner.temp }}/KinTests-cleanup.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Require retained simulator cleanup record
+        if: always() && env.KIN_CI_SIMULATOR != ''
+        env:
+          FIRST_OUTCOME: ${{ steps.cleanup_upload.outcome }}
+          RETRY_OUTCOME: ${{ steps.cleanup_upload_retry.outcome }}
+        run: |
+          if [ "$FIRST_OUTCOME" = success ]; then
+            echo "Cleanup record retained on first attempt."
+          elif [ "$FIRST_OUTCOME" = failure ] && [ "$RETRY_OUTCOME" = success ]; then
+            echo "::warning::Cleanup record retained on the second upload attempt."
+          else
+            echo "::error::Simulator cleanup record was not retained."
+            exit 1
+          fi
