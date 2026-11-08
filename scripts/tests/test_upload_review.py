@@ -148,7 +148,7 @@ class UploadReviewTests(unittest.TestCase):
         self.assertIn(b'Upload is disabled', p.stderr)
 
     def test_script_upload_precedes_cleanup_boundary_and_guards_remain(self):
-        sign = (P.parent / 'kin-sign-export.sh').read_text()
+        sign = (P.parent / 'kin-sign-dev-review.sh').read_text()
         clean = (P.parent / 'kin-sign-cleanup.sh').read_text()
         self.assertIn('exit 1', sign.split('set -euo pipefail')[0])
         self.assertIn('exit 1', clean.split('set -euo pipefail')[0])

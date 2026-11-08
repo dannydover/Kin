@@ -43,7 +43,7 @@ class OutcomeTests(unittest.TestCase):
         s = (ROOT / '.github/workflows/hosted-dev-testflight.yml').read_text()
         self.assertIn('if: ${{ false }}', s)
         self.assertNotIn('environment:', s)
-        self.assertLess(s.index('kin-sign-export.sh'), s.index('kin-upload-dev-review.sh'))
+        self.assertLess(s.index('kin-sign-dev-review.sh'), s.index('kin-upload-dev-review.sh'))
         self.assertLess(s.index('kin-upload-dev-review.sh'), s.index('kin-sign-cleanup.sh'))
         self.assertLess(s.index('kin-sign-cleanup.sh'), s.index('summarize_upload_review.py'))
         self.assertIn('if-no-files-found: error', s)

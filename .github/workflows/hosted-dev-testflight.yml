@@ -73,7 +73,7 @@ jobs:
           VERSION: ${{ vars.KIN_VERSION }}
           BUILD: ${{ vars.KIN_BUILD }}
           CERT_SHA256: ${{ vars.KIN_CERT_SHA256 }}
-        run: bash scripts/kin-sign-export.sh
+        run: bash scripts/kin-sign-dev-review.sh
       - name: Upload and check processing (disabled)
         if: ${{ false && inputs.mode == 'upload_trial' }}
         timeout-minutes: 20

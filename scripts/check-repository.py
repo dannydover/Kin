@@ -61,14 +61,14 @@ def inspect(name, data, mode='100644'):
         except UnicodeDecodeError: errors.append('unexpected binary data')
         for label, pattern in PATTERNS.items():
             # Two complete, quoted, whitespace-delimited variable arguments in
-            # the reviewed signing script only. Scan the original bytes for
+            # the two reviewed signing scripts only. Scan the original bytes for
             # every other rule; literals and adjacent shell text still fail.
             allowed = {'signing team': (b'DEVELOPMENT_TEAM', b'$TEAM_ID"'),
                        'provisioning profile': (b'PROVISIONING_PROFILE_SPECIFIER', b'$PROFILE_UUID"')}
             for match in re.finditer(pattern, data):
                 start, end = match.span()
                 key, sep, value = match.group().partition(b'=')
-                permitted = (name == 'scripts/kin-sign-export.sh' and label in allowed and
+                permitted = (name in ('scripts/kin-sign-export.sh', 'scripts/kin-sign-dev-review.sh') and label in allowed and
                              sep == b'=' and (key, value) == allowed[label] and start > 0 and
                              data[start-1:start] == b'"' and
                              (start == 1 or data[start-2:start-1].isspace()) and
@@ -76,9 +76,9 @@ def inspect(name, data, mode='100644'):
                 if not permitted:
                     errors.append(label)
                     break
-        # Within this one script, also reject literal or mixed assignments to
+        # Within those scripts, also reject literal or mixed assignments to
         # the source variables; allow only their own quoted environment pass-through.
-        if name == 'scripts/kin-sign-export.sh':
+        if name in ('scripts/kin-sign-export.sh', 'scripts/kin-sign-dev-review.sh'):
             for match in re.finditer(rb'(?<![A-Za-z0-9_])(?:TEAM_ID|PROFILE_UUID)\s*=\s*[^;\s]+', data):
                 start, end = match.span()
                 key, sep, value = match.group().partition(b'=')

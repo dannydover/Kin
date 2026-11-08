@@ -1,10 +1,10 @@
 #!/bin/bash
 # REVIEW-ONLY: this unconditional guard must remain until specifically approved.
-printf '%s\n' 'Kin Dev signing is disabled in the local proposal.' >&2
+printf '%s\n' 'Signing is disabled in the local proposal.' >&2
 exit 1
 
 # Everything below is illustrative and has NOT been exercised with signing.
-# The example reserves separate step deadlines plus job-level cleanup slack.
+# The GitHub step supplies a 40-minute deadline and the job a 50-minute bound.
 set +x
 set -euo pipefail
 umask 077
@@ -45,9 +45,9 @@ export_options="$work/ExportOptions.plist"
 TEAM_ID="$TEAM_ID" PROFILE_UUID="$PROFILE_UUID" EXPORT_OPTIONS="$export_options" python3 -c '
 import os, plistlib
 with open(os.environ["EXPORT_OPTIONS"], "xb") as f:
-    plistlib.dump({"destination":"export", "method":"app-store-connect", "signingStyle":"manual", "teamID":os.environ["TEAM_ID"], "signingCertificate":"Apple Distribution", "provisioningProfiles":{"com.intriguingideas.Kin.dev":os.environ["PROFILE_UUID"]}}, f)
+    plistlib.dump({"destination":"export", "method":"app-store-connect", "signingStyle":"manual", "teamID":os.environ["TEAM_ID"], "signingCertificate":"Apple Distribution", "provisioningProfiles":{"com.intriguingideas.Kin":os.environ["PROFILE_UUID"]}}, f)
 '
-xcodebuild -project Kin.xcodeproj -scheme 'Kin Dev' -configuration Dev -destination 'generic/platform=iOS' \
+xcodebuild -project Kin.xcodeproj -scheme Kin -configuration Release -destination 'generic/platform=iOS' \
   -derivedDataPath "$work/DerivedData" -archivePath "$work/Kin.xcarchive" archive \
   CODE_SIGN_STYLE=Manual "DEVELOPMENT_TEAM=$TEAM_ID" "PROVISIONING_PROFILE_SPECIFIER=$PROFILE_UUID" \
   'CODE_SIGN_IDENTITY=Apple Distribution' >"$work/archive.log" 2>&1
@@ -63,17 +63,22 @@ mkdir -m 700 "$work/inspect"
 ditto -x -k "$ipa" "$work/inspect"
 app="$work/inspect/Payload/Kin.app"
 test -d "$app" && test ! -L "$app"
-test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")" = com.intriguingideas.Kin.dev
+test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")" = com.intriguingideas.Kin
 test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Info.plist")" = "$VERSION"
 test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Info.plist")" = "$BUILD"
 cmp -s "$profile" "$app/embedded.mobileprovision"
-codesign --verify --deep --strict --all-architectures --test-requirement "=anchor apple generic and identifier \"com.intriguingideas.Kin.dev\" and certificate leaf[subject.OU] = \"$TEAM_ID\"" "$app" >"$work/verify.log" 2>&1
+codesign --verify --deep --strict --all-architectures --test-requirement "=anchor apple generic and identifier \"com.intriguingideas.Kin\" and certificate leaf[subject.OU] = \"$TEAM_ID\"" "$app" >"$work/verify.log" 2>&1
 ( cd "$work"; codesign --display --extract-certificates "$app" >/dev/null 2>&1 )
 test "$(shasum -a 256 "$work/codesign0" | cut -d ' ' -f1)" = "$CERT_SHA256"
 codesign --display --entitlements - --xml "$app" >"$work/entitlements.plist" 2>>"$work/verify.log"
-python3 scripts/check_dev_entitlements.py "$work/entitlements.plist" "$TEAM_ID"
+TEAM_ID="$TEAM_ID" ENTITLEMENTS="$work/entitlements.plist" python3 -c '
+import os, plistlib
+with open(os.environ["ENTITLEMENTS"], "rb") as f: e = plistlib.load(f)
+assert isinstance(e, dict) and e.get("get-task-allow", False) is False
+assert e.get("com.apple.developer.team-identifier") == os.environ["TEAM_ID"]
+'
 shasum -a 256 "$ipa" | cut -d ' ' -f1 > "$work/ipa-sha256"
 test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 test -z "$(git status --porcelain)"
 test "$(git ls-remote https://github.com/dannydover/Kin.git refs/heads/main 2>/dev/null | cut -f1)" = "$GITHUB_SHA"
-printf '%s\n' 'Dev candidate verified in private workspace; no upload occurred.'
+printf '%s\n' 'Local candidate inspected; no upload or distribution occurred.'

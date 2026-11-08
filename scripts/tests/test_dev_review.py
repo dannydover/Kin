@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('dev', ROOT / 'scripts/check_dev_entitlements.py')
 dev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(dev)
+guard_spec = importlib.util.spec_from_file_location('guard', ROOT / 'scripts/check-repository.py')
+guard = importlib.util.module_from_spec(guard_spec)
+guard_spec.loader.exec_module(guard)
 
 
 class DevReviewTests(unittest.TestCase):
@@ -41,6 +44,23 @@ class DevReviewTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dev.check(dict(self.ent, **{'beta-reports-active': False}), self.team)
 
+    def test_dev_privacy_exception_is_exact_and_path_scoped(self):
+        target = 'scripts/kin-sign-dev-review.sh'
+        team = b'DEVELOPMENT_' + b'TEAM'
+        profile = b'PROVISIONING_' + b'PROFILE_SPECIFIER'
+        valid = b' "' + team + b'=$TEAM_ID" "' + profile + b'=$PROFILE_UUID"\n'
+        self.assertEqual(guard.inspect(target, valid), [])
+        self.assertIn('signing team', guard.inspect('scripts/other.sh', valid))
+        cases = [(b' "' + team + b'=ABCDEFGHIJ"\n', 'signing team'),
+                 (b' "' + team + b'=$TEAM_ID' + b'A"\n', 'signing team'),
+                 (b' "' + team + b'=$TEAM_ID";echo\n', 'signing team'),
+                 (b' "' + profile + b'=$PROFILE_UUID' + b'A"\n', 'provisioning profile'),
+                 (b'TEAM_ID="ABCDEFGHIJ"\n', 'signing input assignment'),
+                 (b'-----BEGIN ' + b'PRIVATE KEY-----', 'private key')]
+        for data, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertIn(expected, guard.inspect(target, data))
+
     def test_disabled_trial_modes_and_cleanup_budget(self):
         w = (ROOT / '.github/workflows/hosted-dev-testflight.yml').read_text()
         self.assertIn('options: [signing_only, upload_trial]', w)
@@ -51,7 +71,7 @@ class DevReviewTests(unittest.TestCase):
         self.assertNotIn('environment:', w)
 
     def test_fixed_target_and_disabled_guards(self):
-        s = (ROOT / 'scripts/kin-sign-export.sh').read_text()
+        s = (ROOT / 'scripts/kin-sign-dev-review.sh').read_text()
         c = (ROOT / 'scripts/kin-sign-cleanup.sh').read_text()
         w = (ROOT / '.github/workflows/hosted-dev-testflight.yml').read_text()
         self.assertIn('exit 1', s.split('set -euo pipefail')[0])
@@ -63,11 +83,11 @@ class DevReviewTests(unittest.TestCase):
         self.assertIn('check_dev_entitlements.py', s)
         self.assertIn('check_dev_entitlements.py', s)
         self.assertNotIn('kin_upload_review.py', s)
-        self.assertLess(w.index('kin-sign-export.sh'), w.index('kin-upload-dev-review.sh'))
+        self.assertLess(w.index('kin-sign-dev-review.sh'), w.index('kin-upload-dev-review.sh'))
         upload = (ROOT / 'scripts/kin-upload-dev-review.sh').read_text()
         self.assertIn('exit 1', upload.split('set -euo pipefail')[0])
         self.assertIn('ipa-sha256', upload)
-        self.assertEqual(subprocess.run(['bash', '-n', str(ROOT / 'scripts/kin-sign-export.sh')]).returncode, 0)
+        self.assertEqual(subprocess.run(['bash', '-n', str(ROOT / 'scripts/kin-sign-dev-review.sh')]).returncode, 0)
 
 
 if __name__ == '__main__': unittest.main()
