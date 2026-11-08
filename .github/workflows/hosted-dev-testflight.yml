@@ -1,4 +1,5 @@
-# LOCAL REVIEW EXAMPLE: no signing, environment or upload can run.
+# REVIEW CANDIDATE: the protected job can run on an approved main dispatch;
+# signing and cleanup scripts remain guarded and upload is disabled.
 name: Kin Dev hosted TestFlight review
 on:
   workflow_dispatch:
@@ -42,16 +43,34 @@ jobs:
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
+  signing-preflight:
+    if: ${{ inputs.mode == 'signing_only' }}
+    needs: [source, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check the existing signing environment without secrets
+        timeout-minutes: 1
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+          python3 scripts/check-signing-environment.py
   signing:
     # REVIEW CANDIDATE ONLY: activate only after environment and runner verification.
     # Upload remains independently disabled and requires separate approval.
     if: ${{ inputs.mode == 'signing_only' }}
-    needs: [source, tests]
+    needs: [source, tests, signing-preflight]
     environment: kin-dev-signing
     runs-on: xcode-27
-    # 5 checkout + 40 signing + 20 upload + 5 cleanup + 5 evidence + 10 slack.
+    # 5 checkout + 1 preflight + 40 signing + 20 upload + 5 cleanup + 5 evidence + 10 slack.
     # This reserves time under normal step deadlines, not runner loss or cancellation.
-    timeout-minutes: 85
+    timeout-minutes: 86
     permissions:
       contents: read
     env:
@@ -64,6 +83,12 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Recheck environment before secret-bearing step
+        timeout-minutes: 1
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+          python3 scripts/check-signing-environment.py
       - name: Archive and verify Kin Dev (disabled)
         timeout-minutes: 40
         env:

@@ -66,11 +66,14 @@ class DevReviewTests(unittest.TestCase):
         self.assertIn('options: [signing_only, upload_trial]', w)
         self.assertIn("if: ${{ false && inputs.mode == 'upload_trial' }}", w)
         self.assertIn('test "$TRIAL_MODE" = signing_only', w)
-        self.assertIn('timeout-minutes: 85', w)
-        self.assertLess(5 + 40 + 20 + 5 + 5, 85)
+        self.assertIn('timeout-minutes: 86', w)
+        self.assertLess(5 + 1 + 40 + 20 + 5 + 5, 86)
         self.assertIn("if: ${{ inputs.mode == 'signing_only' }}", w)
         self.assertIn('environment: kin-dev-signing', w)
         self.assertIn('needs: [source, tests]', w)
+        self.assertIn('needs: [source, tests, signing-preflight]', w)
+        self.assertEqual(w.count('python3 scripts/check-signing-environment.py'), 2)
+        self.assertLess(w.rindex('python3 scripts/check-signing-environment.py'), w.index('P12_BASE64:'))
 
     def test_fixed_target_and_disabled_guards(self):
         s = (ROOT / 'scripts/kin-sign-dev-review.sh').read_text()
