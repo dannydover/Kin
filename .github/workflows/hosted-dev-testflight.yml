@@ -26,9 +26,11 @@ jobs:
       - name: Require the selected dispatch commit
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          TRIAL_MODE: ${{ inputs.mode }}
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$TRIAL_MODE" = signing_only
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
@@ -41,12 +43,11 @@ jobs:
     permissions:
       contents: read
   signing:
-    # BOTH this condition and the script's independent guard are disabled.
-    # No environment reference is present; a missing environment can be
-    # automatically created without protection. Owner review/configuration and
-    # a follow-up change are mandatory before any credential-bearing use.
-    if: ${{ false }}
+    # REVIEW CANDIDATE ONLY: activate only after environment and runner verification.
+    # Upload remains independently disabled and requires separate approval.
+    if: ${{ inputs.mode == 'signing_only' }}
     needs: [source, tests]
+    environment: kin-dev-signing
     runs-on: xcode-27
     # 5 checkout + 40 signing + 20 upload + 5 cleanup + 5 evidence + 10 slack.
     # This reserves time under normal step deadlines, not runner loss or cancellation.
@@ -55,6 +56,7 @@ jobs:
       contents: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      KIN_DEV_SIGNING_ONLY: '1'
       PATH: /usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -89,7 +91,7 @@ jobs:
         timeout-minutes: 5
         env:
           PROFILE_UUID: ${{ vars.KIN_PROFILE_UUID }}
-        run: bash scripts/kin-sign-cleanup.sh
+        run: bash scripts/kin-sign-dev-cleanup.sh
       - name: Create fixed-field outcome evidence (disabled)
         if: ${{ always() && inputs.mode == 'upload_trial' }}
         timeout-minutes: 2
