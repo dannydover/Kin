@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+import os
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -38,6 +39,7 @@ class SigningEnvironmentTests(unittest.TestCase):
         for policies in ({'total_count':0,'branch_policies':[]}, {'total_count':1,'branch_policies':[{'name':'*','type':'branch'}]}, {'total_count':1,'branch_policies':[{'name':'main','type':'tag'}]}, {'total_count':2,'branch_policies':[{'name':'main','type':'branch'}]}, {}):
             with self.subTest(policies=policies), self.assertRaises(ValueError): p.validate(self.env, policies)
 
+    @patch.dict(os.environ, {'KIN_RECHECK_GITHUB_TOKEN': 'synthetic-token'})
     def test_fetch_endpoint_and_json_bounds(self):
         class Response:
             status = 200
@@ -74,6 +76,41 @@ class SigningEnvironmentTests(unittest.TestCase):
         with patch.object(p, 'fetch', side_effect=[self.env, {'total_count': 0}]):
             with self.assertRaises(SystemExit) as cm: p.main()
             self.assertIn('policy mismatch', str(cm.exception))
+
+    def test_token_is_scoped_to_fixed_endpoints_and_never_redirected(self):
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): return b'{}'
+        class Opener:
+            def __init__(self): self.requests = []
+            def open(self, request, timeout):
+                self.requests.append((request, timeout)); return Response()
+        opener = Opener()
+        with patch.dict(os.environ, {'KIN_RECHECK_GITHUB_TOKEN': 'synthetic-token'}, clear=True), patch.object(p.urllib.request, 'build_opener', return_value=opener):
+            for url in (p.BASE, p.BASE + '/deployment-branch-policies?per_page=100'):
+                self.assertEqual(p.fetch(url), {})
+            with self.assertRaises(ValueError): p.fetch('https://private.invalid/')
+        self.assertEqual(len(opener.requests), 2)
+        for request, timeout in opener.requests:
+            self.assertEqual(request.get_header('Authorization'), 'Bearer synthetic-token')
+            self.assertEqual(timeout, 10)
+        self.assertIsNone(p._NoRedirect().redirect_request(None, None, None, None, None, None))
+
+    def test_missing_or_malformed_token_never_sends_request(self):
+        for token in ('', 'bad\ntoken', 'x' * 4097, '💡'):
+            with self.subTest(token=token[:8]), patch.dict(os.environ, {'KIN_RECHECK_GITHUB_TOKEN': token}, clear=True), patch.object(p.urllib.request, 'build_opener') as opener:
+                with self.assertRaises(ValueError): p.fetch(p.BASE)
+                opener.assert_not_called()
+
+    def test_workflow_limits_token_to_recheck_steps(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/hosted-dev-testflight.yml').read_text()
+        self.assertEqual(workflow.count('KIN_RECHECK_GITHUB_TOKEN: ${{ github.token }}'), 2)
+        self.assertEqual(workflow.count('      actions: read'), 2)
+        self.assertNotIn('actions: write', workflow)
+        self.assertIn("test \"$TRIAL_MODE\" = signing_only", workflow)
+        self.assertIn("if: ${{ false && inputs.mode == 'upload_trial' }}", workflow)
 
     def test_cleanup_is_conditioned_on_archive_step_start(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/hosted-dev-testflight.yml').read_text()
