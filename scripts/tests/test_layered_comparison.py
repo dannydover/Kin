@@ -13,13 +13,23 @@ class LayeredComparisonTests(unittest.TestCase):
     def test_no_other_workflow_starts_on_pull_requests(self):
         workflows = ROOT / '.github/workflows'
         for path in workflows.glob('*.y*ml'):
-            if path.name != 'ci.yml':
+            if path.name not in ('ci.yml', 'unsigned-archive-exercise.yml'):
                 output = subprocess.check_output(['ruby', '-ryaml', '-rjson', '-e', 'puts JSON.generate(YAML.load_file(ARGV[0]))', str(path)])
                 document = json.loads(output)
                 triggers = document.get('on', document.get('true', {}))
                 if isinstance(triggers, str): triggers = [triggers]
                 self.assertNotIn('pull_request', triggers, path.name)
                 self.assertNotIn('pull_request_target', triggers, path.name)
+
+    def test_unsigned_archive_exercise_is_scoped_to_the_draft_branch(self):
+        path = ROOT / '.github/workflows/unsigned-archive-exercise.yml'
+        document = json.loads(subprocess.check_output(['ruby', '-ryaml', '-rjson', '-e', 'puts JSON.generate(YAML.load_file(ARGV[0]))', str(path)]))
+        triggers = document.get('on', document.get('true', {}))
+        self.assertEqual(set(triggers), {'pull_request'})
+        job = document['jobs']['unsigned-archive-exercise']
+        self.assertEqual(job['if'], "github.event_name == 'pull_request' && github.head_ref == 'feature/kin-1.3-hosted-release' && github.event.pull_request.head.repo.full_name == github.repository")
+        self.assertEqual(document['permissions'], {})
+        self.assertEqual(job['permissions'], {'contents': 'read'})
 
     def test_manual_hash_gate_fails_closed(self):
         workflow = (ROOT / '.github/workflows/manual-broad-ui.yml').read_text()
@@ -86,3 +96,4 @@ class LayeredComparisonTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
