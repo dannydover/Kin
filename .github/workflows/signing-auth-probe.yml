@@ -1,0 +1,23 @@
+name: Signing environment authenticated probe
+on:
+  push:
+    branches: [diagnostic/kin-signing-auth-probe]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  mac:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      PATH: /usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check environment policy with job token
+        timeout-minutes: 1
+        env:
+          KIN_PROBE_GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-signing-auth-probe.py
