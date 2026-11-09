@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 GROUPS = ('unit', 'ui-0', 'ui-1', 'ui-2', 'ui-3')
 SMOKE_IDS = (
-    'KinUITests/KinUITests/testNormalColdLaunchOpensNotebookAndPreservesSavedPerson',
+    'KinUITests/KinUITests/testNormalColdLaunchCreatesAndPersistsUncategorizedPerson',
     'KinUITests/SmokeUITests/testEmptyPeopleScreenAtNormalText',
     'KinUITests/SmokeUITests/testEmptyPeopleScreenAtLargestText',
     'KinUITests/SmokeUITests/testRelationshipEditPersistsAfterRelaunch',

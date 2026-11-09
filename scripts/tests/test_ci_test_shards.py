@@ -62,6 +62,15 @@ class CoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Smoke identities'):
                 shards.selections('smoke')
 
+    def test_normal_notebook_smoke_and_friend_journey_are_both_selected(self):
+        narrow = 'KinUITests/KinUITests/testNormalColdLaunchCreatesAndPersistsUncategorizedPerson'
+        friend = 'KinUITests/KinUITests/testNormalColdLaunchOpensNotebookAndPreservesSavedPerson'
+        self.assertIn(narrow, shards.selections('smoke'))
+        self.assertNotIn(friend, shards.selections('smoke'))
+        broad = [item for group in shards.GROUPS[1:] for item in shards.selections(group)]
+        self.assertEqual(broad.count(narrow), 1)
+        self.assertEqual(broad.count(friend), 1)
+
     def test_invalid_shard_fails_closed(self):
         with self.assertRaises(ValueError):
             shards.selections('ui-9')

@@ -18,7 +18,7 @@ To run the broad suite for investigation or before release, dispatch `Manual bro
 
 | Behavior | Proposed blocking evidence | Still requires broader UI or manual review |
 |---|---|---|
-| Normal app launch, create, save and cold relaunch | `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | Other onboarding, error and editing paths |
+| Normal app launch, create, save and cold relaunch | `KinUITests.testNormalColdLaunchCreatesAndPersistsUncategorizedPerson` | The real Friend-on switch and its persistence, plus other onboarding, error and editing paths |
 | Link, edit and reopen a relationship | `SmokeUITests.testRelationshipEditPersistsAfterRelaunch`; `PersonTests` and `SequentialImportRestartTests` | Other relationship roles, reversal, cancellation and accessibility permutations |
 | Filters, birthdays, identity, cancellation, saving and reopening | Complete Core and iOS `KinTests` target, including `PeopleFilterStateTests`, `FilterStoreSequenceTests`, `ExistingContactBirthPreservationTests`, and store/relationship tests | The full range of rendered navigation, gestures and accessibility behavior |
 | Contact and photo rules and persistence | `ContactPickerTests`, `ExistingContactBirthPreservationTests`, `ContactPhotoReviewTests`, `NewPersonImportTests`, `SequentialImportRestartTests`, and `PhotoProcessorTests` | Real system-picker presentation, selection, permission transitions and native payload delivery |

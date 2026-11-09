@@ -161,7 +161,8 @@ No accessibility, visible-copy, or layout test is retired by this map.
 
 | Retained UI test | Assertions that remain at the UI layer |
 |---|---|
-| `testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | A normal isolated-simulator launch without test-store flags opens the notebook, saves a synthetic person, and shows that person and profile after cold relaunch without a locked-notebook message. |
+| `testNormalColdLaunchCreatesAndPersistsUncategorizedPerson` | Required smoke: a normal isolated-simulator launch without test-store flags saves an uncategorized synthetic person, confirms the row and profile, and confirms persistence after cold relaunch without a locked-notebook message. |
+| `testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | Manual broad UI: retains the normal-notebook creation journey with the real Friend-on interaction. |
 | `testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | At both sizes the policy link is hittable, its bottom is within the viewport, it is at least 44 points high and follows the developer section; synthetic geometry and screenshots are retained. |
 | `testIllustratedEmptyStateMenuAndSearch` and `testUnlistedPeopleMenuReturnAndRelaunch` | Together retain empty-state copy and first-person action, menu/About navigation, unlisted-person recovery through All people, no-match search, and empty main-list state after relaunch. The latter starts from an isolated named Friend fixture. |
 | `testBlankNameEditsCancelAndLaterNamingPreserveEntry` | Cancel retains a named entry; saving whitespace yields the stable unnamed entry; naming it after relaunch opens the renamed profile. |
@@ -248,7 +249,8 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `IndexMembershipUITests.testPreviewClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Passed in run 41245990817; shared assertions move to the original test name. |
 | `IndexMembershipUITests.testClearAllPeopleSearchRestoresPeopleWithoutChangingRecords` | app UI, integration, unit | Required; uses the validated in-memory fixture and retains all shared assertions. The migrated head needs validation. |
 | `IndexMembershipUITests.testClearSearchAndFiltersOnEmptyNotebookAtLargestText` | app UI, integration, unit | Retain; assertions mapped above. |
-| `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | app UI, integration | Retain; assertions mapped above. |
+| `KinUITests.testNormalColdLaunchCreatesAndPersistsUncategorizedPerson` | app UI, integration | Required normal-notebook smoke; assertions mapped above. |
+| `KinUITests.testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | app UI, integration | Retained in manual broad UI; exercises the actual Friend-on interaction. |
 | `SmokeUITests.testRelationshipEditPersistsAfterRelaunch` | app UI, integration | Additive candidate: a real relationship is linked, edited, saved and verified after relaunch in an isolated synthetic notebook. The full relationship UI journeys remain required during comparison. |
 | `SmokeUITests.testEmptyPeopleScreenAtNormalText` | app UI, rendered layout | Captures the empty People screen at normal text after verifying its navigation and heading; screenshots do not prove clipping or VoiceOver behavior. |
 | `SmokeUITests.testEmptyPeopleScreenAtLargestText` | app UI, rendered layout | Captures the empty People screen at largest text after verifying its navigation and heading; device review remains necessary for visual and accessibility quality. |
