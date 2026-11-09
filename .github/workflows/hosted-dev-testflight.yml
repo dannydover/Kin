@@ -90,6 +90,7 @@ jobs:
           test -z "$(git status --porcelain)"
           python3 scripts/check-signing-environment.py
       - name: Archive and verify Kin Dev (disabled)
+        id: dev_archive
         timeout-minutes: 40
         env:
           P12_BASE64: ${{ secrets.KIN_P12_BASE64 }}
@@ -112,7 +113,7 @@ jobs:
           KIN_ASC_PRIVATE_KEY_P8_BASE64: ${{ secrets.KIN_ASC_PRIVATE_KEY_P8_BASE64 }}
         run: bash scripts/kin-upload-dev-review.sh
       - name: Cleanup (disabled)
-        if: always()
+        if: ${{ always() && steps.dev_archive.outcome != 'skipped' && steps.dev_archive.outcome != '' }}
         timeout-minutes: 5
         env:
           PROFILE_UUID: ${{ vars.KIN_PROFILE_UUID }}
