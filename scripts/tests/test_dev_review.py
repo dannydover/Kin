@@ -61,14 +61,19 @@ class DevReviewTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, guard.inspect(target, data))
 
-    def test_disabled_trial_modes_and_cleanup_budget(self):
+    def test_signing_only_trial_mode_and_cleanup_budget(self):
         w = (ROOT / '.github/workflows/hosted-dev-testflight.yml').read_text()
         self.assertIn('options: [signing_only, upload_trial]', w)
         self.assertIn("if: ${{ false && inputs.mode == 'upload_trial' }}", w)
-        self.assertIn('timeout-minutes: 85', w)
-        self.assertLess(5 + 40 + 20 + 5 + 5, 85)
-        self.assertIn('if: ${{ false }}', w)
-        self.assertNotIn('environment:', w)
+        self.assertIn('test "$TRIAL_MODE" = signing_only', w)
+        self.assertIn('timeout-minutes: 86', w)
+        self.assertLess(5 + 1 + 40 + 20 + 5 + 5, 86)
+        self.assertIn("if: ${{ inputs.mode == 'signing_only' }}", w)
+        self.assertIn('environment: kin-dev-signing', w)
+        self.assertIn('needs: [source, tests]', w)
+        self.assertIn('needs: [source, tests, signing-preflight]', w)
+        self.assertEqual(w.count('python3 scripts/check-signing-environment.py'), 2)
+        self.assertLess(w.rindex('python3 scripts/check-signing-environment.py'), w.index('P12_BASE64:'))
 
     def test_fixed_target_and_disabled_guards(self):
         s = (ROOT / 'scripts/kin-sign-dev-review.sh').read_text()
@@ -76,8 +81,16 @@ class DevReviewTests(unittest.TestCase):
         w = (ROOT / '.github/workflows/hosted-dev-testflight.yml').read_text()
         self.assertIn('exit 1', s.split('set -euo pipefail')[0])
         self.assertIn('exit 1', c.split('set -euo pipefail')[0])
-        self.assertIn('if: ${{ false }}', w)
-        self.assertNotIn('environment:', w)
+        self.assertIn("if: ${{ inputs.mode == 'signing_only' }}", w)
+        self.assertIn('environment: kin-dev-signing', w)
+        self.assertIn("if: ${{ false && inputs.mode == 'upload_trial' }}", w)
+        cleanup = ROOT / 'scripts/kin-sign-dev-cleanup.sh'
+        self.assertEqual(cleanup.read_text().split('set +x', 1)[1],
+                         c.split('set +x', 1)[1])
+        for path in (ROOT / 'scripts/kin-sign-dev-review.sh', cleanup):
+            result = subprocess.run(['bash', str(path)], env={'PATH':'/usr/bin:/bin'},
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
         self.assertIn("-scheme 'Kin Dev' -configuration Dev", s)
         self.assertIn('identifier \\\"com.intriguingideas.Kin.dev\\\"', s)
         self.assertIn('check_dev_entitlements.py', s)

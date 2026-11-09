@@ -41,11 +41,11 @@ class OutcomeTests(unittest.TestCase):
 
     def test_outcome_is_after_cleanup_in_disabled_job(self):
         s = (ROOT / '.github/workflows/hosted-dev-testflight.yml').read_text()
-        self.assertIn('if: ${{ false }}', s)
-        self.assertNotIn('environment:', s)
+        self.assertIn("if: ${{ false && inputs.mode == 'upload_trial' }}", s)
+        self.assertIn('environment: kin-dev-signing', s)
         self.assertLess(s.index('kin-sign-dev-review.sh'), s.index('kin-upload-dev-review.sh'))
-        self.assertLess(s.index('kin-upload-dev-review.sh'), s.index('kin-sign-cleanup.sh'))
-        self.assertLess(s.index('kin-sign-cleanup.sh'), s.index('summarize_upload_review.py'))
+        self.assertLess(s.index('kin-upload-dev-review.sh'), s.index('kin-sign-dev-cleanup.sh'))
+        self.assertLess(s.index('kin-sign-dev-cleanup.sh'), s.index('summarize_upload_review.py'))
         self.assertIn('if-no-files-found: error', s)
 
 

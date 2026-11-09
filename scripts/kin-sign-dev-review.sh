@@ -1,7 +1,9 @@
 #!/bin/bash
-# REVIEW-ONLY: this unconditional guard must remain until specifically approved.
-printf '%s\n' 'Kin Dev signing is disabled in the local proposal.' >&2
-exit 1
+# Guard direct invocation outside the separately approved signing-only job.
+if [[ "${KIN_DEV_SIGNING_ONLY:-}" != 1 ]]; then
+  printf '%s\n' 'Kin Dev signing requires the approved signing-only job.' >&2
+  exit 1
+fi
 
 # Everything below is illustrative and has NOT been exercised with signing.
 # The example reserves separate step deadlines plus job-level cleanup slack.

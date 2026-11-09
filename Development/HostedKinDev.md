@@ -1,8 +1,8 @@
 # Disabled hosted Kin Dev delivery proposal
 
-This is separate from PR #61 and the provisional 1.3 metadata. No signing or
-upload path is active. The caller workflow has an unconditional false
-signing job and no environment reference. The signing and cleanup scripts
+This is separate from PR #61. The protected signing job is conditional on a
+main-branch signing-only dispatch and references the configured environment.
+The signing and cleanup scripts
 both exit immediately. The uploader CLI also exits immediately. These guards are
 intentional and must not be removed until reviewed and specifically approved.
 
@@ -51,7 +51,7 @@ individual-key support, approved private-key handoff and actual processing API
 behavior remain unresolved. A team provisioning API key is not
 required merely to do manual signing.
 
-## Proposed protection and approvals, not configured
+## Protection and approvals
 
 Use a pre-existing explicitly verified environment restricted to the protected
 main branch, with Danny as required reviewer and administrator bypass disabled
@@ -72,7 +72,7 @@ establish trust. A self-hosted or unverified runner must not receive secrets.
 GitHub describes fresh GitHub-hosted VMs at
 https://docs.github.com/en/actions/concepts/runners/github-hosted-runners.
 
-The 85-minute example budget reserves 5 minutes for checkout, 40 for signing,
+The 86-minute example budget reserves 5 minutes for checkout, 1 for preflight, 40 for signing,
 20 for upload, 5 for cleanup, 5 for evidence and 10 slack. Each bounded step
 must actually return within its budget for that reserve to apply; cancellation,
 SIGKILL, detached processes and runner loss can still defeat cleanup. Signing
@@ -126,3 +126,9 @@ Apple altool notarization key location (not proof of upload compatibility): http
 Apple keys: https://developer.apple.com/documentation/AppStoreConnectAPI/creating-api-keys-for-app-store-connect-api
 Apple TestFlight: https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers/
 GitHub environments: https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
+
+### Pre-secret checks and limits
+
+The signing-only candidate checks the existing environment's public GitHub response before the protected job and again before the secret-bearing step. It checks the environment ID, required reviewer, self-review setting and selected main branch rule. An absent optional bypass or branch-type response field is reported as unverified and requires owner inspection in GitHub settings. Before a trial, the owner must independently confirm those settings, the intended provider-hosted runner, and that no repository or organization secrets use the same names. A missing environment can otherwise be recreated without protections and GitHub can resolve higher-scope secrets. These checks are snapshots, not an atomic guarantee against an administrator changing settings between checks and secret use.
+
+The runner label and past hosted-runner logs are evidence, not attestation of a future runner. `security import -P` passes the password as a process argument; Apple describes this as insecure, and the installed tool documents no stdin password option. Same-user processes can potentially observe it. Cleanup reserves time and attempts removal but cannot guarantee removal after runner loss or SIGKILL. An actual signing-only trial and its credential placement require separate approval; it deletes the IPA and does not upload it.
