@@ -9,6 +9,18 @@ fi
 # The example reserves separate step deadlines plus job-level cleanup slack.
 set +x
 set -euo pipefail
+# Keep tool output out of public workflow logs; emit fixed messages via saved fds.
+exec 3>&2 4>&1 2>/dev/null 1>/dev/null
+stage=input_validation
+report_failure() {
+  local status=$?
+  trap - EXIT
+  if (( status != 0 )); then
+    printf "Kin Dev signing failed at stage: %s\n" "$stage" >&3
+  fi
+  exit "$status"
+}
+trap report_failure EXIT
 umask 077
 [[ "${GITHUB_REF:-}" == refs/heads/main && "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]
 [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ && "${GITHUB_RUN_ATTEMPT:-}" =~ ^[0-9]+$ ]]
@@ -16,11 +28,13 @@ umask 077
 [[ "${VERSION:-}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ && "${BUILD:-}" =~ ^[1-9][0-9]*$ ]]
 [[ "${CERT_SHA256:-}" =~ ^[a-f0-9]{64}$ ]]
 test -n "${P12_BASE64:-}" && test -n "${P12_PASSWORD:-}" && test -n "${PROFILE_BASE64:-}"
+stage=source_and_toolchain
 test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 test -z "$(git status --porcelain)"
 test "$(git ls-remote https://github.com/dannydover/Kin.git refs/heads/main 2>/dev/null | cut -f1)" = "$GITHUB_SHA"
 test "$(xcodebuild -version)" = "$(printf 'Xcode 27.0\nBuild version 27A266a')"
 test "$(uname -m)" = arm64
+stage=profile_staging
 work="$RUNNER_TEMP/kin-sign-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 mkdir -m 700 "$work"
 profile_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
@@ -34,6 +48,7 @@ stat -f '%d:%i' "$profile" > "$work/profile-identity"
 shasum -a 256 "$profile" | cut -d ' ' -f1 > "$work/profile-sha256"
 printf '%s\n' "$profile" > "$work/owned-profile"
 printf '%s' "$P12_BASE64" | base64 -D > "$work/identity.p12"
+stage=keychain_setup
 key_password="$(openssl rand -hex 24)"
 security list-keychains -d user > "$work/search-list-original" 2> "$work/security.log"
 security create-keychain -p "$key_password" "$work/signing.keychain-db" >>"$work/security.log" 2>&1
@@ -43,18 +58,22 @@ security import "$work/identity.p12" -k "$work/signing.keychain-db" -P "$P12_PAS
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$key_password" "$work/signing.keychain-db" >>"$work/security.log" 2>&1
 security list-keychains -d user -s "$work/signing.keychain-db" >>"$work/security.log" 2>&1
 unset P12_BASE64 P12_PASSWORD PROFILE_BASE64 key_password
+stage=export_options
 export_options="$work/ExportOptions.plist"
 TEAM_ID="$TEAM_ID" PROFILE_UUID="$PROFILE_UUID" EXPORT_OPTIONS="$export_options" python3 -c '
 import os, plistlib
 with open(os.environ["EXPORT_OPTIONS"], "xb") as f:
     plistlib.dump({"destination":"export", "method":"app-store-connect", "signingStyle":"manual", "teamID":os.environ["TEAM_ID"], "signingCertificate":"Apple Distribution", "provisioningProfiles":{"com.intriguingideas.Kin.dev":os.environ["PROFILE_UUID"]}}, f)
 '
+stage=archive
 xcodebuild -project Kin.xcodeproj -scheme 'Kin Dev' -configuration Dev -destination 'generic/platform=iOS' \
   -derivedDataPath "$work/DerivedData" -archivePath "$work/Kin.xcarchive" archive \
   CODE_SIGN_STYLE=Manual "DEVELOPMENT_TEAM=$TEAM_ID" "PROVISIONING_PROFILE_SPECIFIER=$PROFILE_UUID" \
   'CODE_SIGN_IDENTITY=Apple Distribution' >"$work/archive.log" 2>&1
+stage=export
 xcodebuild -exportArchive -archivePath "$work/Kin.xcarchive" -exportPath "$work/export" \
   -exportOptionsPlist "$export_options" >"$work/export.log" 2>&1
+stage=output_verification
 ipa="$work/export/Kin.ipa"
 test -f "$ipa" && test ! -L "$ipa"
 # Reject unsafe names, link entries, oversized archives and multiple apps.
@@ -75,7 +94,8 @@ test "$(shasum -a 256 "$work/codesign0" | cut -d ' ' -f1)" = "$CERT_SHA256"
 codesign --display --entitlements - --xml "$app" >"$work/entitlements.plist" 2>>"$work/verify.log"
 python3 scripts/check_dev_entitlements.py "$work/entitlements.plist" "$TEAM_ID"
 shasum -a 256 "$ipa" | cut -d ' ' -f1 > "$work/ipa-sha256"
+stage=final_source_verification
 test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 test -z "$(git status --porcelain)"
 test "$(git ls-remote https://github.com/dannydover/Kin.git refs/heads/main 2>/dev/null | cut -f1)" = "$GITHUB_SHA"
-printf '%s\n' 'Dev candidate verified in private workspace; no upload occurred.'
+printf '%s\n' 'Dev candidate verified in private workspace; no upload occurred.' >&4
