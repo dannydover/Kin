@@ -17,6 +17,9 @@ report_failure() {
   trap - EXIT
   if (( status != 0 )); then
     printf "Kin Dev signing failed at stage: %s\n" "$stage" >&3
+    if [[ "$stage" == archive ]]; then
+      python3 scripts/classify_archive_failure.py "$work/archive.log" >&3 2>/dev/null || true
+    fi
   fi
   exit "$status"
 }
