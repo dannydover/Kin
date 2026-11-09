@@ -58,4 +58,32 @@ class SigningEnvironmentTests(unittest.TestCase):
             self.assertEqual(p.fetch(p.BASE), {'ok': True})
         self.assertIsNone(p._NoRedirect().redirect_request(None, None, None, None, None, None))
 
+    def test_fixed_failure_categories_and_redaction(self):
+        failures = [
+            (p.urllib.error.HTTPError('https://private.invalid/path', 403, 'secret', {}, None), 'HTTP response'),
+            (p.urllib.error.URLError('secret private path'), 'network or TLS'),
+            (ValueError('secret private path'), 'invalid response'),
+            (RuntimeError('secret private path'), 'unexpected error'),
+        ]
+        for error, category in failures:
+            with self.subTest(category=category), patch.object(p, 'fetch', side_effect=error):
+                with self.assertRaises(SystemExit) as cm: p.main()
+                self.assertIn(category, str(cm.exception))
+                self.assertNotIn('secret', str(cm.exception).replace('no secrets used', ''))
+                self.assertNotIn('private', str(cm.exception))
+        with patch.object(p, 'fetch', side_effect=[self.env, {'total_count': 0}]):
+            with self.assertRaises(SystemExit) as cm: p.main()
+            self.assertIn('policy mismatch', str(cm.exception))
+
+    def test_cleanup_is_conditioned_on_archive_step_start(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/hosted-dev-testflight.yml').read_text()
+        self.assertIn('id: dev_archive', workflow)
+        self.assertIn("always() && steps.dev_archive.outcome != 'skipped' && steps.dev_archive.outcome != ''", workflow)
+        # Every started outcome, including failures/cancellation, retains cleanup.
+        should_clean = lambda outcome: outcome not in ('', 'skipped')
+        for outcome in ('success', 'failure', 'cancelled'):
+            self.assertTrue(should_clean(outcome))
+        for outcome in ('', 'skipped'):
+            self.assertFalse(should_clean(outcome))
+
 if __name__ == '__main__': unittest.main()

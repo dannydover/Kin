@@ -5,6 +5,8 @@ This detects common configuration drift; it is not an atomic deployment-policy
 attestation. The owner must also verify unsupported/omitted settings in GitHub.
 """
 import json
+import socket
+import ssl
 import urllib.error
 import urllib.request
 
@@ -82,9 +84,22 @@ def validate(environment, policies):
 
 def main():
     try:
-        result = validate(fetch(BASE), fetch(BASE + '/deployment-branch-policies?per_page=100'))
+        environment = fetch(BASE)
+        policies = fetch(BASE + '/deployment-branch-policies?per_page=100')
+    except urllib.error.HTTPError:
+        raise SystemExit('Signing environment preflight failed: HTTP response; no secrets used.') from None
+    except (urllib.error.URLError, TimeoutError, socket.timeout, ssl.SSLError, OSError):
+        raise SystemExit('Signing environment preflight failed: network or TLS; no secrets used.') from None
+    except (ValueError, UnicodeError):
+        raise SystemExit('Signing environment preflight failed: invalid response; no secrets used.') from None
     except Exception:
-        raise SystemExit('Signing environment preflight failed; no secrets used.')
+        raise SystemExit('Signing environment preflight failed: unexpected error; no secrets used.') from None
+    try:
+        result = validate(environment, policies)
+    except ValueError:
+        raise SystemExit('Signing environment preflight failed: policy mismatch; no secrets used.') from None
+    except Exception:
+        raise SystemExit('Signing environment preflight failed: unexpected error; no secrets used.') from None
     print('Signing environment public checks passed; recheck owner settings before approval.')
     if not all(result.values()):
         print('Some optional response fields were absent; owner UI verification remains required.')
