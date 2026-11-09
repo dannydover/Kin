@@ -5,6 +5,7 @@ This detects common configuration drift; it is not an atomic deployment-policy
 attestation. The owner must also verify unsupported/omitted settings in GitHub.
 """
 import json
+import os
 import socket
 import ssl
 import urllib.error
@@ -33,8 +34,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 def fetch(url):
     if url not in (BASE, BASE + '/deployment-branch-policies?per_page=100'):
         raise ValueError('unexpected endpoint')
+    token = os.environ.get('KIN_RECHECK_GITHUB_TOKEN', '')
+    if not token or len(token) > 4096 or not token.isascii() or not all(33 <= ord(c) <= 126 for c in token):
+        raise ValueError('token unavailable')
     request = urllib.request.Request(url, headers={
-        'Accept': 'application/vnd.github+json', 'User-Agent': 'kin-signing-preflight'})
+        'Accept': 'application/vnd.github+json', 'User-Agent': 'kin-signing-preflight',
+        'Authorization': 'Bearer ' + token})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
     with opener.open(request, timeout=10) as response:
         if response.status != 200:
