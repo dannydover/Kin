@@ -1,0 +1,30 @@
+name: Signing environment HTTP probe
+on:
+  push:
+    branches: [diagnostic/kin-signing-http-probe]
+permissions:
+  contents: read
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check public environment policy
+        timeout-minutes: 1
+        run: python3 scripts/check-signing-environment-probe.py
+  mac:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      PATH: /usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check public environment policy
+        timeout-minutes: 1
+        run: python3 scripts/check-signing-environment-probe.py
