@@ -1,0 +1,42 @@
+name: Credential-free Kin Dev archive probe
+on:
+  push:
+    branches: [diagnostic/kin-dev-unsigned-archive]
+permissions:
+  contents: read
+jobs:
+  unsigned-dev:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      PATH: /usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify diagnostic source
+        run: |
+          test "$(git rev-parse HEAD^)" = 73e59be3572b34af1c0504772e14c9a66c2295d3
+          test -z "$(git status --porcelain)"
+          test "$(git diff --name-only HEAD^ HEAD | LC_ALL=C sort)" = "$(printf '%s\n' '.github/workflows/kin-dev-unsigned-probe.yml' 'scripts/check-dev-unsigned-settings.py')"
+          test "$(xcodebuild -version)" = "$(printf 'Xcode 27.0\nBuild version 27A266a')"
+      - name: Inspect settings and archive without signing
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$(mktemp -d "$RUNNER_TEMP/kin-dev-unsigned.XXXXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          ulimit -f 16384
+          if ! xcodebuild -project Kin.xcodeproj -scheme 'Kin Dev' -configuration Dev -destination 'generic/platform=iOS' -showBuildSettings -json CODE_SIGN_STYLE=Manual 'CODE_SIGN_IDENTITY=Apple Distribution' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO >"$work/settings.json" 2>"$work/settings.log"; then
+            echo 'KIN_DEV_PROBE settings-command-failed'; exit 1
+          fi
+          python3 scripts/check-dev-unsigned-settings.py "$work/settings.json"
+          if ! xcodebuild -project Kin.xcodeproj -scheme 'Kin Dev' -configuration Dev -destination 'generic/platform=iOS' -derivedDataPath "$work/DerivedData" -archivePath "$work/Kin.xcarchive" archive CODE_SIGN_STYLE=Manual 'CODE_SIGN_IDENTITY=Apple Distribution' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO >"$work/archive.log" 2>&1; then
+            echo 'KIN_DEV_PROBE unsigned-archive-failed'; exit 1
+          fi
+          test -d "$work/Kin.xcarchive/Products/Applications/Kin.app" || { echo 'KIN_DEV_PROBE archive-app-missing'; exit 1; }
+          echo 'KIN_DEV_PROBE unsigned-archive-passed'
