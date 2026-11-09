@@ -17,6 +17,55 @@ final class KinUITests: XCTestCase {
         }
         print("KIN_CI_AUTH \(label)")
     }
+    @MainActor func testNormalColdLaunchCreatesAndPersistsUncategorizedPerson() throws {
+        #if targetEnvironment(simulator)
+        // Exercise the actual normal notebook, without fixture or test-store arguments.
+        let app = XCUIApplication()
+        app.launchArguments = []
+        addTeardownBlock { app.terminate() }
+        app.launch()
+        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["Notebook locked"].exists)
+        let name = "Synthetic Cold Launch " + String(UUID().uuidString.prefix(8))
+        let add = app.buttons.matching(identifier: "Add person")
+        guard requireTestState(app, "Add person action ready", {
+            add.count == 1 && add.element.isHittable
+        }) else { return }
+        add.element.tap()
+        let editor = app.navigationBars["Add person"]
+        let firstName = app.textFields["First name (optional)"]
+        guard requireTestState(app, "New person editor ready", {
+            editor.exists && editor.isHittable && firstName.isHittable
+        }) else { return }
+        firstName.tap(); firstName.typeText(name)
+        guard requireTestState(app, "New person name entered", {
+            firstName.value as? String == name
+        }) else { return }
+        let save = editor.buttons.matching(identifier: "Save")
+        guard requireTestState(app, "Save enabled", {
+            save.count == 1 && save.element.isEnabled && save.element.isHittable
+        }) else { return }
+        save.element.tap()
+        guard requireTestState(app, "Direct save opens saved profile", {
+            app.navigationBars[name].exists && !editor.exists
+        }) else { return }
+        app.navigationBars.buttons["People"].tap()
+        guard requireTestState(app, "Saved person returned to exact index row", {
+            !editor.exists && app.staticTexts[name].exists
+                && app.cells.containing(.staticText, identifier: name).count == 1
+        }) else { return }
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["Notebook locked"].exists)
+        XCTAssertEqual(app.cells.containing(.staticText, identifier: name).count, 1)
+        app.staticTexts[name].tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
+        #else
+        throw XCTSkip("Normal notebook startup regression requires an isolated simulator.")
+        #endif
+    }
+
+    // Retained in the manual broad UI suite: includes the real Friend toggle.
     @MainActor func testNormalColdLaunchOpensNotebookAndPreservesSavedPerson() throws {
         #if targetEnvironment(simulator)
         // Run only in a fresh isolated simulator: exercise the normal notebook,

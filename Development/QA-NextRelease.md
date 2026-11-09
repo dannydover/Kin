@@ -3,6 +3,16 @@
 Use synthetic people and photos only. Preserve existing notebook data; do not
 reset, uninstall, or use Delete All as part of this plan.
 
+## Required Kin Dev 1.3 Friend check
+
+On the installed Kin Dev 1.3 candidate, create a synthetic person, switch
+Friend from off to on once, save, and confirm that the person's profile and
+People row appear. Quit and relaunch Kin Dev, reopen the person and edit view,
+and verify that Friend remains on. Record the build and result. Required CI's
+normal-notebook smoke creates and persists an uncategorized person; it no longer
+proves the real Friend-on interaction or its persistence. Kin Dev QA does not
+validate production Release signing or an upgrade of existing production data.
+
 On October 27, the owner reported steps 1–11 passed on installed Kin Dev 1.2.0
 (6), including both the largest-text and VoiceOver checklist steps. This is
 owner-reported physical acceptance of that candidate, with three reported UX
