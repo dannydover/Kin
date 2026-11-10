@@ -1,3 +1,5 @@
+> Historical coverage or experiment record: current release validation runs on Mac Studio; see [LocalRelease.md](../Development/LocalRelease.md). Prior results and limitations remain recorded below.
+
 # Sequential reviewed-import coverage
 
 `SequentialImportRestartTests.fourRoutes` is an additive integration candidate.

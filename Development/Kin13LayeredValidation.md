@@ -1,3 +1,5 @@
+> Historical record: GitHub validation has since moved to the local release process in [LocalRelease.md](LocalRelease.md). Earlier results remain historical evidence.
+
 # Kin 1.3 layered validation comparison
 
 ## Same-head comparison and required gate

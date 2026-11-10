@@ -1,3 +1,5 @@
+> Historical coverage or experiment record: current release validation runs on Mac Studio; see [LocalRelease.md](../Development/LocalRelease.md). Prior results and limitations remain recorded below.
+
 # Native Contacts search binding observation
 
 In required run 41616317272 the native Contacts picker appeared after 12.228 seconds. The subsequent five-second search waiter timed out. Its final in-predicate aggregate observation recorded one in-bounds, hittable Search field; the activity trace shows index-bound enumeration and subsequent element-resolution calls consuming the waiter window. The evidence does not establish why those calls were slow or whether a different binding improves latency.

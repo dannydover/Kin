@@ -1,3 +1,5 @@
+> Historical record: GitHub validation has since moved to the local release process in [LocalRelease.md](LocalRelease.md). Earlier results remain historical evidence.
+
 # Kin 1.3 UI reliability and gate trust
 
 The audit below records historical findings; the approved current strategy and

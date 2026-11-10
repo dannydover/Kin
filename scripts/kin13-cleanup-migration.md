@@ -1,3 +1,5 @@
+> Historical coverage or experiment record: current release validation runs on Mac Studio; see [LocalRelease.md](../Development/LocalRelease.md). Prior results and limitations remain recorded below.
+
 # Synthetic Contacts cleanup: local migration candidate
 
 This candidate is local only. The existing UI cleanup test, both real Contacts

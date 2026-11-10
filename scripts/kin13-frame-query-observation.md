@@ -1,3 +1,5 @@
+> Historical coverage or experiment record: current release validation runs on Mac Studio; see [LocalRelease.md](../Development/LocalRelease.md). Prior results and limitations remain recorded below.
+
 # Relationship action frame observation
 
 In required run 41609900446, the largest-text relationship-action journey

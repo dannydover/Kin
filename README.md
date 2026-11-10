@@ -152,7 +152,7 @@ scripts/build-unsigned-device.sh
 ```
 
 Use a matching installed simulator name and OS in the test destination. iOS 26
-compatibility testing is separate from the iOS 27 CI runtime; the deployment
+compatibility testing is separate from iOS 27 simulator testing; the deployment
 target remains iOS 26.0. An unsigned device build is a compilation check and
 cannot be installed as a signed app. For personal device development, configure
 your own team locally and keep signing settings and materials out of commits.
@@ -208,7 +208,7 @@ python3 scripts/check-repository.py
 For Dev fixture setup, the Contacts permission belongs only to the runner
 `com.intriguingideas.Kin.dev.uitests.xctrunner`, not Kin Dev itself. Seed a synthetic
 Photos fixture with `scripts/create-simulator-photo.py` and `xcrun simctl addmedia`
-as shown in the CI workflow, substituting your isolated test simulator.
+on the isolated simulator as described in [local validation](Development/LocalRelease.md).
 
 Signed device work requires an already authorized certificate/profile for the
 specific bundle identifier. Verify the compiled identity before installation;
@@ -221,49 +221,19 @@ verification results belong outside this README.
 
 ## Continuous integration
 
-[Build and test](.github/workflows/ci.yml) runs on ordinary pull requests and
-pushes to `main` with read-only repository permissions and no persisted checkout
-credentials. Independent bounded jobs check repository privacy and core tests,
-run the full iOS test scheme, and compile/validate unsigned iPhone and simulator
-Release builds. The required `validate` check passes only when every job succeeds.
-A timeout or hung result finalization remains a failure even when assertions finish.
-
-The simulator job creates and removes only its own fresh iPhone simulator, seeds a
-metadata-free synthetic Photos image, runs tests serially without verbose failure
-diagnostic collection, and checks the finalized result summary for zero skips or
-failures. It grants Contacts access only to the UI test runner, which creates and
-removes dedicated synthetic cards with full adult/minor birthdays, photos, and no
-birthday. Native picker tests verify age-gated import and persistence; navigation
-checks also use the simulator’s standard fictional sample card. Missing fixtures
-fail the finalized-result gate. This matches the locally verified invocation while
-avoiding shared simulator/cloned-runner teardown state.
-Release validation runs independently so test cleanup cannot prevent those builds.
-The workflow does not provision, distribute, or upload build products or logs as artifacts.
-
-Release checks verify the iOS 26 minimum, iPhone-only device family, privacy
-manifest, absence of debug previews and personal build paths, and absence of
-developer signing or provisioning. The simulator linker may embed its own
-ad-hoc signature; this uses no developer identity or signing credentials.
-
-The workflow uses the arm64 `xcode-27` preview runner image, explicitly selecting
-`/Applications/Xcode_27.app/Contents/Developer`. It prints and verifies Xcode 27.0
-build 27A266a and Swift 6.4, prints SDK/runtime information, and tests on iPhone 17
-with iOS 27.0. Toolchain/image changes fail visibly rather than silently changing
-the required compiler. Runner availability and installed versions are documented
-in the [official runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md);
-see Apple's [Xcode system requirements](https://developer.apple.com/xcode/system-requirements).
+[Build and test](.github/workflows/ci.yml) runs repository privacy checks, Python
+script tests and simulator-free Swift Core tests on pull requests and main. The
+required `validate` check passes only when those checks pass. iOS simulator
+unit, integration and UI tests, and Release/device builds, run on Mac Studio as
+part of [local release validation](Development/LocalRelease.md). A passing
+GitHub check alone does not establish those local results or device QA.
 
 The package has no external dependencies or `Package.resolved`. When dependencies
 are introduced, commit the generated app lockfile for reproducible resolution.
 
-### App Store release drafts
-
-[Draft App Store release](.github/workflows/draft-release.yml) is manually dispatched
-from `main` for the exact shipped commit and version/build after its CI succeeds.
-It prepares one source-only draft per public App Store version with generated notes.
-Review the notes and confirm App Store availability before deliberately publishing.
-See [release preparation protocol](Development/ReleaseProtocol.md) and
-[release instructions](scripts/RELEASING.md) for provenance, approval, checks and retries.
+The independent [source-only release draft](.github/workflows/draft-release.yml)
+is used only after the exact shipped build's App Store approval and distribution
+are verified. See [release instructions](scripts/RELEASING.md).
 
 ## Data and privacy
 

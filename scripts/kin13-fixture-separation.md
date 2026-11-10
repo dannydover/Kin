@@ -1,3 +1,5 @@
+> Historical coverage or experiment record: current release validation runs on Mac Studio; see [LocalRelease.md](../Development/LocalRelease.md). Prior results and limitations remain recorded below.
+
 # Kin 1.3: isolate unrelated Friend setup (local candidate)
 
 This local batch is not a claim that Friend or launch flakiness is fixed. The

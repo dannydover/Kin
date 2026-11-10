@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Test release guard
-        run: python3 -m unittest discover -s scripts/tests -v
+        run: python3 -m unittest discover -s scripts/tests -p test_draft_release.py -v
       - name: Validate source and create draft
         env:
           GITHUB_TOKEN: ${{ github.token }}

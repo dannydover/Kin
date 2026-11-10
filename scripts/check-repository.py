@@ -60,35 +60,8 @@ def inspect(name, data, mode='100644'):
         try: data.decode('utf-8')
         except UnicodeDecodeError: errors.append('unexpected binary data')
         for label, pattern in PATTERNS.items():
-            # Two complete, quoted, whitespace-delimited variable arguments in
-            # the two reviewed signing scripts only. Scan the original bytes for
-            # every other rule; literals and adjacent shell text still fail.
-            allowed = {'signing team': (b'DEVELOPMENT_TEAM', b'$TEAM_ID"'),
-                       'provisioning profile': (b'PROVISIONING_PROFILE_SPECIFIER', b'$PROFILE_UUID"')}
-            for match in re.finditer(pattern, data):
-                start, end = match.span()
-                key, sep, value = match.group().partition(b'=')
-                permitted = (name in ('scripts/kin-sign-export.sh', 'scripts/kin-sign-dev-review.sh') and label in allowed and
-                             sep == b'=' and (key, value) == allowed[label] and start > 0 and
-                             data[start-1:start] == b'"' and
-                             (start == 1 or data[start-2:start-1].isspace()) and
-                             (end == len(data) or data[end:end+1].isspace()))
-                if not permitted:
-                    errors.append(label)
-                    break
-        # Within those scripts, also reject literal or mixed assignments to
-        # the source variables; allow only their own quoted environment pass-through.
-        if name in ('scripts/kin-sign-export.sh', 'scripts/kin-sign-dev-review.sh'):
-            for match in re.finditer(rb'(?<![A-Za-z0-9_])(?:TEAM_ID|PROFILE_UUID)\s*=\s*[^;\s]+', data):
-                start, end = match.span()
-                key, sep, value = match.group().partition(b'=')
-                allowed_inputs = {b'TEAM_ID': b'"$TEAM_ID"', b'PROFILE_UUID': b'"$PROFILE_UUID"'}
-                permitted = (sep == b'=' and key in allowed_inputs and value == allowed_inputs[key] and
-                             (start == 0 or data[start-1:start].isspace()) and
-                             (end == len(data) or data[end:end+1].isspace()))
-                if not permitted:
-                    errors.append('signing input assignment')
-                    break
+            if re.search(pattern, data):
+                errors.append(label)
         emails = re.findall(rb'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', data)
         if any(email != b'kin-support@intriguingideas.com' for email in emails):
             errors.append('unreviewed email address')

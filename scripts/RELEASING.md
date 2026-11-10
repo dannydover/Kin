@@ -2,8 +2,9 @@
 
 Create one GitHub release for each **public App Store version**, using the exact
 commit and version/build used for its shipped app. TestFlight uploads and ordinary
-merges do not create releases. This workflow prepares a draft with generated
-notes; a maintainer reviews and publishes it after App Store availability.
+merges do not create releases. After App Store approval and actual distribution are verified, this workflow
+prepares a draft with generated notes; a maintainer reviews and publishes it.
+TestFlight, processing and submission are not evidence of public distribution.
 
 ## Record and verify the shipped source
 
