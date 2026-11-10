@@ -49,6 +49,15 @@ not establish that intermittent simulator or Friend behavior was fixed.
    Existing signing access and actual archive/export still require verification;
    this local process does not resolve the earlier keychain failure. Upload
    requires the separately applicable approval and TestFlight settings review.
+
+   The App Store distribution signature has debugging disabled and may contain
+   Apple's `beta-reports-active` entitlement. Validate its signed entitlements
+   with `scripts/check_dev_entitlements.py`, passing a private plist extracted
+   with `codesign --display --entitlements :-` and the reviewed team identifier.
+   This distribution check permits either no explicit keychain access groups or
+   only the exact Dev app group; it rejects shared and unexpected entitlements.
+   `scripts/check-dev-app.py --require-signed` is a separate development-install
+   check and intentionally requires a development profile with debugging enabled.
 5. Install the processed Kin Dev build via TestFlight and complete
    [Kin Dev manual QA](QA-NextRelease.md), including the required Friend-on,
    save and relaunch persistence check. Document the result against the exact
