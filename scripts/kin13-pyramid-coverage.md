@@ -1,3 +1,5 @@
+> Historical coverage or experiment record: current release validation runs on Mac Studio; see [LocalRelease.md](../Development/LocalRelease.md). Prior results and limitations remain recorded below.
+
 # Kin 1.3 current test-pyramid coverage map
 
 Head: `045f58bc0393c8c720b0557fb0fd90a9aeb7b8d2` ([PR #58](https://github.com/dannydover/Kin/pull/58)). This is an inventory and coverage decision map, not evidence that the suite is reliable. No UI journey is retired by this document.

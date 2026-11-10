@@ -1,3 +1,5 @@
+> Historical record: GitHub validation has since moved to the local release process in [LocalRelease.md](LocalRelease.md). Earlier results remain historical evidence.
+
 # Kin 1.3 CI validation baseline
 
 The 1.3 candidate retains the required `validate` aggregate and every existing

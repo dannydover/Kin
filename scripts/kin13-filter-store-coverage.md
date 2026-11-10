@@ -1,3 +1,5 @@
+> Historical coverage or experiment record: current release validation runs on Mac Studio; see [LocalRelease.md](../Development/LocalRelease.md). Prior results and limitations remain recorded below.
+
 # Filter and related UI coverage review
 
 All existing UI and native tests remain required. This is an additive candidate, not a proposed silent retirement. Both new `FilterStoreSequenceTests` passed once locally as macOS Swift tests; they have not run in hosted iOS CI. The local production `PeopleFilterState`, `Person`, `KinStore`, `DevelopmentPreview` and preview-integrity test match PR #58 head `d65abb8a835a88e74faec6cce45ad7d149b63417` by Git blob hash.

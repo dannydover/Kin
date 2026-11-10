@@ -22,7 +22,8 @@ Never put signing materials, device identifiers or personal notebook data in a P
 5. Obtain the owner's final go/no-go identifying the build, public notes and
    release choice. Submit only within that approval. Verify actual store
    availability separately from submission, approval or processing status.
-6. Prepare the public GitHub release from verified shipped provenance using
+6. Only after App Store approval and actual public distribution are verified, prepare
+   and publish the GitHub release from verified shipped provenance using
    [the repository release instructions](../scripts/RELEASING.md). Never infer a
    shipped archive SHA solely from the current main branch or version number.
 
