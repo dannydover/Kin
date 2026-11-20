@@ -321,7 +321,8 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Unspecified parent"].exists)
         app.staticTexts["John Appleseed"].tap()
         XCTAssertTrue(app.navigationBars["John Appleseed"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Gender: Unspecified"].exists)
+        XCTAssertTrue(app.staticTexts["Gender"].exists)
+        XCTAssertTrue(app.staticTexts["Unspecified"].exists)
         XCTAssertTrue(app.staticTexts["Synthetic Named"].exists)
         capture(app,"Imported parent links back to the original child")
         app.terminate(); app.launch()
@@ -517,7 +518,8 @@ final class KinUITests: XCTestCase {
             app.staticTexts[name].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
             XCTAssertTrue(app.buttons["Edit"].exists)
-            XCTAssertTrue(app.staticTexts["Gender: Unspecified"].exists)
+            XCTAssertTrue(app.staticTexts["Gender"].exists)
+            XCTAssertTrue(app.staticTexts["Unspecified"].exists)
             capture(app, "All people opens selected profile " + name)
             app.navigationBars.buttons["All people"].tap()
             XCTAssertTrue(app.navigationBars["All people"].exists)
@@ -596,7 +598,14 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Keep your people close."].exists)
         capture(app, "Search with no matches")
-        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() } else { app.buttons["close"].tap() }
+        if app.buttons["Cancel"].exists {
+            app.buttons["Cancel"].tap()
+        } else {
+            // The navigation-bar search drawer exposes the label "Close".
+            let close = app.buttons.matching(NSPredicate(format: "identifier =[c] %@ OR label =[c] %@", "close", "close")).firstMatch
+            XCTAssertTrue(close.isHittable)
+            close.tap()
+        }
     }
     @MainActor func testUnlistedPeopleMenuReturnAndRelaunch() {
         let app = XCUIApplication()
@@ -879,6 +888,32 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Estimated 80 as of")).firstMatch.waitForExistence(timeout: 5))
     }
+    @MainActor func testContactReviewToolbarAtStandardAndLargestText() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        defer { app.terminate() }
+        for largest in [false, true] {
+            app.launchArguments = ["--kin-preview", "empty", "--kin-ui-synthetic-contact"]
+            if largest {
+                app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+            }
+            app.launch()
+            app.buttons["Add person"].tap()
+            app.buttons["Import from Contacts"].tap()
+            app.buttons["synthetic-contact-selection"].tap()
+            XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 5))
+            verifyContactActionGeometry(app, largest: largest)
+            if largest {
+                app.buttons["contact-cancel"].tap()
+                XCTAssertTrue(app.navigationBars["Add person"].waitForExistence(timeout: 5))
+            } else {
+                app.buttons["contact-import"].tap()
+                XCTAssertTrue(app.navigationBars["John Appleseed"].waitForExistence(timeout: 5))
+            }
+            app.terminate()
+        }
+    }
+
     @MainActor func testSyntheticImportSavesReviewedNamesForEveryEntryPoint() throws {
         try checkReviewedImportForEveryEntryPoint(useNativePicker: false)
     }
@@ -981,7 +1016,7 @@ final class KinUITests: XCTestCase {
         let friendReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             guard friend.exists && friend.isHittable else { return false }
             let frame = friend.frame
-            guard frame.minY >= 145 && frame.maxY < app.buttons["contact-cancel"].frame.minY - 12 else { return false }
+            guard frame.minY >= 145 && frame.maxY < self.formContentBottom(app) else { return false }
             if abs(frame.minY - previousFriendFrame.minY) > 0.5 || abs(frame.height - previousFriendFrame.height) > 0.5 {
                 previousFriendFrame = frame; friendStableSince = Date(); return false
             }
@@ -991,15 +1026,13 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(friend.isHittable)
         let friendFrame = friend.frame
         let diagnostics = XCTAttachment(string: app.debugDescription)
-        diagnostics.name = "Synthetic Friend row and footer geometry"; diagnostics.lifetime = .keepAlways; add(diagnostics)
+        diagnostics.name = "Synthetic Friend row and toolbar geometry"; diagnostics.lifetime = .keepAlways; add(diagnostics)
         let geometryImage = XCTAttachment(screenshot: app.screenshot())
         geometryImage.name = "Synthetic Friend row before guarded tap"; geometryImage.lifetime = .keepAlways; add(geometryImage)
         XCTAssertGreaterThanOrEqual(friendFrame.minY,145)
-        XCTAssertLessThan(friendFrame.maxY,app.buttons["contact-cancel"].frame.minY - 12)
+        XCTAssertLessThan(friendFrame.maxY,formContentBottom(app))
         XCTAssertEqual(friend.value as? String,"0")
-        // Full-screen reveal swipes can overshoot and native switch auto-scroll
-        // can hit the footer. Tap the settled uniquely identified visible row,
-        // explicitly outside the persistent confirmation footer.
+        // Tap the settled, visible row within the form after scrolling.
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: friendFrame.maxX - 35,dy: friendFrame.midY)).tap()
         assertSwitchImmediatelyOn(friend, in: app)
         XCTAssertTrue(app.navigationBars["Contact birth information"].exists)
@@ -1072,7 +1105,6 @@ final class KinUITests: XCTestCase {
             print("Contacts review audit: \(issue.compactDescription); \(issue.detailedDescription); element=\(issue.element?.label ?? "unresolved")")
             return false
         }
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "contact-selected-contact").firstMatch.label.contains("John Appleseed"))
         for title in ["What changes","Before importing a photo"] {
             // Section footers can be exposed as Other rather than StaticText.
             let helper = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@",title)).firstMatch
@@ -1268,15 +1300,8 @@ final class KinUITests: XCTestCase {
         }
         XCTAssertFalse(cancel.frame.intersects(confirm.frame))
         let bar = app.navigationBars["Contact birth information"]
-        XCTAssertGreaterThanOrEqual(cancel.frame.minY,bar.frame.maxY)
-        if largest {
-            XCTAssertLessThanOrEqual(cancel.frame.maxY,confirm.frame.minY)
-            XCTAssertGreaterThanOrEqual(confirm.frame.width,app.frame.width - 34)
-            XCTAssertEqual(cancel.frame.width,confirm.frame.width,accuracy: 1)
-        } else {
-            XCTAssertLessThanOrEqual(cancel.frame.maxX,confirm.frame.minX)
-            XCTAssertGreaterThanOrEqual(confirm.frame.width,140)
-        }
+        XCTAssertTrue(bar.buttons["contact-cancel"].exists && bar.buttons["contact-import"].exists)
+        XCTAssertLessThanOrEqual(cancel.frame.maxX, confirm.frame.minX)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = largest ? "Responsive Contacts actions largest - synthetic" : "Responsive Contacts actions standard - synthetic"
         image.lifetime = .keepAlways; add(image)
@@ -1284,13 +1309,13 @@ final class KinUITests: XCTestCase {
     @MainActor private func verifyContactLowerRowsReachable(_ app: XCUIApplication, largest: Bool) {
         let selected = app.descendants(matching: .any).matching(identifier: "contact-selected-contact").firstMatch
         let date = app.descendants(matching: .any).matching(identifier: "contact-exact-birthday").firstMatch
-        let rows = [(selected,false), (app.buttons["contact-birth-information"],true), (date,true), (app.buttons["Import and Save without photo"],true)]
+        let rows = [(app.buttons["contact-birth-information"],true), (date,true), (selected,false), (app.buttons["Import and Save without photo"],true)]
         let top = max(CGFloat(145),app.navigationBars["Contact birth information"].frame.maxY + 4)
         for (index,pair) in rows.enumerated() {
             let element = pair.0
             var revealed = false
             for _ in 0..<40 {
-                let bottom = app.buttons["contact-cancel"].frame.minY - 20
+                let bottom = formContentBottom(app)
                 let span = bottom - top
                 XCTAssertGreaterThan(span,80)
                 var up = index != 0, distance = span * 0.8
@@ -1313,21 +1338,24 @@ final class KinUITests: XCTestCase {
                     .press(forDuration: 0.05,thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: endY / app.frame.height)),withVelocity: .slow,thenHoldForDuration: 0.15)
             }
             if !revealed {
-                let diagnostic = XCTAttachment(string: "row=\(index) frame=\(element.frame) top=\(top) footer=\(app.buttons["contact-cancel"].frame)\n" + app.debugDescription)
+                let diagnostic = XCTAttachment(string: "row=\(index) frame=\(element.frame) top=\(top) bottom=\(formContentBottom(app))\n" + app.debugDescription)
                 diagnostic.name = "Synthetic lower-row reachability failure"; diagnostic.lifetime = .keepAlways; add(diagnostic)
                 let image = XCTAttachment(screenshot: app.screenshot())
                 image.name = "Synthetic lower-row failure"; image.lifetime = .keepAlways; add(image)
             }
-            XCTAssertTrue(revealed,"Every lower review row must scroll fully clear of the fixed footer")
+            XCTAssertTrue(revealed,"Every lower review row must scroll fully into the visible form")
+            if index == 2 { XCTAssertTrue(selected.label.contains("John Appleseed")) }
         }
         XCTAssertTrue(app.buttons["contact-cancel"].isHittable && app.buttons["contact-import"].isHittable)
         let image = XCTAttachment(screenshot: app.screenshot())
-        image.name = largest ? "Lowest review row clear of footer largest - synthetic" : "Lowest review row clear of footer standard - synthetic"
+        image.name = largest ? "Lowest review row visible largest - synthetic" : "Lowest review row visible standard - synthetic"
         image.lifetime = .keepAlways; add(image)
     }
     @MainActor private func formContentBottom(_ app: XCUIApplication) -> CGFloat {
-        let cancel = app.buttons["contact-cancel"]
-        return cancel.exists ? min(cancel.frame.minY - 12,app.frame.maxY - 100) : app.frame.maxY - 100
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists { return keyboard.frame.minY - 12 }
+        let reviewingContact = app.navigationBars["Contact birth information"].exists
+        return app.frame.maxY - (reviewingContact ? 44 : 100)
     }
     /// The editor and Contacts review can expose identical visible labels while
     /// a sheet dismisses. Select the editor by its stable identifier and retain

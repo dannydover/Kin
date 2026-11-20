@@ -39,7 +39,7 @@ private struct NotebookRoot: View {
             } else { ProgressView("Opening Kin…") }
         }
         .preferredColorScheme(.dark).tint(KinTheme.accent)
-        .background(KinTheme.background)
+        .background { KinBackdrop() }
         .task {
             // Delegate construction can precede UIKit's initial availability.
             lifecycle.refresh()
@@ -69,6 +69,7 @@ private struct NotebookRoot: View {
                 if let index = arguments.firstIndex(of: "--kin-preview"), arguments.indices.contains(index + 1) {
                     switch arguments[index + 1] {
                     case "babies": store = try DevelopmentPreview.babyNotebook()
+                    case "index-alignment": store = try DevelopmentPreview.indexAlignmentNotebook()
                     case "relationships": store = try DevelopmentPreview.relationshipNotebook()
                     case "import-preservation": store = try DevelopmentPreview.importPreservationNotebook()
                     case "filter-fixture": store = try DevelopmentPreview.filterNotebook()

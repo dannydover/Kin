@@ -98,6 +98,9 @@ final class NativeContactsTests: XCTestCase {
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts["This contact has a birthday with a year."].exists)
+            let exactBirthday = app.buttons["contact-birth-information"]
+            XCTAssertTrue(exactBirthday.exists)
+            XCTAssertEqual(exactBirthday.label, "Birth information, Exact birthday")
             if isAdult {
                 let first = app.textFields["Imported first name (optional)"]
                 first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: name.count) + "Michael")
@@ -129,13 +132,12 @@ final class NativeContactsTests: XCTestCase {
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = isAdult ? "Eligible Contacts preview - synthetic" : "Ineligible Contacts preview - synthetic"
             attachment.lifetime = .keepAlways; add(attachment)
-            let exactBirthday = app.buttons["contact-birth-information"]
-            for _ in 0..<8 { if exactBirthday.exists { break }; app.swipeUp() }
-            XCTAssertTrue(exactBirthday.exists)
-            XCTAssertEqual(exactBirthday.label, "Birth information, Exact birthday")
             app.buttons["contact-import"].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
-            if isAdult { XCTAssertTrue(app.staticTexts["Gender: Female"].exists) }
+            if isAdult {
+                XCTAssertTrue(app.staticTexts["Gender"].exists)
+                XCTAssertTrue(app.staticTexts["Female"].exists)
+            }
             let birthday = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",String(birthYear))).firstMatch
             XCTAssertTrue(birthday.waitForExistence(timeout: 5))
             app.terminate(); app.launch(); app.staticTexts[name].tap()

@@ -19,6 +19,12 @@ APPROVED_PNG = {
     'Kin/Assets.xcassets/AppIcon.appiconset/AppIcon.png': '9d5da6510dcb2ce50990f852e3879efe97f041ebf235dfc3a2d480baf9a931c5',
     'Kin/Assets.xcassets/KinLogo.imageset/KinLogo.png': '0ddf69cc402573ea9abd38f78c76bac5fbdf47732707679bce4347c91e00fa52',
 }
+# Exact reviewed font used to outline the original Kin icon.
+APPROVED_FONT = {
+    'Kin/DesignResources/LibreBaskerville.ttf': '05a95421961341c5b2556285e8415df9db27dab4f4abe22b446b3c6a8b916c5d',
+}
+FONT_LICENSE = 'Kin/DesignResources/LibreBaskerville-LICENSE.txt'
+APPROVED_PLISTS = {'Development/KinDev-Info.plist'}
 ROOT_FILES = {'.gitignore', 'LICENSE', 'README.md', 'SECURITY.md', 'Package.swift'}
 TEXT_SUFFIXES = {'.entitlements', '.swift', '.json', '.svg', '.py', '.sh', '.pbxproj', '.xcscheme', '.xcworkspacedata', '.xcprivacy', '.md', '.yml'}
 PREFIXES = ('Development/', 'Kin/', 'KinTests/', 'KinUITests/', 'Kin.xcodeproj/', 'scripts/', '.github/workflows/')
@@ -40,7 +46,9 @@ def inspect(name, data, mode='100644'):
         errors.append('symlinks and submodules are not allowed')
     if any(part in BLOCKED_PARTS for part in path.parts):
         errors.append('private/generated directory')
-    if name not in ROOT_FILES and not (name.startswith(PREFIXES) and path.suffix in TEXT_SUFFIXES) and name not in APPROVED_PNG:
+    reviewed = name in APPROVED_PNG or name in APPROVED_FONT or name == FONT_LICENSE
+    source = name in ROOT_FILES or name in APPROVED_PLISTS or (name.startswith(PREFIXES) and path.suffix in TEXT_SUFFIXES)
+    if not (source or reviewed):
         errors.append('file is outside the reviewed source/asset allowlist')
     if name in APPROVED_PNG:
         if hashlib.sha256(data).hexdigest() != APPROVED_PNG[name]:
@@ -56,6 +64,9 @@ def inspect(name, data, mode='100644'):
                     errors.append('unreviewed PNG metadata')
                 offset += size + 12
             if offset != len(data): errors.append('invalid PNG chunk size')
+    elif name in APPROVED_FONT:
+        if hashlib.sha256(data).hexdigest() != APPROVED_FONT[name]:
+            errors.append('font changed: requires file and license review')
     else:
         try: data.decode('utf-8')
         except UnicodeDecodeError: errors.append('unexpected binary data')
@@ -83,7 +94,7 @@ def main():
     for name, reason in failures:
         print(f'{name}: {reason}')  # Never print matched private values.
     if failures: return 1
-    print(f'Repository guard passed: {count} indexed files; reviewed artwork and no prohibited data patterns.')
+    print(f'Repository guard passed: {count} indexed files; reviewed assets and no prohibited data patterns.')
     return 0
 
 if __name__ == '__main__':

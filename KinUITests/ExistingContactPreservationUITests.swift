@@ -31,8 +31,16 @@ final class ExistingContactPreservationUITests: XCTestCase {
             let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@","edit-person-")).firstMatch
             identities.append(edit.identifier); edit.tap()
             try select(fixtures[index])
-            XCTAssertTrue(app.staticTexts["contact-birth-preservation"].exists)
-            let kind = app.buttons["contact-birth-information"]; reveal(kind,in: app); XCTAssertTrue(kind.label.contains(kinds[index]))
+            XCTAssertTrue(app.staticTexts["Details to apply"].exists)
+            let kind = app.buttons["contact-birth-information"]
+            XCTAssertTrue(kind.exists)
+            XCTAssertTrue(kind.label.contains(kinds[index]))
+            let current = app.staticTexts["Current Kin details"]
+            reveal(current, in: app)
+            XCTAssertTrue(current.exists)
+            let preservation = app.staticTexts["contact-birth-preservation"]
+            reveal(preservation, in: app)
+            XCTAssertTrue(preservation.exists)
             if index < 2 {
                 let photo = app.switches["contact-include-photo"].switches.firstMatch
                 reveal(photo,in: app); XCTAssertEqual(photo.value as? String,"0")
@@ -58,7 +66,67 @@ final class ExistingContactPreservationUITests: XCTestCase {
         app.navigationBars["Edit person"].buttons["Save"].tap()
         XCTAssertTrue(app.navigationBars[fixtures[3]].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons[identities[0]].exists)
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@","Birthday:","1995")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Birthday"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "1995")).firstMatch.exists)
         app.navigationBars.buttons["People"].tap(); XCTAssertEqual(app.cells.count,3)
+    }
+
+    @MainActor func testNewContactReviewShowsAndSavesProposedDetails() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-preservation-contacts"]
+        app.launch()
+        defer { app.terminate() }
+        let review = app.navigationBars["Contact birth information"]
+        let birth = app.buttons["contact-birth-information"]
+        let date = app.descendants(matching: .any).matching(identifier: "contact-exact-birthday").firstMatch
+        let first = app.textFields["Imported first name (optional)"]
+        let last = app.textFields["Imported last name (optional)"]
+
+        func select(_ fixture: Int) {
+            app.buttons["Add person"].tap()
+            app.buttons["Import from Contacts"].tap()
+            app.buttons["synthetic-preservation-contact-\(fixture)"].tap()
+            XCTAssertTrue(review.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Edit details to save"].exists)
+            XCTAssertFalse(app.staticTexts["Current birth information"].exists)
+            XCTAssertTrue(first.isHittable)
+            XCTAssertTrue(last.isHittable)
+            XCTAssertTrue(birth.isHittable)
+        }
+
+        XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
+        select(0)
+        XCTAssertTrue(birth.label.contains("Unknown"))
+        app.buttons["contact-cancel"].tap()
+        XCTAssertTrue(review.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["First name (optional)"].value as? String, "First name")
+        app.navigationBars["Add person"].buttons["Cancel"].tap()
+
+        select(1)
+        XCTAssertTrue(birth.label.contains("Unknown"))
+        XCTAssertFalse(date.exists)
+        app.buttons["contact-import"].tap()
+        XCTAssertTrue(app.navigationBars["Kin Synthetic Keep 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Age unknown"].exists)
+        XCTAssertFalse(app.staticTexts["Birthday"].exists)
+        app.navigationBars.buttons["People"].tap()
+
+        select(3)
+        XCTAssertTrue(birth.label.contains("Exact birthday"))
+        XCTAssertTrue(date.exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "New Contacts review with proposed full birthday"
+        screenshot.lifetime = .keepAlways; add(screenshot)
+        birth.tap()
+        app.buttons["Unknown"].tap()
+        XCTAssertFalse(date.exists)
+        birth.tap()
+        app.buttons["Exact birthday"].tap()
+        XCTAssertTrue(date.exists)
+        last.tap(); last.typeText("Edited")
+        app.buttons["contact-import"].tap()
+        XCTAssertTrue(app.navigationBars["Kin Synthetic Keep 3 Edited"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Birthday"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "1995")).firstMatch.exists)
     }
 }

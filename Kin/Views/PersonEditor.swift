@@ -61,14 +61,14 @@ struct PersonEditor: View {
                 ageSection
                 photoSection
                 connectionSection
-                Section("Notes") { TextField("The little things to remember", text: $draft.notes, axis: .vertical).lineLimit(4...10) }
+                Section { TextField("The little things to remember", text: $draft.notes, axis: .vertical).lineLimit(4...10) } header: { KinSectionHeading(text: "Notes") }
             }.listRowBackground(KinTheme.editableFormRow)
         }
         .environment(\.calendar, CivilDate.pickerCalendar).environment(\.timeZone, CivilDate.pickerCalendar.timeZone)
         .kinForm().navigationTitle(isNew ? "Add person" : "Edit person").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { ConfirmationLabel(title: "Cancel", primary: false) }.buttonStyle(.plain) }.sharedBackgroundVisibility(.hidden)
-            ToolbarItem(placement: .confirmationAction) { Button { save() } label: { ConfirmationLabel(title: "Save") }.buttonStyle(.plain).disabled(photoLoading || didSave || !ageInputValid) }.sharedBackgroundVisibility(.hidden)
+            SheetEditActions(cancel: { dismiss() }, confirm: { save() },
+                             confirmDisabled: photoLoading || didSave || !ageInputValid)
         }
         .alert("Remove the existing photo?", isPresented: $removalWarning) {
             Button("Remove photo and save", role: .destructive) { save(confirmed: true) }.kinDestructiveText()
@@ -133,7 +133,7 @@ struct PersonEditor: View {
             }), prompt: Text("First name")).textContentType(.givenName).accessibilityLabel("First name (optional)")
             TextField("Last name (optional)", text: Binding(get: { draft.lastName ?? "" }, set: { draft.lastName = $0.isEmpty ? nil : $0 }), prompt: Text("Last name")).textContentType(.familyName).accessibilityLabel("Last name (optional)")
             GenderChoice(value: draft.gender) { gender in genderDefault.choose(gender); draft.gender = gender }
-        } header: { Text("Name") } footer: {
+        } header: { KinSectionHeading(text: "Name") } footer: {
             if isNew { Text("Names and gender are optional. A name-based gender suggestion can always be changed.") }
         }
     }
@@ -147,14 +147,16 @@ struct PersonEditor: View {
                     if selected { draft.connections.insert(connection) } else { draft.connections.remove(connection) }
                 }))
             }
-        } header: { Text("Your connection") } footer: {
+        } header: { KinSectionHeading(text: "Your connection") } footer: {
             if isNew && relationship == nil { FeatureHelp.directPerson }
             else if isNew { FeatureHelp.newLinkedPerson }
             else { FeatureHelp.listInclusion }
         }
     }
     private var ageSection: some View {
-        BirthInformationFields(birthKind: $birthKind, exactDate: $exactDate, referenceDate: $referenceDate, estimatedAge: $estimatedAge)
+        Section {
+            BirthInformationRows(birthKind: $birthKind, exactDate: $exactDate, referenceDate: $referenceDate, estimatedAge: $estimatedAge)
+        } header: { KinSectionHeading(text: "Age") }
     }
     private func finishContactImport(_ snapshot: ContactSnapshot, birthday importedBirthday: Birthday? = nil, importPhoto: Bool = true, preparedPhoto: PreparedContactPhoto? = nil) {
         photoGeneration = UUID(); pickedPhoto = nil; photoLoading = false
@@ -173,7 +175,7 @@ struct PersonEditor: View {
     }
     private var photoSection: some View {
         let title = draft.photo == nil ? "Add photo" : "Change photo"
-        return Section("Photo") {
+        return Section {
             if photoAllowed {
                 InitialAvatar(first: draft.firstName ?? "?", last: draft.lastName ?? "", photo: draft.photo, gender: draft.gender, size: 64)
                 PhotosPicker(selection: $pickedPhoto, matching: .images) { Label(title, systemImage: "photo") }
@@ -182,7 +184,7 @@ struct PersonEditor: View {
             } else {
                 Text(needsRemoval ? "You’ll need to remove the saved photo before saving this age." : "Photos are only available when we can be sure this person is at least 18. For an estimate, even the youngest possible age must be 18 or older.")
             }
-        }
+        } header: { KinSectionHeading(text: "Photo") }
     }
     private func loadPhoto(_ item: PhotosPickerItem?) {
         let generation = UUID(); photoGeneration = generation
@@ -220,7 +222,7 @@ struct PersonEditor: View {
 }
 
 /// Shared civil-date controls for the person draft and Contacts import draft.
-private struct BirthInformationFields: View {
+private struct BirthInformationRows: View {
     @Binding var birthKind: String
     @Binding var exactDate: Date
     @Binding var referenceDate: Date
@@ -229,7 +231,7 @@ private struct BirthInformationFields: View {
     var accessibilityPrefix = ""
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        Section("Age") {
+        Group {
             Picker("Birth information", selection: $birthKind) {
                 Text("Unknown").tag("unknown"); Text("Exact birthday").tag("exact"); Text("Estimated age").tag("estimated")
             }.accessibilityIdentifier(accessibilityPrefix + "birth-information")
@@ -274,8 +276,10 @@ private struct EstimatedAgeWheel: View {
                 .background(KinTheme.background)
                 .navigationTitle("Age in years").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) { Button("Done") { onDone(selection); dismiss() } }
+                    SheetEditActions(cancel: { dismiss() }, confirmTitle: "Done", confirm: {
+                        onDone(selection)
+                        dismiss()
+                    })
                 }
         }.tint(KinTheme.accent).preferredColorScheme(.dark)
     }
@@ -300,7 +304,6 @@ private struct ContactBirthInformationView: View {
     @State private var importError: String?
     let onImport: (Birthday?, Bool, PreparedContactPhoto?) -> Void
     let onCancel: () -> Void
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var birthKind = "unknown"
     @State private var exactDate = CivilDate(Date(), timeZone: .current).pickerDate
     @State private var referenceDate = CivilDate(Date(), timeZone: .current).pickerDate
@@ -330,6 +333,9 @@ private struct ContactBirthInformationView: View {
     private var needsPhotoConfirmation: Bool {
         ContactImport.needsPhotoConfirmation(for: snapshot.birthInformation, isNew: isNew)
     }
+    private var selectedContactName: String {
+        (snapshot.firstName + " " + snapshot.lastName).trimmingCharacters(in: .whitespaces)
+    }
     private var currentBirthDescription: String {
         switch currentBirthday {
         case .unknown: "Unknown"
@@ -351,36 +357,59 @@ private struct ContactBirthInformationView: View {
         Form {
             Group {
                 Section {
-                    if let name = ContactImport.reviewName(for: currentDraft) {
-                        LabeledContent("Current draft", value: name).accessibilityIdentifier("contact-current-draft")
-                    }
-                    LabeledContent("Current birth information", value: currentBirthDescription)
-                    if currentDraft.photo != nil {
-                        LabeledContent("Current photo", value: "Will be replaced or removed")
-                    }
-                    LabeledContent("Selected contact", value: (snapshot.firstName + " " + snapshot.lastName).trimmingCharacters(in: .whitespaces)).accessibilityIdentifier("contact-selected-contact")
                     if isNew {
-                        TextField("Imported first name (optional)", text: Binding(get: { reviewedFirstName }, set: { name in
+                        ImportNameField(title: "First name", label: "Imported first name (optional)",
+                                        contentType: .givenName, text: Binding(get: { reviewedFirstName }, set: { name in
                             reviewedFirstName = name
                             reviewedGender.nameChanged(name, lookup: NameAssociations.bundled.gender)
-                        }), prompt: Text("First name")).textContentType(.givenName).accessibilityLabel("Imported first name (optional)")
-                        TextField("Imported last name (optional)", text: $reviewedLastName, prompt: Text("Last name")).textContentType(.familyName).accessibilityLabel("Imported last name (optional)")
-                        GenderChoice(value: reviewedGender.value, accessibilityID: "contact-gender-choice") { reviewedGender.choose($0) }
+                        }))
+                        ImportNameField(title: "Last name", label: "Imported last name (optional)",
+                                        contentType: .familyName, text: $reviewedLastName)
+                        GenderChoice(value: reviewedGender.value, accessibilityID: "contact-gender-choice",
+                                     showsIndicator: true) { reviewedGender.choose($0) }
+                    } else {
+                        LabeledContent("Name from Contacts", value: selectedContactName)
+                            .accessibilityIdentifier("contact-selected-contact")
                     }
-                } header: { Text("Review import") } footer: {
+                    BirthInformationRows(birthKind: $birthKind, exactDate: $exactDate, referenceDate: $referenceDate,
+                                         estimatedAge: $estimatedAge, accessibilityPrefix: "contact-")
+                } header: {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Contact birth information")
+                            .font(.title2.bold()).foregroundStyle(KinTheme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        KinSectionHeading(text: isNew ? "Edit details to save" : "Details to apply")
+                    }.textCase(nil)
+                } footer: {
                     ImportHelper(title: Text("What changes"), text: isNew
-                        ? Text("Tap \(FeatureReference.importAndSave) to replace the draft’s name, gender, age, and photo with your reviewed contact details and save the new person. It saves without a photo if none is selected or eligible. Notes, categories, and chosen relationship details stay.")
-                        : Text("Tap \(FeatureReference.importAction) to copy the name and use the birth information you review below. A missing or incomplete contact birthday keeps your current birth information unless you change it. The photo is replaced or removed according to your choice. Notes, categories, and relationships stay."))
+                        ? Text("Tap \(FeatureReference.importAndSave) to save the details shown here. Your notes, categories, and chosen relationship stay with the new person.")
+                        : Text("Tap \(FeatureReference.importAction) to copy the contact’s name and the reviewed birth information into \(FeatureReference.editPerson). Notes, categories, and relationships stay. Review the photo choice below."))
+                }
+                if !isNew {
+                    Section {
+                        if let name = ContactImport.reviewName(for: currentDraft) {
+                            LabeledContent("Current name", value: name).accessibilityIdentifier("contact-current-draft")
+                        }
+                        LabeledContent("Current birth information", value: currentBirthDescription)
+                        if currentDraft.photo != nil {
+                            LabeledContent("Current photo", value: "Will be replaced or removed")
+                        }
+                    } header: { KinSectionHeading(text: "Current Kin details") }
                 }
                 Section {
+                    if isNew {
+                        LabeledContent("Selected contact", value: selectedContactName)
+                            .accessibilityIdentifier("contact-selected-contact")
+                    }
                     Text(snapshot.birthInformation.explanation)
                     if needsPhotoConfirmation {
                         Text("Your current birth information is kept unless you change it here.")
                             .accessibilityIdentifier("contact-birth-preservation")
                     }
-                } footer: {
+                } header: { KinSectionHeading(text: "Contact source") } footer: {
                     ImportHelper(title: Text("Before importing a photo"), text: isNew
-                        ? Text("Check the contact’s birthday or estimated age. You can leave their age unknown. Tap \(FeatureReference.importAndSave) to save this person and any chosen relationship together. Tap \(FeatureReference.cancel) to keep your earlier draft without saving.")
+                        ? Text("Check the birth information before tapping \(FeatureReference.importAndSave). Kin saves without a photo when there isn’t an eligible one. Tap \(FeatureReference.cancel) to return to your earlier draft.")
                         : Text("Check the birth information shown. When the contact has no usable birthday, only turn on \(FeatureReference.includeContactsPhoto) after confirming this information belongs to them. Changes stay on the \(FeatureReference.editPerson) screen until you tap \(FeatureReference.save)."))
                 }
                 if isNew {
@@ -393,7 +422,7 @@ private struct ContactBirthInformationView: View {
                                 if selected { reviewedConnections.insert(connection) } else { reviewedConnections.remove(connection) }
                             })).accessibilityIdentifier("contact-connection-" + connection.rawValue)
                         }
-                    } header: { Text("Your connection") } footer: {
+                    } header: { KinSectionHeading(text: "Your connection") } footer: {
                         if relationship == nil { FeatureHelp.directPerson }
                         else { FeatureHelp.newLinkedPerson }
                     }
@@ -421,7 +450,6 @@ private struct ContactBirthInformationView: View {
                             .accessibilityIdentifier("contact-photo-preview-empty")
                     }
                 }
-                BirthInformationFields(birthKind: $birthKind, exactDate: $exactDate, referenceDate: $referenceDate, estimatedAge: $estimatedAge, accessibilityPrefix: "contact-")
                 Section {
                     Button(isNew ? "Import and Save without photo" : "Continue without importing photo") { confirmImport(withoutPhoto: true) }.disabled(!valid)
                 } footer: { Text(isNew ? "Save the reviewed details without keeping a Contacts photo." : "Copy the name and use the reviewed birth information. A missing or incomplete birthday keeps your current information unless you change it here. Remove the photo already on this screen without keeping the Contacts photo.") }
@@ -433,15 +461,11 @@ private struct ContactBirthInformationView: View {
         .onChange(of: includePhoto) { _, _ in refreshPhoto() }
         .kinError($importError).notebookAvailability(store)
         .kinForm().navigationTitle("Contact birth information").navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))) {
-                Button(action: onCancel) { ConfirmationLabel(title: "Cancel", primary: false, fillsWidth: true) }
-                    .accessibilityIdentifier("contact-cancel")
-                Button { confirmImport() } label: { ConfirmationLabel(title: isNew ? "Import and Save" : "Import", fillsWidth: true) }
-                    .accessibilityIdentifier("contact-import").disabled(!valid)
-            }
-            .buttonStyle(.plain).padding(16).background(KinTheme.background)
-            .overlay(alignment: .top) { Rectangle().fill(KinTheme.border).frame(height: 1).accessibilityHidden(true) }
+        .toolbar {
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
+            SheetEditActions(cancel: onCancel, confirmTitle: isNew ? "Import and Save" : "Import",
+                             confirm: { confirmImport() }, confirmDisabled: !valid,
+                             cancelIdentifier: "contact-cancel", confirmIdentifier: "contact-import")
         }
     }
     private func refreshPhoto() {
@@ -466,6 +490,27 @@ private struct ContactBirthInformationView: View {
     }
 }
 
+private struct ImportNameField: View {
+    let title: LocalizedStringKey
+    let label: LocalizedStringKey
+    let contentType: UITextContentType
+    @Binding var text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.subheadline.weight(.medium)).accessibilityHidden(true)
+            TextField(label, text: $text, prompt: Text("Optional").foregroundStyle(KinTheme.secondary))
+                .textContentType(contentType)
+                .accessibilityLabel(Text(label))
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .background(KinTheme.field, in: RoundedRectangle(cornerRadius: 10))
+                .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(KinTheme.divider).allowsHitTesting(false) }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 /// Supporting guidance stays visible, wraps semantically and keeps its section's reading order.
 private struct ImportHelper: View {
     let title: Text
@@ -481,9 +526,10 @@ private struct ImportHelper: View {
 private struct GenderChoice: View {
     let value: Gender
     let accessibilityID: String
+    let showsIndicator: Bool
     let choose: (Gender) -> Void
-    init(value: Gender, accessibilityID: String = "gender-choice", choose: @escaping (Gender) -> Void) {
-        self.value = value; self.accessibilityID = accessibilityID; self.choose = choose
+    init(value: Gender, accessibilityID: String = "gender-choice", showsIndicator: Bool = false, choose: @escaping (Gender) -> Void) {
+        self.value = value; self.accessibilityID = accessibilityID; self.showsIndicator = showsIndicator; self.choose = choose
     }
     var body: some View {
         Menu {
@@ -492,26 +538,15 @@ private struct GenderChoice: View {
                     .accessibilityAddTraits(gender == value ? .isSelected : [])
             }
         } label: {
-            LabeledContent("Gender", value: value.title).frame(minHeight: 44)
+            LabeledContent("Gender") {
+                HStack(spacing: 6) {
+                    Text(value.title)
+                    if showsIndicator { Image(systemName: "chevron.up.chevron.down").font(.caption).accessibilityHidden(true) }
+                }
+            }.frame(minHeight: 44)
         }
         .accessibilityLabel("Gender").accessibilityValue(value.title)
         .accessibilityHint("Optional. Choose any value to keep it while editing this name.")
         .accessibilityIdentifier(accessibilityID)
-    }
-}
-
-/// Opaque colors keep confirmation text readable over native toolbar materials.
-private struct ConfirmationLabel: View {
-    let title: String
-    var primary = true
-    var fillsWidth = false
-    var body: some View {
-        Text(title).foregroundStyle(primary ? KinTheme.background : KinTheme.text)
-            .padding(.horizontal, 10).padding(.vertical, fillsWidth ? 8 : 0)
-            .frame(minWidth: 44, maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
-            .background(primary ? KinTheme.text : KinTheme.background, in: RoundedRectangle(cornerRadius: 12))
-            // Preserve the entire padded background's intrinsic toolbar width,
-            // rather than letting only the text overflow a compressed frame.
-            .fixedSize(horizontal: !fillsWidth, vertical: true)
     }
 }

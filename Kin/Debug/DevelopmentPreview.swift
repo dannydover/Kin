@@ -53,6 +53,28 @@ import SwiftUI
         }
         return store
     }
+    static func indexAlignmentNotebook(today: Date = Date()) throws -> KinStore {
+        let store = try KinStore(inMemory: true)
+        let parent = Person(firstName: "Synthetic Index Parent", connections: [.friend])
+        var partner = Person(firstName: "Synthetic Partner")
+        partner.isListed = false
+        try store.savePerson(parent, today: today)
+        try store.savePerson(partner, today: today)
+        try store.savePartnerLink(PartnerLink(firstID: parent.id, secondID: partner.id, status: .current))
+
+        let date = CivilDate(today, timeZone: .current)
+        let cutoff = CivilDate(year: date.year - (date.month < 9 ? 1 : 0), month: 9, day: 1)
+        let children = [
+            Person(firstName: "Synthetic Avery", gender: .female, birthday: .estimated(age: 5, referenceDate: cutoff)),
+            Person(firstName: "Synthetic Riley", gender: .male),
+            Person(firstName: "Synthetic Sam", birthday: .exact(CivilDate(year: cutoff.year - 6, month: 9, day: 1)))
+        ]
+        for child in children {
+            try store.savePerson(child, today: today, relationship: .child(of: parent.id, parentage: .unspecified))
+        }
+        return store
+    }
+
     static func babyNotebook(today: Date = Date()) throws -> KinStore {
         let store = try KinStore(inMemory: true)
         let parent = Person(firstName: "Synthetic Parent",birthday: .exact(CivilDate(year: 1980,month: 1,day: 1)),connections: [.friend])

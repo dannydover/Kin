@@ -14,6 +14,7 @@ struct PersonDetail: View {
     @State private var deleting = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         Group {
             if let person = store.people.first(where: { $0.id == personID }) {
@@ -45,45 +46,36 @@ struct PersonDetail: View {
         List {
             Group {
                 Section {
-                    PersonRow(person: person, today: today)
-                    if let grade = AgeRules(calendar: .current).grade(for: person.birthday, on: today) { Text("Approximate school grade: \(grade)") }
-                    Text("Gender: \(person.gender.title)")
-                    if person.isListed { Text("On main list") }
-                    else { Text("Not on main list · available on the \(FeatureReference.allPeople) screen") }
-                    if !person.connections.isEmpty {
-                        Text("Your connection: " + person.connections.map { $0.rawValue.capitalized }.sorted().joined(separator: ", "))
-                    }
-                    if case .exact(let date) = person.birthday { Text("Birthday: \(date.formatted())") }
-                    if case .estimated(let age, let reference) = person.birthday {
-                        Text("Estimated \(age) as of \(reference.formatted())")
-                    }
+                    profileSummary(person)
                 }
-                if !person.notes.isEmpty { Section("Notes") { Text(person.notes) } }
                 if AgeRules(calendar: .current).showsPartnerAndChildSections(for: person.birthday, on: today) {
-                    Section("Partners") {
+                    Section {
                         ForEach(store.partnerLinks.filter { $0.firstID == personID || $0.secondID == personID }) { link in
                             relationshipRow(link.other(than: personID), subtitle: "\(link.status.rawValue.capitalized) partner") { partnerEdit = link }
                         }
                         RelationshipProfileAction(title: "Add partner", systemImage: "plus") { sheet = .partner }
-                    }
-                    Section("Children") {
+                    } header: { KinSectionHeading(text: "Partners") }
+                    Section {
                         ForEach(store.parentLinks.filter { $0.parentID == personID }) { link in
-                            relationshipRow(link.childID, subtitle: "\(link.parentage.rawValue.capitalized) parentage") { parentEdit = link }
+                            relationshipRow(link.childID, subtitle: "\(link.parentage.rawValue.capitalized) parentage", child: true) { parentEdit = link }
                         }
                         RelationshipProfileAction(title: "Add child", systemImage: "plus") { sheet = .child }
-                    }
+                    } header: { KinSectionHeading(text: "Children") }
                 }
-                Section("Parents") {
+                Section {
                     ForEach(store.parentLinks.filter { $0.childID == personID }) { link in
                         relationshipRow(link.parentID, subtitle: "\(link.parentage.rawValue.capitalized) parent") { parentEdit = link }
                     }
                     RelationshipProfileAction(title: "Add parent", systemImage: "plus") { sheet = .parent }
+                } header: { KinSectionHeading(text: "Parents") }
+                if !person.notes.isEmpty {
+                    Section { Text(person.notes) } header: { KinSectionHeading(text: "Notes") }
                 }
                 Section {
                     Button("Delete person", role: .destructive) { deleting = true }.kinDestructiveText()
                 }
             }.listRowBackground(KinTheme.editableFormRow)
-        }.kinForm().navigationTitle(person.displayName).navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).kinForm().navigationTitle(person.displayName).navigationBarTitleDisplayMode(.inline)
             .alert("Delete \(person.displayName)?", isPresented: $deleting) {
                 Button("Delete person", role: .destructive) {
                     do { try store.deletePerson(personID); dismiss() } catch { self.error = UserFacingError.message(error) }
@@ -91,13 +83,72 @@ struct PersonDetail: View {
                 Button("Cancel", role: .cancel) { }
             } message: { Text("Deletes this person’s details, photo, and relationships. Other people won’t be deleted. Find them on the \(FeatureReference.allPeople) screen.") }
     }
-    @ViewBuilder private func relationshipRow(_ id: UUID, subtitle: String, edit: @escaping () -> Void) -> some View {
-        if let person = store.people.first(where: { $0.id == id }) {
-            VStack(alignment: .leading, spacing: 8) {
-                NavigationLink(value: id) { PersonRow(person: person, today: today) }.buttonStyle(.plain)
-                Text(subtitle).font(.caption).foregroundStyle(KinTheme.secondary)
-                RelationshipEditAction(personName: person.displayName, action: edit)
+    private func profileSummary(_ person: Person) -> some View {
+        let rules = AgeRules(calendar: .current)
+        let connections = person.connections.map { $0.rawValue.capitalized }.sorted()
+        return VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .center, spacing: 12) {
+                PersonAvatar(person: person, today: today)
+                VStack(alignment: .leading, spacing: 3) {
+                    KinTitle(text: person.displayName, size: 22)
+                    Text(([rules.displayAge(for: person.birthday, on: today)] + connections).joined(separator: " · "))
+                        .font(.subheadline).foregroundStyle(KinTheme.secondary)
+                }
             }
+            Rectangle().fill(KinTheme.divider).frame(height: 1).accessibilityHidden(true)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 20) {
+                    profileGender(person).fixedSize()
+                    profileVisibility(person).fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    profileGender(person)
+                    profileVisibility(person)
+                }
+            }
+            if case .exact(let date) = person.birthday { profileFact("Birthday", value: Text(verbatim: date.formatted())) }
+            if case .estimated(let age, let reference) = person.birthday {
+                profileFact("Age estimate", value: Text(verbatim: "Estimated \(age) as of \(reference.formatted())"))
+            }
+            if let grade = rules.grade(for: person.birthday, on: today) {
+                profileFact("School grade", value: SchoolGradeLabel(grade: grade))
+            }
+        }.padding(.vertical, 10)
+    }
+    private func profileGender(_ person: Person) -> some View {
+        profileFact("Gender", value: Text(verbatim: person.gender.title))
+    }
+    private func profileVisibility(_ person: Person) -> some View {
+        profileFact("Index visibility", value: person.isListed ? Text("On main list") :
+                    Text("Not on main list · available on the \(FeatureReference.allPeople) screen"))
+    }
+    private func profileFact(_ label: String, value: some View) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption).foregroundStyle(KinTheme.secondary)
+            value.font(.subheadline)
+        }.accessibilityElement(children: .contain)
+    }
+    @ViewBuilder private func relationshipRow(_ id: UUID, subtitle: String, child: Bool = false, edit: @escaping () -> Void) -> some View {
+        if let person = store.people.first(where: { $0.id == id }) {
+            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) :
+                AnyLayout(HStackLayout(spacing: 8))) {
+                NavigationLink(value: id) {
+                    (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 7)) :
+                        AnyLayout(HStackLayout(spacing: 10))) {
+                        PersonAvatar(person: person, today: today, size: child ? 32 : 38, childCircle: child)
+                            .frame(width: 38)
+                        VStack(alignment: .leading, spacing: 2) {
+                            KinTitle(text: person.displayName, size: 14)
+                            Text(AgeRules(calendar: .current).displayAge(for: person.birthday, on: today))
+                                .font(child ? .subheadline.weight(.semibold) : .caption)
+                                .foregroundStyle(child ? KinTheme.text : KinTheme.secondary)
+                            Text(subtitle).font(.caption).foregroundStyle(KinTheme.secondary)
+                        }
+                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                RelationshipEditAction(personName: person.displayName, action: edit)
+            }.padding(.vertical, 3)
         }
     }
 }
@@ -119,10 +170,22 @@ struct RelationshipProfileAction: View {
 struct RelationshipEditAction: View {
     let personName: String
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        RelationshipProfileAction(title: "Edit relationship", systemImage: "pencil", action: action)
-            .accessibilityLabel("Edit relationship with \(personName)")
-            .accessibilityHint("Opens relationship details.")
+        Group {
+            if typeSize.isAccessibilitySize {
+                RelationshipProfileAction(title: "Edit relationship", systemImage: "pencil", action: action)
+            } else {
+                Button(action: action) {
+                    Image(systemName: "pencil").font(.body.weight(.medium))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(KinTheme.accent)
+            }
+        }
+        .accessibilityLabel("Edit relationship with \(personName)")
+        .accessibilityHint("Opens relationship details.")
     }
 }
 enum AddRelationshipKind {
@@ -163,7 +226,7 @@ struct AddRelationshipView: View {
                 Section { relationshipPickers(child: kind != .partner, parentage: $parentage, status: $status) }
             }.listRowBackground(KinTheme.editableFormRow)
         }.kinForm().navigationTitle(kind.title)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { SheetEditActions(cancel: { dismiss() }) }
             .notebookAvailability(store)
     }
 }
@@ -261,8 +324,7 @@ struct RelationshipEditor: View {
             }.listRowBackground(KinTheme.editableFormRow)
         }.kinForm().navigationTitle(isNew ? "Add relationship" : "Edit relationship")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(saved) }
+                SheetEditActions(cancel: { dismiss() }, confirm: { save() }, confirmDisabled: saved)
             }
             .alert("Remove relationship?", isPresented: $removing) {
                 Button("Remove relationship", role: .destructive) {
