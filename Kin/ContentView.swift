@@ -25,11 +25,15 @@ struct ContentView: View {
                         let sideInset: CGFloat = filter.scope == .all ? 20 : 16
                         let family = FamilyIndexRow(person: person, store: store, today: today)
                         NavigationLink(value: person.id) {
-                            if filter.scope == .yours { family }
-                            else { allPeopleCard(person) }
+                            if filter.scope == .yours {
+                                HStack(spacing: 10) {
+                                    family
+                                    disclosureChevron
+                                }
+                            } else { allPeopleCard(person) }
                         }
                         .accessibilityLabel(Text(verbatim: filter.scope == .yours ? family.spokenSummary : person.displayName))
-                        .navigationLinkIndicatorVisibility(filter.scope == .all ? .hidden : .automatic)
+                        .navigationLinkIndicatorVisibility(.hidden)
                         .listRowInsets(EdgeInsets(top: 5, leading: sideInset, bottom: 5, trailing: sideInset))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -86,14 +90,18 @@ struct ContentView: View {
         HStack(spacing: 12) {
             PersonRow(person: person, today: today, showsAge: false)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(KinTheme.secondary)
-                .accessibilityHidden(true)
+            disclosureChevron
         }
         .padding(12)
         .kinPanel()
         .contentShape(Rectangle())
+    }
+
+    private var disclosureChevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(KinTheme.secondary)
+            .accessibilityHidden(true)
     }
 
     private func switchScope(_ selection: PeopleFilterState.Scope) { filter.switchScope(selection) }
@@ -243,6 +251,8 @@ struct FamilyIndexRow: View {
                 PersonAvatar(person: person, today: today, size: adultSize)
                 VStack(alignment: .leading, spacing: 1) {
                     KinTitle(text: person.displayName)
+                        .foregroundStyle(KinTheme.text)
+                        .background(KinTheme.surface)
                     if !partners.isEmpty {
                         Text((partners.count == 1 ? "Partner · " : "Partners · ") + partners.map(\.displayName).joined(separator: ", "))
                             .font(.subheadline).foregroundStyle(KinTheme.secondary)

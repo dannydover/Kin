@@ -34,6 +34,19 @@ final class NextVersionUITests: XCTestCase {
         replace(first,with: "Michael"); XCTAssertEqual(gender.value as? String,"Other")
         app.buttons["Cancel"].tap(); XCTAssertTrue(app.navigationBars["Mike"].exists)
     }
+    @MainActor func testPeopleNameContrastAtLargestText() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+                               "-UIAccessibilityBoldTextEnabled", "YES"]
+        app.launch(); addTeardownBlock { app.terminate() }
+        let name = app.staticTexts["Synthetic Named"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        XCTAssertTrue(name.isHittable)
+        capture(app, "People name contrast at largest text - synthetic")
+        try app.performAccessibilityAudit(for: .contrast)
+    }
+
     @MainActor func testPeopleFilterAndGenderControlsAtLargestTextWithUnfilteredAudit() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend",

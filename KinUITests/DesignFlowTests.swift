@@ -114,9 +114,9 @@ final class DesignFlowTests: XCTestCase {
                 XCTAssertEqual(withGrade.frame.minY, withoutGrade.frame.minY, accuracy: 2)
             }
             capture("Family index grades - " + label)
+            familyCard.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            XCTAssertTrue(app.navigationBars["Synthetic Index Parent"].waitForExistence(timeout: 5))
             if label == "standard" {
-                familyCard.tap()
-                XCTAssertTrue(app.navigationBars["Synthetic Index Parent"].waitForExistence(timeout: 5))
                 app.staticTexts["Synthetic Avery"].tap()
                 XCTAssertTrue(app.staticTexts["Approximately Kindergarten"].waitForExistence(timeout: 5))
                 capture("Profile estimated school grade")

@@ -285,11 +285,32 @@ final class KinUITests: XCTestCase {
         app.terminate(); app.launch()
         let youngRow = app.cells.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Synthetic Young"))
         XCTAssertEqual(youngRow.count,1); youngRow.element.tap()
-        app.buttons["Edit relationship with Synthetic Existing Parent"].tap(); app.buttons["Remove relationship"].tap()
-        app.alerts["Remove relationship?"].buttons["Cancel"].tap()
-        app.buttons["Remove relationship"].tap(); app.buttons.matching(identifier: "confirm-unlink").allElementsBoundByIndex.last!.tap()
-        XCTAssertFalse(app.buttons["Edit relationship with Synthetic Existing Parent"].exists)
-        XCTAssertTrue(app.staticTexts["Parent 3"].exists)
+        let oldParent = app.buttons["Edit relationship with Synthetic Existing Parent"]
+        let stepParent = app.staticTexts["Parent 3"]
+        let relationshipEditor = app.navigationBars["Edit relationship"]
+        let removeAlert = app.alerts["Remove relationship?"]
+        let remove = app.buttons["Remove relationship"]
+        oldParent.tap()
+        remove.tap()
+        removeAlert.buttons["Cancel"].tap()
+        XCTAssertTrue(removeAlert.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(remove.isHittable)
+        remove.tap()
+        // The native alert exposes nested button copies with the same identifier.
+        let confirm = removeAlert.buttons.matching(identifier: "confirm-unlink").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertTrue(confirm.isHittable)
+        confirm.tap()
+        requireDismissal(relationshipEditor, destination: stepParent)
+        XCTAssertTrue(oldParent.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(stepParent.exists)
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(youngRow.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(youngRow.count, 1); youngRow.element.tap()
+        XCTAssertTrue(stepParent.waitForExistence(timeout: 5))
+        XCTAssertFalse(oldParent.exists)
         app.navigationBars.buttons["People"].tap(); openAllPeople(app)
         XCTAssertTrue(app.staticTexts["Synthetic Existing Parent"].exists); XCTAssertTrue(app.staticTexts["Parent 3"].exists)
     }
