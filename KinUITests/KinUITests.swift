@@ -534,7 +534,11 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Synthetic Unlisted"].exists)
         XCTAssertFalse(app.staticTexts["Synthetic Named"].exists)
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        else { app.buttons["close"].tap() }
+        else {
+            let close = app.buttons.matching(NSPredicate(format: "label == %@ OR identifier == %@", "Close", "close")).firstMatch
+            XCTAssertTrue(close.exists)
+            close.tap()
+        }
         XCTAssertTrue(app.navigationBars["All people"].exists)
         XCTAssertTrue(app.buttons["people-menu"].exists)
     }
@@ -1008,8 +1012,9 @@ final class KinUITests: XCTestCase {
         selectSettledNativeContact(app,name: "John Appleseed")
         XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
         let friends = app.switches.matching(identifier: "contact-connection-friend")
-        XCTAssertEqual(friends.count,1)
-        let friend = friends.element
+        let friend = friends.firstMatch
+        reveal(friend, in: app, requireHittable: true)
+        XCTAssertEqual(friends.count, 1)
         revealPrecisely(friend,in: app)
         var previousFriendFrame = CGRect.null
         var friendStableSince = Date()

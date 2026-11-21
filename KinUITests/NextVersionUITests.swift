@@ -36,7 +36,9 @@ final class NextVersionUITests: XCTestCase {
     }
     @MainActor func testPeopleFilterAndGenderControlsAtLargestTextWithUnfilteredAudit() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-test-notebook",UUID().uuidString,"-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL","-UIAccessibilityBoldTextEnabled","YES"]
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+                               "-UIAccessibilityBoldTextEnabled", "YES"]
         app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
         let filter = app.buttons["category-filter"]

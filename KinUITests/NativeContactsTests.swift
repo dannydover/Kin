@@ -103,11 +103,16 @@ final class NativeContactsTests: XCTestCase {
             XCTAssertEqual(exactBirthday.label, "Birth information, Exact birthday")
             if isAdult {
                 let first = app.textFields["Imported first name (optional)"]
-                first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: name.count) + "Michael")
+                let trailingEdge = first.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
+                trailingEdge.tap()
+                first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: name.count) + "Michael")
+                XCTAssertEqual(first.value as? String, "Michael")
                 let gender = app.buttons["contact-gender-choice"]
                 XCTAssertEqual(gender.value as? String,"Male")
                 gender.tap(); app.buttons["Female"].tap()
-                first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: 7) + name)
+                trailingEdge.tap()
+                first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7) + name)
+                XCTAssertEqual(first.value as? String, name)
                 XCTAssertEqual(gender.value as? String,"Female")
             }
             if app.keyboards.firstMatch.exists {

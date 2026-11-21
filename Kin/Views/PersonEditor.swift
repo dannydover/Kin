@@ -130,8 +130,11 @@ struct PersonEditor: View {
                 draft.firstName = name.isEmpty ? nil : name
                 genderDefault.nameChanged(name, lookup: NameAssociations.bundled.gender)
                 draft.gender = genderDefault.value
-            }), prompt: Text("First name")).textContentType(.givenName).accessibilityLabel("First name (optional)")
-            TextField("Last name (optional)", text: Binding(get: { draft.lastName ?? "" }, set: { draft.lastName = $0.isEmpty ? nil : $0 }), prompt: Text("Last name")).textContentType(.familyName).accessibilityLabel("Last name (optional)")
+            }), prompt: Text("First name").foregroundStyle(KinTheme.secondary))
+                .textContentType(.givenName).accessibilityLabel("First name (optional)")
+            TextField("Last name (optional)", text: Binding(get: { draft.lastName ?? "" }, set: { draft.lastName = $0.isEmpty ? nil : $0 }),
+                      prompt: Text("Last name").foregroundStyle(KinTheme.secondary))
+                .textContentType(.familyName).accessibilityLabel("Last name (optional)")
             GenderChoice(value: draft.gender) { gender in genderDefault.choose(gender); draft.gender = gender }
         } header: { KinSectionHeading(text: "Name") } footer: {
             if isNew { Text("Names and gender are optional. A name-based gender suggestion can always be changed.") }
@@ -232,9 +235,7 @@ private struct BirthInformationRows: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         Group {
-            Picker("Birth information", selection: $birthKind) {
-                Text("Unknown").tag("unknown"); Text("Exact birthday").tag("exact"); Text("Estimated age").tag("estimated")
-            }.accessibilityIdentifier(accessibilityPrefix + "birth-information")
+            birthKindControl.accessibilityIdentifier(accessibilityPrefix + "birth-information")
             if birthKind == "exact" {
                 DatePicker("Birthday", selection: $exactDate, in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
                     .accessibilityIdentifier(accessibilityPrefix + "exact-birthday")
@@ -254,6 +255,44 @@ private struct BirthInformationRows: View {
                 DatePicker("As of", selection: $referenceDate, in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
                 Text("Estimated ages are marked with ~. Starting from the age and date you choose, Kin adds a year on the same date each year without guessing a birthday. School grades are a rough guide and may differ from the child’s actual grade.").font(.footnote)
             }
+        }
+    }
+
+    private var birthKindPicker: some View {
+        Picker("Birth information", selection: $birthKind) {
+            Text("Unknown").tag("unknown")
+            Text("Exact birthday").tag("exact")
+            Text("Estimated age").tag("estimated")
+        }
+    }
+
+    @ViewBuilder private var birthKindControl: some View {
+        if accessibilityPrefix == "contact-", typeSize.isAccessibilitySize {
+            Menu {
+                birthKindPicker
+            } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Birth information").foregroundStyle(KinTheme.text)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(birthKindTitle).fixedSize(horizontal: false, vertical: true)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption)
+                    }.foregroundStyle(KinTheme.accent)
+                }
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(Text("Birth information, \(Text(birthKindTitle))"))
+        } else {
+            birthKindPicker
+        }
+    }
+
+    private var birthKindTitle: LocalizedStringKey {
+        switch birthKind {
+        case "exact": "Exact birthday"
+        case "estimated": "Estimated age"
+        default: "Unknown"
         }
     }
 }
@@ -378,6 +417,7 @@ private struct ContactBirthInformationView: View {
                         Text("Contact birth information")
                             .font(.title2.bold()).foregroundStyle(KinTheme.text)
                             .fixedSize(horizontal: false, vertical: true)
+                            .background(KinTheme.background)
                             .accessibilityAddTraits(.isHeader)
                         KinSectionHeading(text: isNew ? "Edit details to save" : "Details to apply")
                     }.textCase(nil)
