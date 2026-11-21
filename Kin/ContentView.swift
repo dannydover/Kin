@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
     private var hits: [Person] { filter.results(store.people) }
+    private var showsCategoryFilter: Bool { filter.hasCategories(store.people) }
     private var isSearching: Bool { filter.isSearching }
     var body: some View {
         NavigationStack(path: $path) {
@@ -21,19 +22,37 @@ struct ContentView: View {
                     else { emptyState }
                 } else {
                     List(hits) { person in
+                        let sideInset: CGFloat = filter.scope == .all ? 20 : 16
+                        let family = FamilyIndexRow(person: person, store: store, today: today)
                         NavigationLink(value: person.id) {
-                            if filter.scope == .yours { FamilyIndexRow(person: person, store: store, today: today) }
-                            else { PersonRow(person: person, today: today, showsAge: false) }
+                            if filter.scope == .yours {
+                                HStack(spacing: 10) {
+                                    family
+                                    disclosureChevron
+                                }
+                            } else { allPeopleCard(person) }
                         }
-                        .listRowBackground(KinTheme.background)
-                        .listRowSeparatorTint(KinTheme.border)
+                        .accessibilityLabel(Text(verbatim: filter.scope == .yours ? family.spokenSummary : person.displayName))
+                        .navigationLinkIndicatorVisibility(.hidden)
+                        .listRowInsets(EdgeInsets(top: 5, leading: sideInset, bottom: 5, trailing: sideInset))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                     }.listStyle(.plain)
                 }
             }
             .kinForm().navigationTitle(filter.scope == .yours ? "People" : "All people").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $filter.query, isPresented: $filter.searching, prompt: filter.scope == .yours ? "Find people" : "Find all people")
-            .safeAreaInset(edge: .top, spacing: 0) { categoryFilter }
+            .searchable(text: $filter.query, isPresented: $filter.searching, placement: .navigationBarDrawer(displayMode: .always), prompt: filter.scope == .yours ? "Find people" : "Find all people")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if showsCategoryFilter { categoryFilter }
+            }
+            .onChange(of: showsCategoryFilter) { _, shown in
+                if !shown { filter.category = nil }
+            }
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if filter.scope == .yours { KinTitle(text: "Kin", size: 28).accessibilityAddTraits(.isHeader) }
+                    else { KinTitle(text: "All people", size: 19).accessibilityAddTraits(.isHeader) }
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button("People", systemImage: filter.scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
@@ -67,6 +86,24 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in today = Date() }
         }.notebookAvailability(store)
     }
+    private func allPeopleCard(_ person: Person) -> some View {
+        HStack(spacing: 12) {
+            PersonRow(person: person, today: today, showsAge: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            disclosureChevron
+        }
+        .padding(12)
+        .kinPanel()
+        .contentShape(Rectangle())
+    }
+
+    private var disclosureChevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(KinTheme.secondary)
+            .accessibilityHidden(true)
+    }
+
     private func switchScope(_ selection: PeopleFilterState.Scope) { filter.switchScope(selection) }
     private var categoryFilter: some View {
         Menu {
@@ -78,13 +115,16 @@ struct ContentView: View {
             }
         } label: {
             Label(filter.category?.rawValue.capitalized ?? "All", systemImage: "line.3.horizontal.decrease")
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .padding(.horizontal)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .kinPanel(radius: 22)
+                .frame(maxWidth: .infinity)
         }
         .accessibilityLabel("Category filter")
         .accessibilityValue(filter.category?.rawValue.capitalized ?? "All")
         .accessibilityIdentifier("category-filter")
-        .background(KinTheme.background)
+        .padding(.bottom, 6)
     }
     private var emptyCategory: some View {
         filteredEmptyState(title: Text("No people in this category"), image: "person.2",
@@ -154,11 +194,10 @@ struct ContentView: View {
         Button {
             filter.clearSearchAndFilters()
         } label: {
-            Text("Clear search and filters").fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            ConfirmationLabel(title: "Clear search and filters", fillsWidth: true)
+                .contentShape(Capsule())
         }
-        .buttonStyle(.borderedProminent).controlSize(.large)
-        .tint(KinTheme.accent).foregroundStyle(KinTheme.background)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("clear-search-and-filters")
         .accessibilityHint("Clears the search and category filter and returns to the People screen.")
     }
@@ -169,9 +208,11 @@ struct FamilyIndexRow: View {
     let store: KinStore
     let today: Date
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var previewAvatarSize = 40.0
-    @ScaledMetric(relativeTo: .subheadline) private var childCellMinimum = 150.0
+    @ScaledMetric(relativeTo: .body) private var adultSize = 40.0
+    @ScaledMetric(relativeTo: .body) private var childSize = 34.0
+    private let avatarTextSpacing: CGFloat = 12
     private var rules: AgeRules { AgeRules(calendar: .current) }
+    private let childPreviewLimit = 4
     private var children: [Person] {
         let ids = Set(store.parentLinks.filter { $0.parentID == person.id }.map(\.childID))
         return store.people.filter { ids.contains($0.id) }.sorted { $0.reference < $1.reference }
@@ -180,50 +221,83 @@ struct FamilyIndexRow: View {
         let ids = Set(store.partnerLinks.filter { ($0.firstID == person.id || $0.secondID == person.id) && $0.status == .current }.map { $0.other(than: person.id) })
         return store.people.filter { ids.contains($0.id) }.sorted { $0.reference < $1.reference }
     }
+    private var partnerSummary: String? {
+        guard !partners.isEmpty else { return nil }
+        return (partners.count == 1 ? "Partner: " : "Partners: ") + partners.map(\.displayName).joined(separator: ", ")
+    }
+
+    var spokenSummary: String {
+        var details = [person.displayName]
+        if let partnerSummary { details.append(partnerSummary) }
+        let children = children
+        if children.isEmpty, partnerSummary == nil { details.append("No children added yet") }
+        for child in children.prefix(childPreviewLimit) {
+            var preview = [child.displayName, spokenAgeOrGrade(rules.displayAge(for: child.birthday, on: today))]
+            if let grade = rules.grade(for: child.birthday, on: today) {
+                preview.append(spokenAgeOrGrade(grade))
+            }
+            details.append(preview.joined(separator: ", "))
+        }
+        if children.count > childPreviewLimit {
+            let remaining = children.count - childPreviewLimit
+            details.append(remaining == 1 ? "1 more child" : "\(remaining) more children")
+        }
+        return details.joined(separator: ". ")
+    }
+
     var body: some View {
-        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
-            PersonAvatar(person: person, today: today)
-            VStack(alignment: .leading, spacing: 10) {
-                Text(person.displayName).font(.headline).fontDesign(.serif).fixedSize(horizontal: false, vertical: true)
-                if children.isEmpty {
-                    Text(partners.isEmpty ? "No children added yet" : "With " + partners.map(\.displayName).joined(separator: ", "))
-                        .font(.subheadline).foregroundStyle(KinTheme.secondary).fixedSize(horizontal: false, vertical: true)
-                } else {
-                    LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible(), alignment: .leading)] : [GridItem(.adaptive(minimum: childCellMinimum), alignment: .leading)], alignment: .leading, spacing: 12) {
-                        ForEach(children.prefix(3)) { child in
-                            let unknownAge = rules.age(for: child.birthday, on: today) == nil
-                            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))) {
-                                PersonAvatar(person: child, today: today, size: previewAvatarSize)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(child.displayName).font(.subheadline).foregroundStyle(KinTheme.secondary)
-                                    Text(rules.displayAge(for: child.birthday, on: today)).font(.subheadline).foregroundStyle(KinTheme.secondary)
-                                        .lineLimit(unknownAge && !typeSize.isAccessibilitySize ? 1 : nil)
-                                        .fixedSize(horizontal: unknownAge && !typeSize.isAccessibilitySize, vertical: true)
-                                        .layoutPriority(1)
-                                    if let grade = rules.grade(for: child.birthday, on: today) {
-                                        Text("Approx. " + grade).font(.caption).foregroundStyle(KinTheme.secondary)
-                                    }
-                                }.fixedSize(horizontal: false, vertical: true)
-                            }.accessibilityElement(children: .combine)
-                                .accessibilityIdentifier("child-preview-" + child.id.uuidString)
-                        }
-                        if children.count > 3 { Text("+\(children.count - 3) more").font(.caption).foregroundStyle(KinTheme.secondary) }
+        VStack(alignment: .leading, spacing: 12) {
+            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: avatarTextSpacing))) {
+                PersonAvatar(person: person, today: today, size: adultSize)
+                VStack(alignment: .leading, spacing: 1) {
+                    KinTitle(text: person.displayName)
+                        .foregroundStyle(KinTheme.text)
+                        .background(KinTheme.surface)
+                    if !partners.isEmpty {
+                        Text((partners.count == 1 ? "Partner · " : "Partners · ") + partners.map(\.displayName).joined(separator: ", "))
+                            .font(.subheadline).foregroundStyle(KinTheme.secondary)
+                    } else if children.isEmpty {
+                        Text("No children added yet").font(.subheadline).foregroundStyle(KinTheme.secondary)
                     }
+                }.fixedSize(horizontal: false, vertical: true)
+            }
+            if !children.isEmpty {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .topLeading),
+                                         count: typeSize.isAccessibilitySize ? 1 : 2), alignment: .leading, spacing: 12) {
+                    ForEach(children.prefix(childPreviewLimit)) { child in
+                        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) :
+                            AnyLayout(HStackLayout(alignment: .top, spacing: avatarTextSpacing))) {
+                            PersonAvatar(person: child, today: today, size: childSize, childCircle: true)
+                                .frame(width: adultSize)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(child.displayName).font(.subheadline).foregroundStyle(KinTheme.secondary)
+                                KinTitle(text: rules.displayAge(for: child.birthday, on: today), size: 14)
+                                if let grade = rules.grade(for: child.birthday, on: today) {
+                                    SchoolGradeLabel(grade: grade).font(.caption).foregroundStyle(KinTheme.secondary)
+                                }
+                            }.fixedSize(horizontal: false, vertical: true)
+                        }.accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("child-preview-" + child.id.uuidString)
+                    }
+                    if children.count > childPreviewLimit { Text("+\(children.count - childPreviewLimit) more").font(.caption).foregroundStyle(KinTheme.secondary) }
                 }
             }
-        }.padding(.vertical, 16)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(13)
+        .kinPanel()
     }
 }
 struct PersonAvatar: View {
     let person: Person
     let today: Date
     var size: CGFloat = 48
+    var childCircle = false
     var body: some View {
-        if let age = AgeRules(calendar: .current).age(for: person.birthday, on: today), age < 18 {
-            ChildAvatar(stage: .forAge(age), gender: person.gender, size: size)
-        } else {
-            InitialAvatar(first: person.firstName ?? "?", last: person.lastName ?? "", photo: person.visiblePhoto(on: today), gender: person.gender, size: size)
-        }
+        let age = AgeRules(calendar: .current).age(for: person.birthday, on: today)
+        InitialAvatar(first: person.firstName ?? "", last: person.lastName ?? "",
+                      photo: person.visiblePhoto(on: today), gender: person.gender, size: size,
+                      isChild: childCircle || (age.map { $0 < 18 } ?? false))
     }
 }
 struct PersonRow: View {
@@ -235,7 +309,7 @@ struct PersonRow: View {
         (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))) {
             PersonAvatar(person: person, today: today)
             VStack(alignment: .leading, spacing: 5) {
-                Text(person.displayName).font(.headline).fontDesign(.serif)
+                KinTitle(text: person.displayName, size: 17)
                 if showsAge { Text(AgeRules(calendar: .current).displayAge(for: person.birthday, on: today)).font(.subheadline).foregroundStyle(KinTheme.secondary) }
             }
         }.padding(.vertical, 8)

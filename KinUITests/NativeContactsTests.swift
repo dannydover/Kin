@@ -98,13 +98,21 @@ final class NativeContactsTests: XCTestCase {
             XCTAssertTrue(card.waitForExistence(timeout: 10)); card.tap()
             XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts["This contact has a birthday with a year."].exists)
+            let exactBirthday = app.buttons["contact-birth-information"]
+            XCTAssertTrue(exactBirthday.exists)
+            XCTAssertEqual(exactBirthday.label, "Birth information, Exact birthday")
             if isAdult {
                 let first = app.textFields["Imported first name (optional)"]
-                first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: name.count) + "Michael")
+                let trailingEdge = first.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
+                trailingEdge.tap()
+                first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: name.count) + "Michael")
+                XCTAssertEqual(first.value as? String, "Michael")
                 let gender = app.buttons["contact-gender-choice"]
                 XCTAssertEqual(gender.value as? String,"Male")
                 gender.tap(); app.buttons["Female"].tap()
-                first.tap(); first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: 7) + name)
+                trailingEdge.tap()
+                first.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7) + name)
+                XCTAssertEqual(first.value as? String, name)
                 XCTAssertEqual(gender.value as? String,"Female")
             }
             if app.keyboards.firstMatch.exists {
@@ -129,13 +137,12 @@ final class NativeContactsTests: XCTestCase {
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = isAdult ? "Eligible Contacts preview - synthetic" : "Ineligible Contacts preview - synthetic"
             attachment.lifetime = .keepAlways; add(attachment)
-            let exactBirthday = app.buttons["contact-birth-information"]
-            for _ in 0..<8 { if exactBirthday.exists { break }; app.swipeUp() }
-            XCTAssertTrue(exactBirthday.exists)
-            XCTAssertEqual(exactBirthday.label, "Birth information, Exact birthday")
             app.buttons["contact-import"].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
-            if isAdult { XCTAssertTrue(app.staticTexts["Gender: Female"].exists) }
+            if isAdult {
+                XCTAssertTrue(app.staticTexts["Gender"].exists)
+                XCTAssertTrue(app.staticTexts["Female"].exists)
+            }
             let birthday = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",String(birthYear))).firstMatch
             XCTAssertTrue(birthday.waitForExistence(timeout: 5))
             app.terminate(); app.launch(); app.staticTexts[name].tap()

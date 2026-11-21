@@ -58,7 +58,15 @@ not establish that intermittent simulator or Friend behavior was fixed.
    only the exact Dev app group; it rejects shared and unexpected entitlements.
    `scripts/check-dev-app.py --require-signed` is a separate development-install
    check and intentionally requires a development profile with debugging enabled.
-5. Install the processed Kin Dev build via TestFlight and complete
+5. After upload, check the exact version and build in App Store Connect under
+   **TestFlight**. Verify that processing has completed, check for **Missing
+   Compliance**, and confirm that the build is available to the intended
+   internal testers. If **Missing Compliance** appears, tell the owner which
+   build needs an export compliance declaration. Leave the declaration to the
+   owner and recheck the status after they complete it. If App Store Connect
+   cannot be checked, report availability as unverified.
+
+   Install the available Kin Dev build via TestFlight and complete
    [Kin Dev manual QA](QA-NextRelease.md), including the required Friend-on,
    save and relaunch persistence check. Document the result against the exact
    build. Dev QA does not establish production Release signing, existing-data
@@ -74,3 +82,21 @@ not establish that intermittent simulator or Friend behavior was fixed.
 The retired hosted signing workflows must be absent from merged main before any
 later decision to delete their GitHub environment or secrets. This document does
 not authorize deleting them or change the required GitHub branch protections.
+
+## Kin 2.0 launch checklist
+
+- [x] **VoiceOver QA.** The owner reported passing the common-task pass using
+  VoiceOver alone on iPhone. Simulator tests also verify that the family-card
+  label includes each visible child's name, age, and grade when available.
+- [x] **Larger Text QA.** The owner accepted the existing automated coverage.
+  Local Xcode UI tests exercise search and filters, the person editor, the age
+  picker, relationships, and Contacts review at AX5. The dedicated populated
+  family-card and All people layout tests use AX1. GitHub's required check runs
+  simulator-free Core tests.
+- [x] **Dark Interface QA.** The owner reported that cold launch, sheet
+  transitions, and the native Contacts and Photos pickers stayed dark without
+  bright flashes while the iPhone was set to Light appearance.
+- [ ] **Publish iPhone accessibility labels.** After Kin 2.0 is live on the
+  App Store, select **VoiceOver**, **Larger Text**, and **Dark Interface** as
+  supported under App Store Connect → App Accessibility → iPhone, then publish
+  all three labels.

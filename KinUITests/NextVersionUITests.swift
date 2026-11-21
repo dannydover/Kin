@@ -28,14 +28,30 @@ final class NextVersionUITests: XCTestCase {
         replace(first,with: "Mike"); XCTAssertEqual(gender.value as? String,"Other")
         capture(app,"Offline default manually overridden - synthetic")
         app.buttons["Save"].tap(); XCTAssertTrue(app.navigationBars["Mike"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Gender: Other"].exists)
+        XCTAssertTrue(app.staticTexts["Gender"].exists)
+        XCTAssertTrue(app.staticTexts["Other"].exists)
         app.navigationBars.buttons["Edit"].tap()
         replace(first,with: "Michael"); XCTAssertEqual(gender.value as? String,"Other")
         app.buttons["Cancel"].tap(); XCTAssertTrue(app.navigationBars["Mike"].exists)
     }
+    @MainActor func testPeopleNameContrastAtLargestText() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+                               "-UIAccessibilityBoldTextEnabled", "YES"]
+        app.launch(); addTeardownBlock { app.terminate() }
+        let name = app.staticTexts["Synthetic Named"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        XCTAssertTrue(name.isHittable)
+        capture(app, "People name contrast at largest text - synthetic")
+        try app.performAccessibilityAudit(for: .contrast)
+    }
+
     @MainActor func testPeopleFilterAndGenderControlsAtLargestTextWithUnfilteredAudit() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--kin-test-notebook",UUID().uuidString,"-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL","-UIAccessibilityBoldTextEnabled","YES"]
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString, "--kin-ui-fixture", "named-friend",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+                               "-UIAccessibilityBoldTextEnabled", "YES"]
         app.launch(); addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.buttons["Add person"].waitForExistence(timeout: 10))
         let filter = app.buttons["category-filter"]

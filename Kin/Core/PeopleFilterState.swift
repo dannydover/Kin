@@ -10,6 +10,11 @@ struct PeopleFilterState: Equatable {
 
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
+    /// Search results and category selection must not hide the filter controls.
+    func hasCategories(_ people: [Person]) -> Bool {
+        people.contains { (scope == .all || $0.isListed) && !$0.connections.isEmpty }
+    }
+
     func results(_ people: [Person]) -> [Person] {
         PeopleIndex.results(people, query: query, includeUnlisted: scope == .all, category: category)
     }

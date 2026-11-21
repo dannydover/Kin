@@ -57,9 +57,7 @@ final class RelationshipActionTests: XCTestCase {
             if large { XCTAssertGreaterThan(actionFrame.height,44) }
             let addTitle = ["Add partner","Add child","Add parent"][index]
             let addAction = app.buttons[addTitle]
-            XCTAssertTrue(addAction.exists)
-            XCTAssertGreaterThanOrEqual(addAction.frame.height,44)
-            XCTAssertGreaterThanOrEqual(addAction.frame.width,44)
+            // At accessibility sizes the add action can be below the fold.
             if !large && index == 1 { XCTAssertTrue(addAction.isHittable, "Preview shows both related actions together") }
             #if targetEnvironment(simulator)
             if index == 1 {
@@ -93,6 +91,8 @@ final class RelationshipActionTests: XCTestCase {
                 start.press(forDuration: 0.1,thenDragTo: end)
             }
             XCTAssertTrue(addAction.isHittable)
+            XCTAssertGreaterThanOrEqual(addAction.frame.height,44)
+            XCTAssertGreaterThanOrEqual(addAction.frame.width,44)
             addAction.tap()
             XCTAssertTrue(app.navigationBars[addTitle].waitForExistence(timeout: 5))
             app.navigationBars[addTitle].buttons["Cancel"].tap()

@@ -51,12 +51,18 @@ final class IndexMembershipUITests: XCTestCase {
         app.buttons["Cancel"].tap(); XCTAssertTrue(app.staticTexts["Keep your people close."].exists)
         app.buttons["Add person"].tap(); first.tap(); first.typeText("Synthetic Source")
         app.buttons["Save"].doubleTap(); XCTAssertTrue(app.navigationBars["Synthetic Source"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["On main list"].exists)
         app.buttons["Add child"].tap(); app.buttons["Create new person"].tap()
         first.tap(); first.typeText("Synthetic Linked Child")
         XCTAssertEqual(inclusion(app).value as? String,"0")
         XCTAssertEqual(editorSwitchWrapper("Friend", in: app).value as? String,"0")
         app.buttons["Save"].doubleTap()
         XCTAssertTrue(app.buttons["Edit relationship with Synthetic Linked Child"].waitForExistence(timeout: 5))
+        app.staticTexts["Synthetic Linked Child"].tap()
+        XCTAssertTrue(app.navigationBars["Synthetic Linked Child"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Not on main list · available on the All people screen"].exists)
+        XCTAssertFalse(app.staticTexts["On main list"].exists)
+        app.navigationBars.buttons["Synthetic Source"].tap()
         app.navigationBars.buttons["People"].tap(); XCTAssertEqual(app.cells.count,1)
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap(); XCTAssertEqual(app.cells.count,2)
         app.terminate(); app.launch(); XCTAssertEqual(app.cells.count,1)
@@ -65,6 +71,8 @@ final class IndexMembershipUITests: XCTestCase {
     @MainActor func testCategoryFilterCombinesSearchKeepsUncategorizedAndPreservesSelectionAfterCancel() {
         let app = XCUIApplication(); launch(app)
         XCTAssertTrue(app.navigationBars["People"].exists)
+        let filter = app.buttons["category-filter"]
+        XCTAssertFalse(filter.exists)
         for (name, category) in [("Synthetic Unlabeled", ""), ("Synthetic Friend", "Friend"), ("Synthetic Family", "Family")] {
             app.buttons["Add person"].tap()
             let first = app.textFields["First name (optional)"]
@@ -73,9 +81,13 @@ final class IndexMembershipUITests: XCTestCase {
             app.buttons["Save"].tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
             app.navigationBars.buttons["People"].tap()
+            XCTAssertEqual(filter.exists, !category.isEmpty)
         }
         XCTAssertEqual(app.cells.count, 3)
-        app.buttons["category-filter"].tap(); app.buttons["Friend"].tap()
+        filter.tap()
+        XCTAssertTrue(app.buttons["All"].exists)
+        XCTAssertTrue(app.buttons["Family"].exists)
+        app.buttons["Friend"].tap()
         XCTAssertEqual(app.cells.count, 1)
         XCTAssertTrue(app.staticTexts["Synthetic Friend"].exists)
         let filtered = XCTAttachment(screenshot: app.screenshot())
@@ -207,6 +219,7 @@ final class IndexMembershipUITests: XCTestCase {
         app.launchArguments = ["--kin-preview","empty","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch(); addTeardownBlock { app.terminate() }
         let clear = app.buttons["clear-search-and-filters"]
+        XCTAssertFalse(app.buttons["category-filter"].exists)
         app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Alex Morgan")
         XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5))
         XCTAssertTrue(clear.isHittable); XCTAssertGreaterThanOrEqual(clear.frame.height,44)
@@ -222,8 +235,8 @@ final class IndexMembershipUITests: XCTestCase {
             var revealed = false
             for _ in 0..<24 {
                 // Native ScrollView accessibility bounds include obscured areas.
-                // Measure the actual exposed strip between the filter and footer.
-                let top = app.buttons["category-filter"].frame.maxY + 4
+                // Measure the exposed strip between search and the footer.
+                let top = max(content.frame.minY, app.searchFields.firstMatch.frame.maxY) + 4
                 let bottom = clear.frame.minY - 16
                 let viewport = CGRect(x: content.frame.minX,y: top,width: content.frame.width,height: bottom - top)
                 XCTAssertGreaterThan(viewport.height,44)
@@ -251,11 +264,7 @@ final class IndexMembershipUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Keep your people close."].exists)
         XCTAssertEqual(app.cells.count,0)
         XCTAssertFalse(clear.exists)
-        app.buttons["category-filter"].tap(); app.buttons["Friend"].tap()
-        XCTAssertTrue(clear.isHittable); clear.tap()
-        XCTAssertTrue(app.staticTexts["Keep your people close."].exists)
-        XCTAssertEqual(app.buttons["category-filter"].value as? String,"All")
-        XCTAssertEqual(app.cells.count,0)
+        XCTAssertFalse(app.buttons["category-filter"].exists)
     }
 
 }

@@ -55,6 +55,20 @@ import Testing
         #expect(allIDs == [hidden.id])
     }
 
+    @Test("Filter visibility follows the scope before search or category filtering")
+    func categoryVisibility() {
+        var hidden = Person(firstName: "Synthetic Hidden", connections: [.family])
+        hidden.isListed = false
+        let people = [Person(firstName: "Synthetic Unlabeled"), hidden]
+        var state = PeopleFilterState(query: "No matches", category: .friend)
+
+        #expect(!state.hasCategories([]))
+        #expect(!state.hasCategories(people))
+        state.scope = .all
+        #expect(state.results(people).isEmpty)
+        #expect(state.hasCategories(people))
+    }
+
     @Test("Whitespace-only search is not treated as a search")
     func whitespace() {
         var state = PeopleFilterState()
