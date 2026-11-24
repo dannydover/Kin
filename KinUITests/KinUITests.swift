@@ -229,6 +229,11 @@ final class KinUITests: XCTestCase {
         app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
         let birth = editorBirthInformation(app, expected: "Birth information, Unknown")
         birth.tap(); app.buttons["Estimated age"].tap()
+        XCTAssertTrue(app.navigationBars["Age in years"].waitForExistence(timeout: 5))
+        app.navigationBars["Age in years"].buttons["Cancel"].tap()
+        XCTAssertTrue(birth.label.contains("Unknown"))
+        birth.tap(); app.buttons["Estimated age"].tap()
+        XCTAssertTrue(app.navigationBars["Age in years"].waitForExistence(timeout: 5))
         chooseAge(app,value: 3); app.buttons["Save"].tap()
         XCTAssertFalse(app.buttons["Add child"].exists); XCTAssertFalse(app.buttons["Add partner"].exists)
         return app
@@ -883,7 +888,7 @@ final class KinUITests: XCTestCase {
             XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic No Birthday")
             let unknownBirth = editorBirthInformation(app, expected: "Birth information, Unknown")
             unknownBirth.tap(); app.buttons["Estimated age"].tap()
-            XCTAssertFalse(app.buttons["Save"].isEnabled)
+            XCTAssertTrue(app.navigationBars["Age in years"].waitForExistence(timeout: 5))
             chooseAge(app,value: 19)
             reveal(app.buttons["Add photo"],in: app)
             XCTAssertTrue(app.buttons["Add photo"].exists)
@@ -1307,7 +1312,9 @@ final class KinUITests: XCTestCase {
     }
     @MainActor private func chooseAge(_ app: XCUIApplication,value: Int,contact: Bool = false) {
         let button = app.buttons[(contact ? "contact-" : "") + "choose-estimated-age"]
-        reveal(button,in: app); button.tap()
+        if !app.navigationBars["Age in years"].exists {
+            reveal(button,in: app); button.tap()
+        }
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 5))
         app.pickerWheels.firstMatch.adjust(toPickerWheelValue: String(value))
         capture(app,"Native age wheel selecting " + String(value))

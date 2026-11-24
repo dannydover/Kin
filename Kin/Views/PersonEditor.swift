@@ -57,6 +57,7 @@ struct PersonEditor: View {
                 Section {
                     Button("Import from Contacts") { pendingContact = nil; pickingContact = true }
                 } footer: { Text("Choose a contact to copy their name and birthday. Kin only imports their photo when we can be sure they’re at least 18.") }
+                ChildParentsReview(relationship: relationship, people: store.people)
                 nameSection
                 ageSection
                 photoSection
@@ -230,62 +231,80 @@ private struct BirthInformationRows: View {
     @Binding var exactDate: Date
     @Binding var referenceDate: Date
     @Binding var estimatedAge: Int?
-    @State private var choosingAge = false
+    private enum Sheet: String, Identifiable {
+        case estimated, exact
+        var id: Self { self }
+    }
+    @State private var sheet: Sheet?
+    @State private var proposedDate = Date()
     var accessibilityPrefix = ""
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         Group {
-            birthKindControl.accessibilityIdentifier(accessibilityPrefix + "birth-information")
+            birthKindControl
+                .accessibilityIdentifier(accessibilityPrefix + "birth-information")
+                .sheet(item: $sheet) { route in
+                    switch route {
+                    case .estimated:
+                        EstimatedAgeWheel(age: estimatedAge) { selected in
+                            estimatedAge = selected
+                            birthKind = "estimated"
+                        }
+                        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(340)])
+                        .presentationDragIndicator(.visible)
+                    case .exact:
+                        NavigationStack {
+                            DatePicker("Birthday", selection: $proposedDate,
+                                       in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
+                                .datePickerStyle(.wheel)
+                                .navigationTitle("Birthday").navigationBarTitleDisplayMode(.inline)
+                                .toolbar {
+                                    SheetEditActions(cancel: { sheet = nil }, confirmTitle: "Done", confirm: {
+                                        exactDate = proposedDate
+                                        birthKind = "exact"
+                                        sheet = nil
+                                    })
+                                }
+                        }
+                    }
+                }
             if birthKind == "exact" {
-                DatePicker("Birthday", selection: $exactDate, in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
-                    .accessibilityIdentifier(accessibilityPrefix + "exact-birthday")
+                Button { openDate() } label: {
+                    LabeledContent("Birthday", value: CivilDate(exactDate, timeZone: CivilDate.pickerCalendar.timeZone).formatted())
+                }.accessibilityIdentifier(accessibilityPrefix + "exact-birthday")
             }
             if birthKind == "estimated" {
-                Button { choosingAge = true } label: {
+                Button { sheet = .estimated } label: {
                     LabeledContent("Age in years", value: estimatedAge.map(String.init) ?? "Choose age")
                 }.accessibilityLabel("Age in years")
                     .accessibilityValue(estimatedAge.map(String.init) ?? "Not chosen")
                     .accessibilityHint("Opens a scrollable age picker")
                     .accessibilityIdentifier(accessibilityPrefix + "choose-estimated-age")
-                    .sheet(isPresented: $choosingAge) {
-                        EstimatedAgeWheel(age: estimatedAge) { selected in estimatedAge = selected }
-                            .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(340)])
-                            .presentationDragIndicator(.visible)
-                    }
                 DatePicker("As of", selection: $referenceDate, in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
                 Text("Estimated ages are marked with ~. Starting from the age and date you choose, Kin adds a year on the same date each year without guessing a birthday. School grades are a rough guide and may differ from the child’s actual grade.").font(.footnote)
             }
         }
     }
 
-    private var birthKindPicker: some View {
-        Picker("Birth information", selection: $birthKind) {
-            Text("Unknown").tag("unknown")
-            Text("Exact birthday").tag("exact")
-            Text("Estimated age").tag("estimated")
-        }
+    private func openDate() {
+        proposedDate = exactDate
+        sheet = .exact
     }
 
-    @ViewBuilder private var birthKindControl: some View {
-        if accessibilityPrefix == "contact-", typeSize.isAccessibilitySize {
-            Menu {
-                birthKindPicker
-            } label: {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Birth information").foregroundStyle(KinTheme.text)
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(birthKindTitle).fixedSize(horizontal: false, vertical: true)
-                        Image(systemName: "chevron.up.chevron.down").font(.caption)
-                    }.foregroundStyle(KinTheme.accent)
+    private var birthKindControl: some View {
+        Menu {
+            Button("Unknown") { birthKind = "unknown" }
+            Button("Exact birthday") { openDate() }
+            Button("Estimated age") { sheet = .estimated }
+        } label: {
+            LabeledContent("Birth information") {
+                HStack {
+                    Text(birthKindTitle).fixedSize(horizontal: false, vertical: true)
+                    Image(systemName: "chevron.up.chevron.down").font(.caption)
                 }
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .accessibilityLabel(Text("Birth information, \(Text(birthKindTitle))"))
-        } else {
-            birthKindPicker
         }
+        .accessibilityLabel(Text("Birth information, \(Text(birthKindTitle))"))
     }
 
     private var birthKindTitle: LocalizedStringKey {
@@ -467,6 +486,7 @@ private struct ContactBirthInformationView: View {
                         else { FeatureHelp.newLinkedPerson }
                     }
                 }
+                ChildParentsReview(relationship: relationship, people: store.people)
                 if AgeRules(calendar: .current).allowsPhoto(birthday, on: Date()) && (isNew || needsPhotoConfirmation) {
                     Section {
                         Toggle("Include eligible Contacts photo", isOn: $includePhoto)

@@ -51,4 +51,4 @@ The outlined K uses Libre Baskerville at weight 700, from the
 Core Text created the outline directly from the project-local variable font at
 that weight; no font is installed or required at runtime. The font's
 [SIL Open Font License](FontLicense.md) and copyright notice are retained.
-The in-app notebook illustration/logo is separate from these app-icon resources.
+The About screen uses the same approved flat production artwork.
