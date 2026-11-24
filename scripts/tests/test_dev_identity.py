@@ -64,8 +64,8 @@ class DevIdentityTests(unittest.TestCase):
         self.assertEqual(ids, {'com.intriguingideas.Kin.dev', 'com.intriguingideas.Kin.dev.tests', 'com.intriguingideas.Kin.dev.uitests'})
         app = next(c for c in configs if c.get('PRODUCT_BUNDLE_IDENTIFIER') == 'com.intriguingideas.Kin.dev')
         self.assertEqual(app['INFOPLIST_KEY_CFBundleDisplayName'], 'Kin Dev')
-        self.assertEqual(app['MARKETING_VERSION'], '2.0.0')
-        self.assertEqual(app['CURRENT_PROJECT_VERSION'], '11')
+        self.assertEqual(app['MARKETING_VERSION'], '2.1.0')
+        self.assertEqual(app['CURRENT_PROJECT_VERSION'], '12')
         self.assertEqual(app['ASSETCATALOG_COMPILER_APPICON_NAME'], 'AppIconDev')
         self.assertEqual(app['CODE_SIGN_ENTITLEMENTS'], 'Development/KinDev.entitlements')
         import plistlib
