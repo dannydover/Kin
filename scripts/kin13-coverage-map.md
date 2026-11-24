@@ -96,12 +96,13 @@ The shared native-search helper's failure-only diagnostic records the last obser
 
 ### Relationship chooser UI assertion inventory
 
-All four chooser tests remain required. The existing `ExistingPersonChoicesTests` can validate choice data and identity independently; it does not validate any of the following rendered or navigation behavior.
+All five chooser tests remain required. The existing `ExistingPersonChoicesTests` can validate choice data and identity independently; it does not validate any of the following rendered or navigation behavior.
 
 | Existing assertion | Required UI owner |
 |---|---|
 | Parent, child and partner routes place relationship details after the link action, start without a hittable search field or keyboard, show a selectable person, and navigate to one saved relationship and the same person's edit control | `testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` |
 | Duplicate names display distinct notebook references; empty search has no choices and clearing it restores them; Back and Cancel retain Step detail without saving; saving the selected identity leads to one matching relationship and edit control, with five people in All people | `testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` |
+| A current partner is proposed as the other parent, their recorded child ranks first, cancel preserves the graph, and saving keeps both parents once | `testLinkCurrentPartnersChildReviewsBothParentsBeforeSaving` |
 | Empty chooser has no selectable people, Back preserves Former partner status, and Cancel creates no relationship | `testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` |
 | Synthetic screenshots capture options, selectable person, empty search and the accessibility-size chooser; the test also checks the synthetic fixture and key controls | `testSyntheticRelationshipReviewScreenshots` |
 
@@ -320,6 +321,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `RelationshipActionTests.testSharedActionAuditAtLargestSize` | app UI | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` | app UI, integration, unit | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` | app UI, integration, unit | Retain; assertions mapped above. |
+| `RelationshipChooserTests.testLinkCurrentPartnersChildReviewsBothParentsBeforeSaving` | app UI, unit | Covers reviewed parent identities, ranked suggestions, cancellation and confirmed links. |
 | `RelationshipChooserTests.testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` | app UI, integration | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testSyntheticRelationshipReviewScreenshots` | app UI, integration | Retain; assertions mapped above. |
 | `SyntheticContactsCleanupTests.testOwnedFixtureCleanupHandlesEmptyPartialAndFailures` | integration | Retain; assertions mapped above. |

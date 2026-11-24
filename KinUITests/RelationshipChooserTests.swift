@@ -95,6 +95,41 @@ final class RelationshipChooserTests: XCTestCase {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
         XCTAssertEqual(app.cells.count,5)
     }
+    @MainActor func testLinkCurrentPartnersChildReviewsBothParentsBeforeSaving() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-preview", "index-alignment"]
+        app.launch()
+        defer { app.terminate() }
+        let source = "Synthetic Index Parent", partner = "Synthetic Partner", child = "Synthetic Avery"
+        XCTAssertTrue(app.staticTexts[source].waitForExistence(timeout: 10))
+        app.staticTexts[source].tap()
+        app.staticTexts[partner].tap()
+        app.buttons["Add child"].tap()
+        let other = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Other parent")).firstMatch
+        XCTAssertTrue(other.waitForExistence(timeout: 5))
+        XCTAssertTrue(other.label.contains(source) || (other.value as? String)?.contains(source) == true)
+        chooser(app)
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "existing-person-"))
+        XCTAssertEqual(rows.firstMatch.label, child)
+        app.buttons[child].tap()
+        let review = app.navigationBars["Add relationship"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        let secondary = app.descendants(matching: .any).matching(identifier: "relationship-other-parent").firstMatch
+        XCTAssertTrue(secondary.label.contains(source))
+        review.buttons["Cancel"].tap()
+        back(app, to: "Add child")
+        app.navigationBars["Add child"].buttons["Cancel"].tap()
+        XCTAssertFalse(app.buttons["Edit relationship with " + child].exists)
+        app.buttons["Add child"].tap()
+        chooser(app)
+        app.buttons[child].tap()
+        review.buttons["Save"].tap()
+        XCTAssertTrue(app.buttons["Edit relationship with " + child].waitForExistence(timeout: 5))
+        app.staticTexts[child].tap()
+        XCTAssertEqual(app.buttons.matching(identifier: "Edit relationship with " + source).count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "Edit relationship with " + partner).count, 1)
+    }
+
     @MainActor func testEmptyChooserAndPartnerDetailsSurviveBackAndCancel() {
         let app = XCUIApplication(); addTeardownBlock { app.terminate() }
         app.launchArguments = ["--kin-preview","relationships-empty"]; app.launch()
