@@ -1,5 +1,6 @@
 """Guard dev identity isolation and the frozen production configuration."""
 import json
+import plistlib
 from pathlib import Path
 import subprocess
 import unittest
@@ -35,6 +36,7 @@ class DevIdentityTests(unittest.TestCase):
                 expected = json.loads(json.dumps(value))
                 expected['buildSettings']['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'Kin'
                 # Deliberate next-release metadata; all other production settings stay frozen.
+                expected['buildSettings']['INFOPLIST_FILE'] = 'Development/Kin-Info.plist'
                 expected['buildSettings']['MARKETING_VERSION'] = '2.1.0'
                 expected['buildSettings']['CURRENT_PROJECT_VERSION'] = '12'
                 self.assertEqual(current[key], expected, key)
@@ -56,6 +58,11 @@ class DevIdentityTests(unittest.TestCase):
             return source.split('private static let model:', 1)[1].split('/// A supplied SQLite URL', 1)[0]
         self.assertEqual(schema(current_store), schema(original_store))
 
+    def test_production_plist_only_adds_the_approved_export_declaration(self):
+        info = plistlib.loads((ROOT / 'Development/Kin-Info.plist').read_bytes())
+        self.assertEqual(set(info), {'ITSAppUsesNonExemptEncryption'})
+        self.assertIs(info['ITSAppUsesNonExemptEncryption'], False)
+
     def test_dev_configuration(self):
         objects = project((ROOT / 'Kin.xcodeproj/project.pbxproj').read_bytes())
         configs = [x['buildSettings'] for x in objects.values() if x.get('isa') == 'XCBuildConfiguration' and x.get('name') == 'Dev']
@@ -68,7 +75,6 @@ class DevIdentityTests(unittest.TestCase):
         self.assertEqual(app['CURRENT_PROJECT_VERSION'], '13')
         self.assertEqual(app['ASSETCATALOG_COMPILER_APPICON_NAME'], 'AppIconDev')
         self.assertEqual(app['CODE_SIGN_ENTITLEMENTS'], 'Development/KinDev.entitlements')
-        import plistlib
         self.assertEqual(plistlib.loads((ROOT / app['CODE_SIGN_ENTITLEMENTS']).read_bytes()), {})
         info = plistlib.loads((ROOT / app['INFOPLIST_FILE']).read_bytes())
         self.assertIs(info['ITSAppUsesNonExemptEncryption'], False)
@@ -87,7 +93,6 @@ class DevIdentityTests(unittest.TestCase):
 class CompiledIdentityTests(unittest.TestCase):
     def test_install_guard_rejects_production_identity_and_shared_capabilities(self):
         import importlib.util
-        import plistlib
         import tempfile
         from unittest.mock import patch
         spec = importlib.util.spec_from_file_location('check_dev_app', ROOT / 'scripts/check-dev-app.py')
