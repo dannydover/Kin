@@ -96,12 +96,13 @@ The shared native-search helper's failure-only diagnostic records the last obser
 
 ### Relationship chooser UI assertion inventory
 
-All four chooser tests remain required. The existing `ExistingPersonChoicesTests` can validate choice data and identity independently; it does not validate any of the following rendered or navigation behavior.
+All five chooser tests remain required. The existing `ExistingPersonChoicesTests` can validate choice data and identity independently; it does not validate any of the following rendered or navigation behavior.
 
 | Existing assertion | Required UI owner |
 |---|---|
 | Parent, child and partner routes place relationship details after the link action, start without a hittable search field or keyboard, show a selectable person, and navigate to one saved relationship and the same person's edit control | `testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` |
 | Duplicate names display distinct notebook references; empty search has no choices and clearing it restores them; Back and Cancel retain Step detail without saving; saving the selected identity leads to one matching relationship and edit control, with five people in All people | `testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` |
+| A current partner is proposed as the other parent, their recorded child ranks first, cancel preserves the graph, and saving keeps both parents once | `testLinkCurrentPartnersChildReviewsBothParentsBeforeSaving` |
 | Empty chooser has no selectable people, Back preserves Former partner status, and Cancel creates no relationship | `testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` |
 | Synthetic screenshots capture options, selectable person, empty search and the accessibility-size chooser; the test also checks the synthetic fixture and key controls | `testSyntheticRelationshipReviewScreenshots` |
 
@@ -238,6 +239,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `DeleteAllPeopleUITests.testCandidateDeletionPersistsForListedAndHiddenPeople` | app UI, integration | Passed in 41277476779 and 41323390261; compound original retained. |
 | `DeleteAllPeopleUITests.testEmptyDeletionAtLargestTextHasSafeDisabledActionAndCancel` | app UI, integration | Retain; assertions mapped above. |
 | `DeleteAllPeopleUITests.testFailedDeletionRetainsPeopleAndNeverShowsSuccess` | app UI, integration | Retain; assertions mapped above. |
+| `ExistingContactPreservationUITests.testExactBirthdayWheelInEditorAndContactsAtBothTextSizes` | app UI | Checks wheel layout and staged birthday edits in manual and Contacts review at standard and maximum text. |
 | `ExistingContactPreservationUITests.testExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | native, app UI, integration | Replaced by the synthetic review matrix and payload-conversion test above; validate the migrated head. Real picker journeys remain required. |
 | `ExistingContactPreservationUITests.testNewContactReviewShowsAndSavesProposedDetails` | app UI, rendered layout | Verifies prefilled editable details, no prior draft summary, missing and yearless birthdays, cancel, and a full birthday and edited name saved from the review. |
 | `ExistingContactPreservationUITests.testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview` | app UI, integration | Passed in runs 41271020900, 41273073951 and migrated-head 41275059980; remains required. The latter full run failed other tests. |
@@ -278,6 +280,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testSharedChildReuseAndRenameAcrossBothParents` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAllPeopleOpensProfilesAndReturnsToSameIndex` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
+| `KinUITests.testEmptyPeopleAddActionOpensEditorAndCancels` | app UI | The labeled empty People action has a 44-point tap target and opens the person editor; Cancel returns to the empty notebook. |
 | `KinUITests.testIllustratedEmptyStateMenuAndSearch` | app UI, unit | Retains real creation, empty state, menu/About, unlisting, All people, no-match search and search close. |
 | `KinUITests.testUnlistedPeopleMenuReturnAndRelaunch` | app UI, unit, isolated Friend fixture | Retains All people → People menu action, empty main list and relaunch assertions. |
 | `KinUITests.testBlankNameEditsCancelAndLaterNamingPreserveEntry` | app UI, integration | Retain; assertions mapped above. |
@@ -320,6 +323,8 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `RelationshipActionTests.testSharedActionAuditAtLargestSize` | app UI | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` | app UI, integration, unit | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` | app UI, integration, unit | Retain; assertions mapped above. |
+| `RelationshipChooserTests.testManualAndContactsChildReviewShowOnlyExplicitParentage` | app UI | Checks both parent rows with unspecified and step parentage through manual entry and Contacts review. |
+| `RelationshipChooserTests.testLinkCurrentPartnersChildReviewsBothParentsBeforeSaving` | app UI, unit | Covers reviewed parent identities, ranked suggestions, cancellation and confirmed links. |
 | `RelationshipChooserTests.testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` | app UI, integration | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testSyntheticRelationshipReviewScreenshots` | app UI, integration | Retain; assertions mapped above. |
 | `SyntheticContactsCleanupTests.testOwnedFixtureCleanupHandlesEmptyPartialAndFailures` | integration | Retain; assertions mapped above. |

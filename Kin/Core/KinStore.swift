@@ -4,7 +4,7 @@ import Observation
 
 enum NewRelationship: Equatable {
     case parent(of: UUID, parentage: Parentage)
-    case child(of: UUID, parentage: Parentage)
+    case child(of: UUID, parentage: Parentage, otherParentID: UUID? = nil)
     case partner(of: UUID, status: PartnerStatus)
 }
 
@@ -256,6 +256,12 @@ enum NewRelationship: Equatable {
                     confirmPhotoRemoval: Bool = false, relationship: NewRelationship? = nil) throws {
         try requireAccess()
         var value = draft
+        func clean(_ text: String?) throws -> String? {
+            let text = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard text.count <= 200 else { throw KinError.invalidName }
+            return text.isEmpty ? nil : text
+        }
+        value.firstName = try clean(value.firstName); value.lastName = try clean(value.lastName)
         let old = people.first { $0.id == draft.id }
         value.isListed = draft.indexInclusion ?? old?.isListed ?? draft.isListed
         guard old != nil || draft.revision == 0 else { throw KinError.missingPerson }
@@ -270,8 +276,11 @@ enum NewRelationship: Equatable {
                     switch relationship {
                     case .parent(let id, let kind):
                         guard parentLinks.contains(where: { $0.parentID == draft.id && $0.childID == id && $0.parentage == kind }) else { throw KinError.staleEdit }
-                    case .child(let id, let kind):
+                    case .child(let id, let kind, let otherID):
                         guard parentLinks.contains(where: { $0.parentID == id && $0.childID == draft.id && $0.parentage == kind }) else { throw KinError.staleEdit }
+                        if let otherID {
+                            guard parentLinks.contains(where: { $0.parentID == otherID && $0.childID == draft.id && $0.parentage == .unspecified }) else { throw KinError.staleEdit }
+                        }
                     case .partner(let id, let status):
                         guard partnerLinks.contains(where: { Set([$0.firstID, $0.secondID]) == Set([id, draft.id]) && $0.status == status }) else { throw KinError.staleEdit }
                     }
@@ -280,12 +289,6 @@ enum NewRelationship: Equatable {
             }
             value.reference = old.reference; value.unnamedRole = old.unnamedRole
         }
-        func clean(_ text: String?) throws -> String? {
-            let text = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard text.count <= 200 else { throw KinError.invalidName }
-            return text.isEmpty ? nil : text
-        }
-        value.firstName = try clean(value.firstName); value.lastName = try clean(value.lastName)
         let rules = AgeRules(calendar: calendar)
         try rules.validate(value.birthday, on: today)
         if !rules.allowsPhoto(value.birthday, on: today) {
@@ -295,20 +298,25 @@ enum NewRelationship: Equatable {
             }
             guard value.photo == nil else { throw KinError.photoNotAllowed }
         }
-        var parent: ParentLink?, partner: PartnerLink?
+        var parents: [ParentLink] = [], partner: PartnerLink?
         if let relationship {
             switch relationship {
             case .parent(let id, let kind):
-                _ = try person(id); parent = ParentLink(parentID: value.id, childID: id, parentage: kind)
-                try validateParent(parent!, against: parentLinks)
-            case .child(let id, let kind):
-                _ = try person(id); parent = ParentLink(parentID: id, childID: value.id, parentage: kind)
-                try validateParent(parent!, against: parentLinks)
+                _ = try person(id)
+                parents = [ParentLink(parentID: value.id, childID: id, parentage: kind)]
+            case .child(let id, let kind, let otherID):
+                _ = try person(id)
+                parents = [ParentLink(parentID: id, childID: value.id, parentage: kind)]
+                if let otherID {
+                    _ = try person(otherID)
+                    parents.append(ParentLink(parentID: otherID, childID: value.id))
+                }
             case .partner(let id, let status):
                 _ = try person(id); partner = PartnerLink(firstID: id, secondID: value.id, status: status)
                 try validatePartner(partner!, against: partnerLinks)
             }
         }
+        try validateNewParents(parents)
         try transaction {
             if old == nil {
                 let state = try records("NotebookState").first ?? NSEntityDescription.insertNewObject(forEntityName: "NotebookState", into: context)
@@ -321,11 +329,37 @@ enum NewRelationship: Equatable {
             let object = try record(value.id, "PersonRecord") ?? NSEntityDescription.insertNewObject(forEntityName: "PersonRecord", into: context)
             var header = value; header.photo = nil
             try encode(header, id: value.id, into: object); object.setValue(value.photo, forKey: "photo")
-            if let parent { try writeParent(parent) }
+            for parent in parents { try writeParent(parent) }
             if let partner { try writePartner(partner) }
         }
     }
     private static let stateID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
+    private func validateNewParents(_ proposed: [ParentLink]) throws {
+        var graph = parentLinks
+        for link in proposed {
+            guard !graph.contains(where: { $0.id == link.id }) else { throw KinError.invalidLink }
+            try validateParent(link, against: graph)
+            graph.append(link)
+        }
+    }
+
+    /// Review retains edge identities. An existing other-parent edge keeps its original type.
+    func addChild(_ primary: ParentLink, other: ParentLink?) throws {
+        let reviewed = [primary, other].compactMap { $0 }
+        guard other == nil || (other?.childID == primary.childID && other?.parentID != primary.parentID)
+        else { throw KinError.invalidLink }
+        for link in reviewed {
+            _ = try person(link.parentID)
+            _ = try person(link.childID)
+        }
+        let additions = reviewed.filter { !parentLinks.contains($0) }
+        try validateNewParents(additions)
+        guard !additions.isEmpty else { return }
+        try transaction {
+            for link in additions { try writeParent(link) }
+        }
+    }
+
     func saveParentLink(_ link: ParentLink) throws {
         _ = try person(link.parentID); _ = try person(link.childID)
         try validateParent(link, against: parentLinks.filter { $0.id != link.id })

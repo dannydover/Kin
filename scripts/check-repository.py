@@ -17,7 +17,7 @@ APPROVED_PNG = {
     'Kin/Assets.xcassets/AppIconDev.appiconset/AppIcon.png': '0b3fbe542ed96d40a4126fd46f480ed003bf5506351f57732ab12b5dbaaa2bfa',
     # Approved outlined G-2 two-disc production artwork; no contact photos or screenshots.
     'Kin/Assets.xcassets/AppIcon.appiconset/AppIcon.png': '9d5da6510dcb2ce50990f852e3879efe97f041ebf235dfc3a2d480baf9a931c5',
-    'Kin/Assets.xcassets/KinLogo.imageset/KinLogo.png': '0ddf69cc402573ea9abd38f78c76bac5fbdf47732707679bce4347c91e00fa52',
+    'Kin/Assets.xcassets/KinLogo.imageset/KinLogo.png': '9d5da6510dcb2ce50990f852e3879efe97f041ebf235dfc3a2d480baf9a931c5',
 }
 # Exact reviewed font used to outline the original Kin icon.
 APPROVED_FONT = {

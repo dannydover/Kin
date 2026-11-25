@@ -111,6 +111,68 @@ import Testing
         #expect(store.parentLinks.first?.parentID == (addingParent ? child.id : parent.id))
         #expect(store.parentLinks.first?.childID == (addingParent ? parent.id : child.id))
     }
+    @Test("Two-parent save is atomic across failure, reopen and retry", arguments: [false, true], [false, true])
+    func twoParents(afterCommit: Bool, existingChild: Bool) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let failure = SaveFailure()
+        let store = try KinStore(storeURL: directory.appendingPathComponent("family.sqlite"), saveContext: { context in
+            if failure.fail && !afterCommit { throw CocoaError(.fileWriteNoPermission) }
+            try context.save()
+            if failure.fail { throw CocoaError(.fileReadNoPermission) }
+        })
+        defer { try? store.close() }
+        let source = Person(), other = Person(), child = Person(firstName: " Synthetic ")
+        try store.savePerson(source)
+        try store.savePerson(other)
+        if existingChild { try store.savePerson(child) }
+        let primary = ParentLink(parentID: source.id, childID: child.id, parentage: .adoptive)
+        let secondary = ParentLink(parentID: other.id, childID: child.id)
+        func save() throws {
+            if existingChild { try store.addChild(primary, other: secondary) }
+            else { try store.savePerson(child, relationship: .child(of: source.id, parentage: .adoptive, otherParentID: other.id)) }
+        }
+        failure.fail = true
+        #expect(throws: (any Error).self) { try save() }
+        failure.fail = false
+        try store.resume()
+        #expect(store.parentLinks.count == (afterCommit ? 2 : 0))
+        #expect(store.people.count == (afterCommit || existingChild ? 3 : 2))
+        try save()
+        try save()
+        try store.reload()
+        #expect(store.people.count == 3 && store.parentLinks.count == 2)
+        #expect(store.parentLinks.contains { $0.parentID == source.id && $0.childID == child.id && $0.parentage == .adoptive })
+        #expect(store.parentLinks.contains { $0.parentID == other.id && $0.childID == child.id && $0.parentage == .unspecified })
+    }
+
+    @Test("Both edges must validate, and a recorded other-parent type is preserved")
+    func conflictingParents() throws {
+        let store = try KinStore(inMemory: true)
+        defer { try? store.close() }
+        let source = Person(), other = Person(), child = Person()
+        for person in [source, other, child] { try store.savePerson(person) }
+        let primary = ParentLink(parentID: source.id, childID: child.id)
+        let secondary = ParentLink(parentID: other.id, childID: child.id, parentage: .step)
+        let reverse = ParentLink(parentID: child.id, childID: other.id)
+        try store.saveParentLink(reverse)
+        #expect(throws: KinError.cycle) { try store.addChild(primary, other: secondary) }
+        #expect(store.parentLinks == [reverse])
+        try store.unlinkParent(reverse.id)
+        try store.saveParentLink(secondary)
+        let conflict = ParentLink(parentID: other.id, childID: child.id)
+        #expect(throws: KinError.invalidLink) { try store.addChild(primary, other: conflict) }
+        #expect(store.parentLinks == [secondary])
+        try store.addChild(primary, other: secondary)
+        #expect(store.parentLinks.contains(secondary) && store.parentLinks.count == 2)
+        let missing = UUID()
+        for relationship in [NewRelationship.child(of: missing, parentage: .step, otherParentID: other.id),
+                             .child(of: source.id, parentage: .step, otherParentID: missing)] {
+            #expect(throws: KinError.missingPerson) { try store.savePerson(Person(), relationship: relationship) }
+        }
+        #expect(store.people.count == 3 && store.parentLinks.count == 2)
+    }
+
     @Test("Compatible corrupt person payload is rejected before opening or modifying source files", arguments: [Int.min,-1,121,Int.max])
     func corruptPayload(age: Int) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -35,6 +35,27 @@ import Testing
         #expect(!ExistingPersonChoices.needsReference(for: source,in: choices))
         #expect(ExistingPersonChoices.results([first,second,source],sourceID: source.id,query: "Alex").map(\.id) == choices.map(\.id))
     }
+    @Test("Rank current partners’ recorded children before whole-surname matches while keeping everyone searchable")
+    func childSuggestions() {
+        let source = Person(firstName: "Source", lastName: "Vale-Smith")
+        let a = Person(firstName: "Partner A"), b = Person(firstName: "Partner B"), past = Person(firstName: "Former")
+        let z = Person(firstName: "Zed", lastName: "Vale-Smith"), y = Person(firstName: "Yara")
+        let match = Person(firstName: "Xan", lastName: "vále-smith"), unrelated = Person(firstName: "Al", lastName: "Smith")
+        let people = [source, a, b, past, z, y, match, unrelated]
+        let partners = [PartnerLink(firstID: a.id, secondID: source.id, status: .current),
+                        PartnerLink(firstID: source.id, secondID: b.id, status: .current),
+                        PartnerLink(firstID: source.id, secondID: past.id, status: .former)]
+        let parents = [ParentLink(parentID: a.id, childID: z.id), ParentLink(parentID: b.id, childID: y.id),
+                       ParentLink(parentID: past.id, childID: unrelated.id)]
+        func choices(_ query: String) -> [UUID] {
+            ExistingPersonChoices.children(people, sourceID: source.id, query: query, partners: partners, parents: parents).map(\.id)
+        }
+        #expect(Array(choices("").prefix(3)) == [y.id, z.id, match.id])
+        #expect(choices("").count == people.count - 1)
+        #expect(choices("Smith") == [z.id, match.id, unrelated.id])
+        #expect(choices("Yara") == [y.id])
+        #expect(choices("absent").isEmpty)
+    }
     @Test("Clearing an empty search restores both duplicate choices without selecting the source")
     func emptySearchResetPreservesDuplicateIdentity() {
         let source = person("Alex Example", reference: 1, listed: true)

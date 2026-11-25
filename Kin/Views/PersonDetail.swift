@@ -205,16 +205,38 @@ struct AddRelationshipView: View {
     @State private var parentage: Parentage = .unspecified
     @State private var status: PartnerStatus = .current
     @Environment(\.dismiss) private var dismiss
+    @State private var otherParentID: UUID?
+
+    init(store: KinStore, sourceID: UUID, kind: AddRelationshipKind) {
+        self.store = store
+        self.sourceID = sourceID
+        self.kind = kind
+        let partners = ExistingPersonChoices.currentPartners(of: sourceID, in: store.partnerLinks)
+        _otherParentID = State(initialValue: partners.count == 1 ? partners.first : nil)
+    }
+
     private var relationship: NewRelationship {
         switch kind {
         case .parent: .parent(of: sourceID, parentage: parentage)
-        case .child: .child(of: sourceID, parentage: parentage)
+        case .child: .child(of: sourceID, parentage: parentage, otherParentID: otherParentID)
         case .partner: .partner(of: sourceID, status: status)
         }
     }
     var body: some View {
         List {
             Group {
+                if kind == .child {
+                    Section {
+                        Picker("Other parent", selection: $otherParentID) {
+                            Text("No other parent").tag(nil as UUID?)
+                            ForEach(ExistingPersonChoices.results(store.people, sourceID: sourceID, query: "")) { person in
+                                Text(reviewName(person, in: store.people)).tag(Optional(person.id))
+                            }
+                        }.pickerStyle(.navigationLink)
+                    } footer: {
+                        Text("Choose another parent to link when you save. A new other-parent link has unspecified parentage.")
+                    }
+                }
                 Section {
                     NavigationLink("Create new person") { PersonEditor(store: store, relationship: relationship, onSaved: { dismiss() }) }
                 } footer: { FeatureHelp.newLinkedPerson.accessibilityIdentifier("linked-person-guidance") }
@@ -231,6 +253,35 @@ struct AddRelationshipView: View {
     }
 }
 
+private func reviewName(_ person: Person, in people: [Person]) -> String {
+    ExistingPersonChoices.needsReference(for: person, in: people)
+        ? "\(person.displayName) · Notebook reference \(person.reference)" : person.displayName
+}
+
+private func parentReviewRole(_ role: String, parentage: Parentage) -> String {
+    parentage == .unspecified ? role : "\(role) (\(parentage.rawValue))"
+}
+
+struct ChildParentsReview: View {
+    let relationship: NewRelationship?
+    let people: [Person]
+
+    var body: some View {
+        if case .child(let sourceID, let parentage, let otherID) = relationship {
+            Section("Parents") {
+                LabeledContent(parentReviewRole("Parent", parentage: parentage), value: name(sourceID))
+                    .accessibilityIdentifier("review-parent")
+                LabeledContent("Other parent", value: otherID.map(name) ?? "None")
+                    .accessibilityIdentifier("review-other-parent")
+            }
+        }
+    }
+
+    private func name(_ id: UUID) -> String {
+        people.first(where: { $0.id == id }).map { reviewName($0, in: people) } ?? "Person unavailable"
+    }
+}
+
 /// The source screen retains its optional details while this chooser owns search
 /// and navigation only. Selecting never writes a person or relationship.
 struct ExistingPersonPicker: View {
@@ -241,7 +292,13 @@ struct ExistingPersonPicker: View {
     @State private var query = ""
     @State private var searching = false
     @State private var selectedID: UUID?
-    private var choices: [Person] { ExistingPersonChoices.results(store.people,sourceID: sourceID,query: query) }
+    private var choices: [Person] {
+        if case .child = relationship {
+            return ExistingPersonChoices.children(store.people, sourceID: sourceID, query: query,
+                                                  partners: store.partnerLinks, parents: store.parentLinks)
+        }
+        return ExistingPersonChoices.results(store.people, sourceID: sourceID, query: query)
+    }
     var body: some View {
         List {
             if choices.isEmpty {
@@ -276,8 +333,8 @@ struct ExistingPersonPicker: View {
                 switch relationship {
                 case .parent(let childID,let parentage):
                     RelationshipEditor(store: store,parent: ParentLink(parentID: id,childID: childID,parentage: parentage),isNew: true,onSaved: onSaved).id(id)
-                case .child(let parentID,let parentage):
-                    RelationshipEditor(store: store,parent: ParentLink(parentID: parentID,childID: id,parentage: parentage),isNew: true,onSaved: onSaved).id(id)
+                case .child(let parentID,let parentage,let otherID):
+                    RelationshipEditor(store: store,parent: ParentLink(parentID: parentID,childID: id,parentage: parentage),otherParentID: otherID,isNew: true,onSaved: onSaved).id(id)
                 case .partner(let otherID,let status):
                     RelationshipEditor(store: store,partner: PartnerLink(firstID: otherID,secondID: id,status: status),isNew: true,onSaved: onSaved).id(id)
                 }
@@ -290,6 +347,7 @@ struct RelationshipEditor: View {
     let store: KinStore
     @State private var parent: ParentLink?
     @State private var partner: PartnerLink?
+    @State private var otherParent: ParentLink?
     private let isNew: Bool
     private let onSaved: (() -> Void)?
     @State private var parentage: Parentage
@@ -298,8 +356,12 @@ struct RelationshipEditor: View {
     @State private var saved = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
-    init(store: KinStore, parent: ParentLink? = nil, partner: PartnerLink? = nil, isNew: Bool = false, onSaved: (() -> Void)? = nil) {
+    init(store: KinStore, parent: ParentLink? = nil, partner: PartnerLink? = nil, otherParentID: UUID? = nil, isNew: Bool = false, onSaved: (() -> Void)? = nil) {
         self.store = store; self.isNew = isNew; self.onSaved = onSaved
+        if let parent, let otherParentID {
+            let existing = store.parentLinks.first { $0.parentID == otherParentID && $0.childID == parent.childID }
+            _otherParent = State(initialValue: existing ?? ParentLink(parentID: otherParentID, childID: parent.childID))
+        }
         _parent = State(initialValue: parent); _partner = State(initialValue: partner)
         _parentage = State(initialValue: parent?.parentage ?? .unspecified)
         _status = State(initialValue: partner?.status ?? .unknown)
@@ -309,6 +371,9 @@ struct RelationshipEditor: View {
             Group {
                 if let parent {
                     personRoleRow(parent.parentID, role: "Parent", identifier: "relationship-parent")
+                    if let otherParent {
+                        personRoleRow(otherParent.parentID, role: parentReviewRole("Other parent", parentage: otherParent.parentage), identifier: "relationship-other-parent")
+                    }
                     personRoleRow(parent.childID, role: "Child", identifier: "relationship-child")
                 } else if let partner {
                     personRoleRow(partner.firstID, role: "Partner", identifier: "relationship-partner-first")
@@ -358,7 +423,9 @@ struct RelationshipEditor: View {
         do {
             if var parent {
                 guard isNew || store.parentLinks.contains(parent) else { throw KinError.staleEdit }
-                parent.parentage = parentage; try store.saveParentLink(parent)
+                parent.parentage = parentage
+                if isNew { try store.addChild(parent, other: otherParent) }
+                else { try store.saveParentLink(parent) }
             }
             if var partner {
                 guard isNew || store.partnerLinks.contains(partner) else { throw KinError.staleEdit }

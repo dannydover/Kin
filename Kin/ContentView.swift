@@ -148,9 +148,7 @@ struct ContentView: View {
                     }.font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
                 }.fixedSize(horizontal: false, vertical: true)
                 if store.people.isEmpty {
-                    Button { adding = true } label: {
-                        Label("Add your first person", systemImage: "plus").foregroundStyle(KinTheme.background).frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(.borderedProminent).controlSize(.large)
+                    RelationshipProfileAction(title: "Add your first person", systemImage: "plus") { adding = true }
                 } else {
                     Button { switchScope(.all) } label: {
                         Label("Browse all people", systemImage: "person.3").frame(maxWidth: .infinity, minHeight: 44)
@@ -336,8 +334,7 @@ private struct AboutKinView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                     .accessibilityLabel(appVersion.accessibilityLabel)
                             }
-                            .frame(maxWidth: .infinity)
-                            Spacer(minLength: 24)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             VStack(spacing: 8) {
                                 Image(systemName: "heart.fill")
                                     .font(.subheadline)
@@ -381,7 +378,7 @@ private struct AboutKinView: View {
             .kinForm()
             .navigationTitle("About Kin").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                SheetEditActions(confirmTitle: "Done", confirm: { dismiss() })
             }
         }
         #if DEBUG

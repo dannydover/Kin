@@ -229,6 +229,11 @@ final class KinUITests: XCTestCase {
         app.staticTexts["Synthetic Young"].tap(); app.navigationBars.buttons["Edit"].tap()
         let birth = editorBirthInformation(app, expected: "Birth information, Unknown")
         birth.tap(); app.buttons["Estimated age"].tap()
+        XCTAssertTrue(app.navigationBars["Age in years"].waitForExistence(timeout: 5))
+        app.navigationBars["Age in years"].buttons["Cancel"].tap()
+        XCTAssertTrue(birth.label.contains("Unknown"))
+        birth.tap(); app.buttons["Estimated age"].tap()
+        XCTAssertTrue(app.navigationBars["Age in years"].waitForExistence(timeout: 5))
         chooseAge(app,value: 3); app.buttons["Save"].tap()
         XCTAssertFalse(app.buttons["Add child"].exists); XCTAssertFalse(app.buttons["Add partner"].exists)
         return app
@@ -571,6 +576,12 @@ final class KinUITests: XCTestCase {
             if largest { app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"] }
             app.launch(); app.buttons["people-menu"].tap(); app.buttons["About"].tap()
             XCTAssertTrue(app.navigationBars["About Kin"].waitForExistence(timeout: 5))
+            let version = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Kin, version")).firstMatch
+            XCTAssertTrue(version.isHittable)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = largest ? "Centered About AX5" : "Centered About standard"
+            shot.lifetime = .keepAlways
+            add(shot)
             // iOS 26 exposes SwiftUI Link through its legacy Button attribute;
             // iOS 27 exposes Link. Use the observed bounded native type on each.
             let policy: XCUIElement
@@ -601,6 +612,26 @@ final class KinUITests: XCTestCase {
             app.buttons["Done"].tap(); app.terminate()
         }
     }
+    @MainActor func testEmptyPeopleAddActionOpensEditorAndCancels() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launch()
+        defer { app.terminate() }
+        let add = app.buttons["Add your first person"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        reveal(add, in: app, requireHittable: true)
+        XCTAssertGreaterThanOrEqual(add.frame.height, 44)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Empty People add action"
+        image.lifetime = .keepAlways
+        self.add(image)
+        add.tap()
+        let editor = app.navigationBars["Add person"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.buttons["Cancel"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+    }
+
     @MainActor func testIllustratedEmptyStateMenuAndSearch() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addTeardownBlock { app.terminate() }
@@ -883,7 +914,7 @@ final class KinUITests: XCTestCase {
             XCTAssertEqual(app.textFields["First name (optional)"].value as? String,"Synthetic No Birthday")
             let unknownBirth = editorBirthInformation(app, expected: "Birth information, Unknown")
             unknownBirth.tap(); app.buttons["Estimated age"].tap()
-            XCTAssertFalse(app.buttons["Save"].isEnabled)
+            XCTAssertTrue(app.navigationBars["Age in years"].waitForExistence(timeout: 5))
             chooseAge(app,value: 19)
             reveal(app.buttons["Add photo"],in: app)
             XCTAssertTrue(app.buttons["Add photo"].exists)
@@ -1307,7 +1338,9 @@ final class KinUITests: XCTestCase {
     }
     @MainActor private func chooseAge(_ app: XCUIApplication,value: Int,contact: Bool = false) {
         let button = app.buttons[(contact ? "contact-" : "") + "choose-estimated-age"]
-        reveal(button,in: app); button.tap()
+        if !app.navigationBars["Age in years"].exists {
+            reveal(button,in: app); button.tap()
+        }
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 5))
         app.pickerWheels.firstMatch.adjust(toPickerWheelValue: String(value))
         capture(app,"Native age wheel selecting " + String(value))

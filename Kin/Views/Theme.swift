@@ -194,13 +194,18 @@ struct ConfirmationLabel: View {
     let title: String
     var primary = true
     var fillsWidth = false
+    @Environment(\.colorSchemeContrast) private var contrast
     var body: some View {
         Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(primary ? KinTheme.clayInk : KinTheme.text)
             .padding(.horizontal, 10).padding(.vertical, fillsWidth ? 8 : 0)
             .frame(minWidth: 44, maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
             .background {
                 Capsule().fill(primary ? AnyShapeStyle(KinTheme.clay) : AnyShapeStyle(KinTheme.panel))
-                    .overlay { Capsule().strokeBorder(primary ? KinTheme.accent : KinTheme.border, lineWidth: 1) }
+                    .overlay {
+                        if fillsWidth || contrast == .increased {
+                            Capsule().strokeBorder(primary ? KinTheme.accent : KinTheme.border, lineWidth: 1)
+                        }
+                    }
             }
             // Preserve the entire padded background's intrinsic toolbar width,
             // rather than letting only the text overflow a compressed frame.
@@ -209,7 +214,7 @@ struct ConfirmationLabel: View {
 }
 
 struct SheetEditActions: ToolbarContent {
-    let cancel: () -> Void
+    var cancel: (() -> Void)? = nil
     var confirmTitle = "Save"
     var confirm: (() -> Void)?
     var confirmDisabled = false
@@ -217,11 +222,13 @@ struct SheetEditActions: ToolbarContent {
     var confirmIdentifier: String?
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button(action: cancel) { ConfirmationLabel(title: "Cancel", primary: false) }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(cancelIdentifier ?? "Cancel")
-        }.sharedBackgroundVisibility(.hidden)
+        if let cancel {
+            ToolbarItem(placement: .cancellationAction) {
+                Button(action: cancel) { ConfirmationLabel(title: "Cancel", primary: false) }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(cancelIdentifier ?? "Cancel")
+            }.sharedBackgroundVisibility(.hidden)
+        }
         if let confirm {
             ToolbarItem(placement: .confirmationAction) {
                 Button(action: confirm) { ConfirmationLabel(title: confirmTitle) }
