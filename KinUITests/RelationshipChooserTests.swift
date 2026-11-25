@@ -95,6 +95,42 @@ final class RelationshipChooserTests: XCTestCase {
         app.buttons["people-menu"].tap(); app.buttons["All people"].tap()
         XCTAssertEqual(app.cells.count,5)
     }
+    @MainActor func testManualAndContactsChildReviewShowOnlyExplicitParentage() {
+        let app = XCUIApplication()
+        for typed in [false, true] {
+            app.launchArguments = ["--kin-preview", "index-alignment", "--kin-ui-synthetic-contact"]
+            app.launch()
+            let parent = "Synthetic Index Parent"
+            XCTAssertTrue(app.staticTexts[parent].waitForExistence(timeout: 10))
+            app.staticTexts[parent].tap()
+            app.staticTexts["Synthetic Partner"].tap()
+            app.buttons["Add child"].tap()
+            if typed {
+                app.buttons["relationship-details"].tap()
+                app.buttons["Parent relationship, Unspecified"].tap()
+                app.buttons["Step"].tap()
+            }
+            app.buttons["Create new person"].tap()
+            XCTAssertTrue(app.navigationBars["Add person"].waitForExistence(timeout: 5))
+            func checkRows() {
+                for (id, role, name) in [
+                    ("review-parent", typed ? "Parent (step)" : "Parent", "Synthetic Partner"),
+                    ("review-other-parent", "Other parent", parent)
+                ] {
+                    let row = app.descendants(matching: .any).matching(identifier: id).firstMatch
+                    reveal(row, in: app)
+                    XCTAssertEqual(row.label, role + ", " + name)
+                }
+            }
+            checkRows()
+            app.buttons["Import from Contacts"].tap()
+            app.buttons["synthetic-contact-selection"].tap()
+            XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 5))
+            checkRows()
+            app.terminate()
+        }
+    }
+
     @MainActor func testLinkCurrentPartnersChildReviewsBothParentsBeforeSaving() {
         let app = XCUIApplication()
         app.launchArguments = ["--kin-preview", "index-alignment"]
@@ -115,7 +151,7 @@ final class RelationshipChooserTests: XCTestCase {
         let review = app.navigationBars["Add relationship"]
         XCTAssertTrue(review.waitForExistence(timeout: 5))
         let secondary = app.descendants(matching: .any).matching(identifier: "relationship-other-parent").firstMatch
-        XCTAssertTrue(secondary.label.contains(source))
+        XCTAssertEqual(secondary.label, "Other parent: " + source)
         review.buttons["Cancel"].tap()
         back(app, to: "Add child")
         app.navigationBars["Add child"].buttons["Cancel"].tap()

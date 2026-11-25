@@ -322,6 +322,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `RelationshipActionTests.testSharedActionAuditAtLargestSize` | app UI | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testParentChildPartnerShowDetailsLastAndVisiblePeopleNeedNoSearch` | app UI, integration, unit | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testSearchDuplicatesBackCancelAndRepeatedSelectionPreserveIdentityAndDetails` | app UI, integration, unit | Retain; assertions mapped above. |
+| `RelationshipChooserTests.testManualAndContactsChildReviewShowOnlyExplicitParentage` | app UI | Checks both parent rows with unspecified and step parentage through manual entry and Contacts review. |
 | `RelationshipChooserTests.testLinkCurrentPartnersChildReviewsBothParentsBeforeSaving` | app UI, unit | Covers reviewed parent identities, ranked suggestions, cancellation and confirmed links. |
 | `RelationshipChooserTests.testEmptyChooserAndPartnerDetailsSurviveBackAndCancel` | app UI, integration | Retain; assertions mapped above. |
 | `RelationshipChooserTests.testSyntheticRelationshipReviewScreenshots` | app UI, integration | Retain; assertions mapped above. |

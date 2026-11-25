@@ -258,6 +258,10 @@ private func reviewName(_ person: Person, in people: [Person]) -> String {
         ? "\(person.displayName) · Notebook reference \(person.reference)" : person.displayName
 }
 
+private func parentReviewRole(_ role: String, parentage: Parentage) -> String {
+    parentage == .unspecified ? role : "\(role) (\(parentage.rawValue))"
+}
+
 struct ChildParentsReview: View {
     let relationship: NewRelationship?
     let people: [Person]
@@ -265,8 +269,10 @@ struct ChildParentsReview: View {
     var body: some View {
         if case .child(let sourceID, let parentage, let otherID) = relationship {
             Section("Parents") {
-                LabeledContent("Parent (\(parentage.rawValue))", value: name(sourceID))
-                LabeledContent("Other parent", value: otherID.map { name($0) + " (unspecified)" } ?? "None")
+                LabeledContent(parentReviewRole("Parent", parentage: parentage), value: name(sourceID))
+                    .accessibilityIdentifier("review-parent")
+                LabeledContent("Other parent", value: otherID.map(name) ?? "None")
+                    .accessibilityIdentifier("review-other-parent")
             }
         }
     }
@@ -366,7 +372,7 @@ struct RelationshipEditor: View {
                 if let parent {
                     personRoleRow(parent.parentID, role: "Parent", identifier: "relationship-parent")
                     if let otherParent {
-                        personRoleRow(otherParent.parentID, role: "Other parent (\(otherParent.parentage.rawValue))", identifier: "relationship-other-parent")
+                        personRoleRow(otherParent.parentID, role: parentReviewRole("Other parent", parentage: otherParent.parentage), identifier: "relationship-other-parent")
                     }
                     personRoleRow(parent.childID, role: "Child", identifier: "relationship-child")
                 } else if let partner {
