@@ -35,8 +35,8 @@ class DevIdentityTests(unittest.TestCase):
                 expected = json.loads(json.dumps(value))
                 expected['buildSettings']['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'Kin'
                 # Deliberate next-release metadata; all other production settings stay frozen.
-                expected['buildSettings']['MARKETING_VERSION'] = '2.0.0'
-                expected['buildSettings']['CURRENT_PROJECT_VERSION'] = '11'
+                expected['buildSettings']['MARKETING_VERSION'] = '2.1.0'
+                expected['buildSettings']['CURRENT_PROJECT_VERSION'] = '12'
                 self.assertEqual(current[key], expected, key)
             else:
                 self.assertEqual(current[key], value, key)
@@ -77,8 +77,7 @@ class DevIdentityTests(unittest.TestCase):
                 self.assertFalse(any(term in key for term in ['APP_GROUP', 'ICLOUD', 'KEYCHAIN']), key)
         self.assertEqual(len([x for x in objects.values() if x.get('isa') == 'PBXNativeTarget']), 3, 'No new extensions')
 
-    def test_dev_scheme_never_selects_production_configuration(self):
-        scheme = ET.parse(ROOT / 'Kin.xcodeproj/xcshareddata/xcschemes/Kin Dev.xcscheme')
+    def test_dev_scheme_never_selects_production_configuration(self):        scheme = ET.parse(ROOT / 'Kin.xcodeproj/xcshareddata/xcschemes/Kin Dev.xcscheme')
         for action in scheme.getroot():
             if 'buildConfiguration' in action.attrib:
                 self.assertEqual(action.attrib['buildConfiguration'], 'Dev')
