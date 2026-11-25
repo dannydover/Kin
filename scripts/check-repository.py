@@ -24,7 +24,7 @@ APPROVED_FONT = {
     'Kin/DesignResources/LibreBaskerville.ttf': '05a95421961341c5b2556285e8415df9db27dab4f4abe22b446b3c6a8b916c5d',
 }
 FONT_LICENSE = 'Kin/DesignResources/LibreBaskerville-LICENSE.txt'
-APPROVED_PLISTS = {'Development/KinDev-Info.plist'}
+APPROVED_PLISTS = {'Development/Kin-Info.plist', 'Development/KinDev-Info.plist'}
 ROOT_FILES = {'.gitignore', 'LICENSE', 'README.md', 'SECURITY.md', 'Package.swift'}
 TEXT_SUFFIXES = {'.entitlements', '.swift', '.json', '.svg', '.py', '.sh', '.pbxproj', '.xcscheme', '.xcworkspacedata', '.xcprivacy', '.md', '.yml'}
 PREFIXES = ('Development/', 'Kin/', 'KinTests/', 'KinUITests/', 'Kin.xcodeproj/', 'scripts/', '.github/workflows/')

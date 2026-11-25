@@ -74,7 +74,12 @@ not establish that intermittent simulator or Friend behavior was fixed.
 6. For production, separately archive the reviewed exact-main Release source,
    preserve its archive/dSYMs and evidence, verify identity, version/build and
    upgrade/device behavior, and obtain applicable approval before upload,
-   submission and release. Verify actual App Store approval **and distribution**
+   submission and release. Before upload, verify that the app and its dependencies
+   still use encryption on the owner-approved basis (Apple system encryption only).
+   If that basis changes, obtain a fresh determination before relying on the
+   declaration. Run the following on the exact archive and stop if it fails:
+   `python3 scripts/check-production-export-plist.py "/path/to/Kin.xcarchive" --expected false`.
+   Verify actual App Store approval **and distribution**
    of the intended build. TestFlight, processing and submission are not store
    distribution. Only then prepare/publish the GitHub release using
    [RELEASING.md](../scripts/RELEASING.md).
