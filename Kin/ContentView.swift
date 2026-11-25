@@ -318,61 +318,73 @@ private struct AboutKinView: View {
     private let appVersion = AppVersion()
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            VStack(spacing: 12) {
-                                Image("KinLogo").resizable().scaledToFit()
-                                    .frame(width: 64, height: 64)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                                    .accessibilityHidden(true)
-                                Text(appVersion.displayText)
-                                    .font(.footnote)
-                                    .foregroundStyle(KinTheme.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .accessibilityLabel(appVersion.accessibilityLabel)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                            VStack(spacing: 8) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        VStack(spacing: 14) {
+                            Image("KinLogo").resizable().scaledToFit()
+                                .frame(width: 74, height: 74)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .accessibilityHidden(true)
+                            Text(appVersion.displayText)
+                                .font(.subheadline)
+                                .foregroundStyle(KinTheme.secondary)
+                                .accessibilityLabel(appVersion.accessibilityLabel)
+                            HStack(spacing: 8) {
                                 Image(systemName: "heart.fill")
-                                    .font(.subheadline)
                                     .foregroundStyle(KinTheme.ink(.female))
                                     .accessibilityHidden(true)
                                 Text("Made by an indie developer")
-                                    .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(KinTheme.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            .frame(maxWidth: .infinity)
-                            .id("indie-message")
-                            Text("Optional name-based gender suggestions use an offline lookup derived from U.S. Social Security Administration data (CC0). Recorded application sex associations do not establish anyone’s identity. SSA does not endorse Kin.")
-                                .font(.footnote).foregroundStyle(KinTheme.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.top, 6)
+                        }
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+
+                        Divider()
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Privacy & data")
+                                .font(.headline)
+                                .accessibilityAddTraits(.isHeader)
                             Link(destination: URL(string: "https://www.intriguingideas.com/kin-privacy-policy")!) {
-                                Label("Privacy Policy", systemImage: "arrow.up.right.square")
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                    .padding(16)
-                                    .background(KinTheme.field, in: RoundedRectangle(cornerRadius: 22))
+                                HStack {
+                                    Text("Privacy Policy")
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .accessibilityHidden(true)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .frame(minHeight: 44)
+                                .background(KinTheme.field, in: RoundedRectangle(cornerRadius: 16))
                             }
                             .accessibilityHint("Opens the Kin Privacy Policy in your browser")
                             .accessibilityIdentifier("about-privacy-policy")
                             .id("privacy-policy")
                         }
-                        .frame(minHeight: max(0, geometry.size.height - 48))
-                        .padding(24)
-                    }
-                    .task {
-                        #if DEBUG
-                        let arguments = ProcessInfo.processInfo.arguments
-                        if arguments.contains("--kin-preview") && arguments.contains("--about-bottom") {
-                            proxy.scrollTo("privacy-policy", anchor: .bottom)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Name-based gender suggestions")
+                                .font(.headline)
+                                .accessibilityAddTraits(.isHeader)
+                            Text("Optional name-based gender suggestions use an offline lookup derived from U.S. Social Security Administration data (CC0). Recorded application sex associations do not establish anyone’s identity. SSA does not endorse Kin.")
+                                .font(.footnote)
+                                .foregroundStyle(KinTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        #endif
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 28)
+                    .padding(.bottom, 24)
+                }
+                .task {
+                    #if DEBUG
+                    let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("--kin-preview") && arguments.contains("--about-bottom") {
+                        proxy.scrollTo("privacy-policy", anchor: .bottom)
+                    }
+                    #endif
                 }
             }
             .kinForm()

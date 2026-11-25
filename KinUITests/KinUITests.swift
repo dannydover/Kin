@@ -568,7 +568,7 @@ final class KinUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["All people"].exists)
         XCTAssertTrue(app.buttons["people-menu"].exists)
     }
-    @MainActor func testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText() {
+    @MainActor func testAboutSectionOrderAtNormalAndLargestText() {
         let app = XCUIApplication()
         let token = UUID().uuidString
         for largest in [false,true] {
@@ -579,7 +579,7 @@ final class KinUITests: XCTestCase {
             let version = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Kin, version")).firstMatch
             XCTAssertTrue(version.isHittable)
             let shot = XCTAttachment(screenshot: app.screenshot())
-            shot.name = largest ? "Centered About AX5" : "Centered About standard"
+            shot.name = largest ? "Balanced About AX5" : "Balanced About standard"
             shot.lifetime = .keepAlways
             add(shot)
             // iOS 26 exposes SwiftUI Link through its legacy Button attribute;
@@ -608,7 +608,15 @@ final class KinUITests: XCTestCase {
             XCTAssertTrue(developer.exists)
             XCTAssertLessThanOrEqual(developer.frame.maxY,policy.frame.minY)
             XCTAssertGreaterThanOrEqual(policy.frame.height,44)
-            capture(app,largest ? "About final Privacy Policy at largest text" : "About final Privacy Policy")
+            let privacyHeading = app.staticTexts["Privacy & data"]
+            let suggestionsHeading = app.staticTexts["Name-based gender suggestions"]
+            XCTAssertLessThanOrEqual(developer.frame.maxY, privacyHeading.frame.minY)
+            XCTAssertLessThanOrEqual(privacyHeading.frame.maxY, policy.frame.minY)
+            XCTAssertLessThanOrEqual(policy.frame.maxY, suggestionsHeading.frame.minY)
+            let disclosure = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Optional name-based gender suggestions")).firstMatch
+            for _ in 0..<4 where !disclosure.isHittable { app.swipeUp() }
+            XCTAssertTrue(disclosure.isHittable)
+            XCTAssertLessThanOrEqual(suggestionsHeading.frame.maxY, disclosure.frame.minY)
             app.buttons["Done"].tap(); app.terminate()
         }
     }
