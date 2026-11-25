@@ -167,7 +167,7 @@ No accessibility, visible-copy, or layout test is retired by this map.
 |---|---|
 | `testNormalColdLaunchCreatesAndPersistsUncategorizedPerson` | Required smoke: a normal isolated-simulator launch without test-store flags saves an uncategorized synthetic person, confirms the row and profile, and confirms persistence after cold relaunch without a locked-notebook message. |
 | `testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | Manual broad UI: retains the normal-notebook creation journey with the real Friend-on interaction. |
-| `testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | At both sizes the policy link is hittable, its bottom is within the viewport, it is at least 44 points high and follows the developer section; synthetic geometry and screenshots are retained. |
+| `testAboutSectionOrderAtNormalAndLargestText` | At both sizes the test opens About from People, checks the credit, privacy heading, link, suggestions heading and disclosure in order, and taps Done. The policy link is hittable, its bottom is within the viewport, it is at least 44 points high and follows the developer section; synthetic geometry and screenshots are retained. |
 | `testIllustratedEmptyStateMenuAndSearch` and `testUnlistedPeopleMenuReturnAndRelaunch` | Together retain empty-state copy and first-person action, menu/About navigation, unlisted-person recovery through All people, no-match search, and empty main-list state after relaunch. The latter starts from an isolated named Friend fixture. |
 | `testBlankNameEditsCancelAndLaterNamingPreserveEntry` | Cancel retains a named entry; saving whitespace yields the stable unnamed entry; naming it after relaunch opens the renamed profile. |
 | `testEmptyStateAtLargestDynamicType` | Menu, Add person and first-person actions remain hittable at largest text, and the first-person action opens the editor. |
@@ -279,7 +279,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testSharedChildReuseAndRenameAcrossBothParents` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAllPeopleOpensProfilesAndReturnsToSameIndex` | app UI, integration | Retain; assertions mapped above. |
-| `KinUITests.testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
+| `KinUITests.testAboutSectionOrderAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
 | `KinUITests.testEmptyPeopleAddActionOpensEditorAndCancels` | app UI | The labeled empty People action has a 44-point tap target and opens the person editor; Cancel returns to the empty notebook. |
 | `KinUITests.testIllustratedEmptyStateMenuAndSearch` | app UI, unit | Retains real creation, empty state, menu/About, unlisting, All people, no-match search and search close. |
 | `KinUITests.testUnlistedPeopleMenuReturnAndRelaunch` | app UI, unit, isolated Friend fixture | Retains All people → People menu action, empty main list and relaunch assertions. |
