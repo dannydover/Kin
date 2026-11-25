@@ -606,6 +606,26 @@ final class KinUITests: XCTestCase {
             app.buttons["Done"].tap(); app.terminate()
         }
     }
+    @MainActor func testEmptyPeopleAddActionOpensEditorAndCancels() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
+        app.launch()
+        defer { app.terminate() }
+        let add = app.buttons["Add your first person"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        reveal(add, in: app, requireHittable: true)
+        XCTAssertGreaterThanOrEqual(add.frame.height, 44)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Empty People add action"
+        image.lifetime = .keepAlways
+        self.add(image)
+        add.tap()
+        let editor = app.navigationBars["Add person"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.buttons["Cancel"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+    }
+
     @MainActor func testIllustratedEmptyStateMenuAndSearch() {
         let app = XCUIApplication(); app.launchArguments = ["--kin-test-notebook", UUID().uuidString]
         app.launch(); addTeardownBlock { app.terminate() }

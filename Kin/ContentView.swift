@@ -148,9 +148,7 @@ struct ContentView: View {
                     }.font(.body).foregroundStyle(KinTheme.secondary).multilineTextAlignment(.center)
                 }.fixedSize(horizontal: false, vertical: true)
                 if store.people.isEmpty {
-                    Button { adding = true } label: {
-                        Label("Add your first person", systemImage: "plus").foregroundStyle(KinTheme.background).frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(.borderedProminent).controlSize(.large)
+                    RelationshipProfileAction(title: "Add your first person", systemImage: "plus") { adding = true }
                 } else {
                     Button { switchScope(.all) } label: {
                         Label("Browse all people", systemImage: "person.3").frame(maxWidth: .infinity, minHeight: 44)

@@ -279,6 +279,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testSharedChildReuseAndRenameAcrossBothParents` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAllPeopleOpensProfilesAndReturnsToSameIndex` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
+| `KinUITests.testEmptyPeopleAddActionOpensEditorAndCancels` | app UI | The labeled empty People action has a 44-point tap target and opens the person editor; Cancel returns to the empty notebook. |
 | `KinUITests.testIllustratedEmptyStateMenuAndSearch` | app UI, unit | Retains real creation, empty state, menu/About, unlisting, All people, no-match search and search close. |
 | `KinUITests.testUnlistedPeopleMenuReturnAndRelaunch` | app UI, unit, isolated Friend fixture | Retains All people → People menu action, empty main list and relaunch assertions. |
 | `KinUITests.testBlankNameEditsCancelAndLaterNamingPreserveEntry` | app UI, integration | Retain; assertions mapped above. |
