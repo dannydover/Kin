@@ -27,10 +27,15 @@ final class ExistingContactPreservationUITests: XCTestCase {
                 let prefix = contacts ? "contact-" : ""
                 let kind = app.descendants(matching: .any).matching(identifier: prefix + "birth-information").firstMatch
                 let date = app.buttons[prefix + "exact-birthday"]
-                if contacts && largest {
-                    for _ in 0..<4 where !kind.isHittable { app.swipeUp(velocity: .slow) }
+                // Both fresh forms start above the birth row. At AX5 the row can
+                // be outside the collection's accessibility tree until scrolled.
+                for _ in 0..<8 {
+                    if kind.isHittable && kind.frame.midY > 150 && kind.frame.midY < app.frame.maxY - 60 { break }
+                    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.78))
+                    let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.45))
+                    start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
                 }
-                reveal(kind, in: app)
+                XCTAssertTrue(kind.isHittable)
                 if !contacts {
                     func capture(_ name: String) {
                         let image = XCTAttachment(screenshot: app.screenshot())

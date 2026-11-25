@@ -334,8 +334,7 @@ private struct AboutKinView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                     .accessibilityLabel(appVersion.accessibilityLabel)
                             }
-                            .frame(maxWidth: .infinity)
-                            Spacer(minLength: 24)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             VStack(spacing: 8) {
                                 Image(systemName: "heart.fill")
                                     .font(.subheadline)

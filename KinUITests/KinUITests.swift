@@ -576,6 +576,12 @@ final class KinUITests: XCTestCase {
             if largest { app.launchArguments += ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"] }
             app.launch(); app.buttons["people-menu"].tap(); app.buttons["About"].tap()
             XCTAssertTrue(app.navigationBars["About Kin"].waitForExistence(timeout: 5))
+            let version = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Kin, version")).firstMatch
+            XCTAssertTrue(version.isHittable)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = largest ? "Centered About AX5" : "Centered About standard"
+            shot.lifetime = .keepAlways
+            add(shot)
             // iOS 26 exposes SwiftUI Link through its legacy Button attribute;
             // iOS 27 exposes Link. Use the observed bounded native type on each.
             let policy: XCUIElement

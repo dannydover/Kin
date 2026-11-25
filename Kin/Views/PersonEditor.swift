@@ -258,6 +258,7 @@ private struct BirthInformationRows: View {
                                        in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
+                                .accessibilityLabel("Birthday")
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.horizontal)
                                 .navigationTitle("Birthday").navigationBarTitleDisplayMode(.inline)
