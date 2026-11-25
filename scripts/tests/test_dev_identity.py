@@ -77,7 +77,8 @@ class DevIdentityTests(unittest.TestCase):
                 self.assertFalse(any(term in key for term in ['APP_GROUP', 'ICLOUD', 'KEYCHAIN']), key)
         self.assertEqual(len([x for x in objects.values() if x.get('isa') == 'PBXNativeTarget']), 3, 'No new extensions')
 
-    def test_dev_scheme_never_selects_production_configuration(self):        scheme = ET.parse(ROOT / 'Kin.xcodeproj/xcshareddata/xcschemes/Kin Dev.xcscheme')
+    def test_dev_scheme_never_selects_production_configuration(self):
+        scheme = ET.parse(ROOT / 'Kin.xcodeproj/xcshareddata/xcschemes/Kin Dev.xcscheme')
         for action in scheme.getroot():
             if 'buildConfiguration' in action.attrib:
                 self.assertEqual(action.attrib['buildConfiguration'], 'Dev')

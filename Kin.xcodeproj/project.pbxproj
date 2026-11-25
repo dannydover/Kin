@@ -77,7 +77,8 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		3B43AC662FC54637005B9DB1 = {			isa = PBXGroup;
+		3B43AC662FC54637005B9DB1 = {
+			isa = PBXGroup;
 			children = (
 				A01300000000000000000003 /* SyntheticContactsCleanup.swift */,
 				3B43AC712FC54637005B9DB1 /* Kin */,
@@ -156,7 +157,8 @@
 			buildRules = (
 			);
 			dependencies = (
-				3B43AC882FC54638005B9DB1 /* PBXTargetDependency */,			);
+				3B43AC882FC54638005B9DB1 /* PBXTargetDependency */,
+			);
 			fileSystemSynchronizedGroups = (
 				3B43AC892FC54638005B9DB1 /* KinUITests */,
 			);
@@ -235,7 +237,8 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXSourcesBuildPhase section */		3B43AC6B2FC54637005B9DB1 /* Sources */ = {
+/* Begin PBXSourcesBuildPhase section */
+		3B43AC6B2FC54637005B9DB1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -314,7 +317,8 @@
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;				GCC_PREPROCESSOR_DEFINITIONS = (
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
 				);
@@ -393,7 +397,8 @@
 				OTHER_SWIFT_FLAGS = "$(inherited) -file-prefix-map $(SRCROOT)/Kin=/KinSource/Kin";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;				VALIDATE_PRODUCT = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -472,7 +477,8 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.intriguingideas.KinTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
@@ -551,7 +557,8 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
@@ -630,7 +637,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.intriguingideas.Kin.dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -709,7 +717,8 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
-		};		3B43AC962FC54638005B9DB1 /* Build configuration list for PBXNativeTarget "KinUITests" */ = {
+		};
+		3B43AC962FC54638005B9DB1 /* Build configuration list for PBXNativeTarget "KinUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3B43AC972FC54638005B9DB1 /* Debug */,
