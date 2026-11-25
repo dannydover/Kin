@@ -379,7 +379,7 @@ private struct AboutKinView: View {
             .kinForm()
             .navigationTitle("About Kin").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                SheetEditActions(confirmTitle: "Done", confirm: { dismiss() })
             }
         }
         #if DEBUG

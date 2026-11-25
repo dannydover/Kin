@@ -257,6 +257,9 @@ private struct BirthInformationRows: View {
                             DatePicker("Birthday", selection: $proposedDate,
                                        in: ...CivilDate(Date(), timeZone: .current).pickerDate, displayedComponents: .date)
                                 .datePickerStyle(.wheel)
+                                .labelsHidden()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.horizontal)
                                 .navigationTitle("Birthday").navigationBarTitleDisplayMode(.inline)
                                 .toolbar {
                                     SheetEditActions(cancel: { sheet = nil }, confirmTitle: "Done", confirm: {

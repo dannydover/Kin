@@ -10,6 +10,80 @@ final class ExistingContactPreservationUITests: XCTestCase {
                 .press(forDuration: 0.1,thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.55)))
         }
     }
+    @MainActor func testExactBirthdayWheelInEditorAndContactsAtBothTextSizes() throws {
+        let app = XCUIApplication()
+        for largest in [false, true] {
+            for contacts in [false, true] {
+                app.launchArguments = ["--kin-preview", "empty", "--kin-ui-preservation-contacts",
+                                       "-UIPreferredContentSizeCategoryName",
+                                       largest ? "UICTContentSizeCategoryAccessibilityXXXL" : "UICTContentSizeCategoryL"]
+                app.launch()
+                app.buttons["Add person"].tap()
+                if contacts {
+                    app.buttons["Import from Contacts"].tap()
+                    app.buttons["synthetic-preservation-contact-3"].tap()
+                    XCTAssertTrue(app.navigationBars["Contact birth information"].waitForExistence(timeout: 5))
+                }
+                let prefix = contacts ? "contact-" : ""
+                let kind = app.descendants(matching: .any).matching(identifier: prefix + "birth-information").firstMatch
+                let date = app.buttons[prefix + "exact-birthday"]
+                if contacts && largest {
+                    for _ in 0..<4 where !kind.isHittable { app.swipeUp(velocity: .slow) }
+                }
+                reveal(kind, in: app)
+                if !contacts {
+                    func capture(_ name: String) {
+                        let image = XCTAttachment(screenshot: app.screenshot())
+                        image.name = name + (largest ? " AX5" : " standard")
+                        image.lifetime = .keepAlways
+                        add(image)
+                    }
+                    capture("Active person editor")
+                    kind.tap()
+                    app.buttons["Estimated age"].tap()
+                    let ageBar = app.navigationBars["Age in years"]
+                    XCTAssertTrue(ageBar.waitForExistence(timeout: 5))
+                    XCTAssertTrue(ageBar.buttons["Cancel"].isHittable && ageBar.buttons["Done"].isHittable)
+                    capture("Active age picker")
+                    ageBar.buttons["Cancel"].tap()
+                }
+                let initialKind = kind.label
+                kind.tap()
+                app.buttons["Exact birthday"].tap()
+                let bar = app.navigationBars["Birthday"]
+                XCTAssertTrue(bar.waitForExistence(timeout: 5))
+                let wheels = app.pickerWheels.allElementsBoundByIndex
+                XCTAssertEqual(wheels.count, 3)
+                XCTAssertTrue(wheels.allSatisfy { $0.isHittable })
+                let bounds = try XCTUnwrap(wheels.map(\.frame).reduce(nil as CGRect?) { $0?.union($1) ?? $1 })
+                XCTAssertEqual(bounds.midX, app.frame.midX, accuracy: 12)
+                XCTAssertGreaterThan(bounds.minX, app.frame.minX)
+                XCTAssertTrue(bar.buttons["Cancel"].isHittable && bar.buttons["Done"].isHittable)
+                let shot = XCTAttachment(screenshot: app.screenshot())
+                shot.name = "Exact birthday - " + (contacts ? "Contacts" : "editor") + (largest ? " AX5" : " standard")
+                shot.lifetime = .keepAlways
+                add(shot)
+                func yearWheel() -> XCUIElement {
+                    app.pickerWheels.matching(NSPredicate(format: "value MATCHES %@", "[0-9]{4}")).firstMatch
+                }
+                let original = try XCTUnwrap(yearWheel().value as? String)
+                let changed = String(try XCTUnwrap(Int(original)) - 1)
+                yearWheel().adjust(toPickerWheelValue: changed)
+                bar.buttons["Cancel"].tap()
+                XCTAssertEqual(kind.label, initialKind)
+                kind.tap()
+                app.buttons["Exact birthday"].tap()
+                XCTAssertEqual(yearWheel().value as? String, original)
+                yearWheel().adjust(toPickerWheelValue: changed)
+                bar.buttons["Done"].tap()
+                reveal(date, in: app)
+                date.tap()
+                XCTAssertEqual(yearWheel().value as? String, changed)
+                app.terminate()
+            }
+        }
+    }
+
     @MainActor func testSyntheticExistingBirthInformationSurvivesMissingAndYearlessContactsReview() throws {
         executionTimeAllowance = 600
         let fixtures = (0..<4).map { "Kin Synthetic Keep \($0)" }

@@ -23,7 +23,7 @@ struct DeleteAllPeopleView: View {
             }
         }
         .kinForm().navigationTitle("Delete all people").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        .toolbar { SheetEditActions(cancel: { dismiss() }) }
         .alert("Delete all people?", isPresented: $confirming) {
             Button("Delete all people", role: .destructive) { delete() }
                 .kinDestructiveText().accessibilityIdentifier("confirm-delete-all")
