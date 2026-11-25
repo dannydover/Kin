@@ -67,6 +67,8 @@ struct PersonEditor: View {
         }
         .environment(\.calendar, CivilDate.pickerCalendar).environment(\.timeZone, CivilDate.pickerCalendar.timeZone)
         .kinForm().navigationTitle(isNew ? "Add person" : "Edit person").navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(KinTheme.background, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             SheetEditActions(cancel: { dismiss() }, confirm: { save() },
                              confirmDisabled: photoLoading || didSave || !ageInputValid)
