@@ -37,7 +37,7 @@ final class ContactExportUITests: XCTestCase {
         func selectPerson() throws {
             try tap(app.buttons["people-menu"], in: app)
             try tap(app.buttons["Export to Contacts"], in: app)
-            try tap(app.switches[name], in: app)
+            try tap(app.buttons[name], in: app)
             try tap(app.buttons["Review selected people"], in: app)
         }
 
@@ -65,8 +65,11 @@ final class ContactExportUITests: XCTestCase {
 
     @MainActor private func tap(_ element: XCUIElement, in app: XCUIApplication,
                                 file: StaticString = #filePath, line: UInt = #line) throws {
-        for _ in 0..<5 where !element.isHittable { app.swipeUp() }
-        guard element.waitForExistence(timeout: 5), element.isHittable else {
+        for _ in 0..<5 {
+            if element.isHittable { break }
+            app.swipeUp()
+        }
+        guard element.waitForExistence(timeout: 5), element.isHittable, element.isEnabled else {
             XCTFail("Could not reach expected control: \(element)", file: file, line: line)
             throw CocoaError(.featureUnsupported)
         }

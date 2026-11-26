@@ -12,8 +12,18 @@ struct ContactExportView: View {
     @State private var requesting = false
     @State private var access = false
     @State private var wasDenied = false
-    @State private var error: String?
     private let contacts = ContactExportStore()
+
+    private var orderedPeople: [Person] {
+        store.people.sorted {
+            let order = $0.displayName.localizedStandardCompare($1.displayName)
+            return order == .orderedSame ? $0.reference < $1.reference : order == .orderedAscending
+        }
+    }
+    private func label(for person: Person) -> String {
+        ExistingPersonChoices.needsReference(for: person, in: store.people)
+            ? "\(person.displayName) · Notebook entry \(person.reference)" : person.displayName
+    }
 
     struct ResultRow: Identifiable {
         let id: UUID
@@ -26,7 +36,7 @@ struct ContactExportView: View {
             if !reviewing { selection }
             else if let id = pending.first, let person = store.people.first(where: { $0.id == id }) {
                 if access {
-                    ContactExportPersonReview(person: person, store: store, contacts: contacts) { result in
+                    ContactExportPersonReview(person: person, personLabel: label(for: person), store: store, contacts: contacts) { result in
                         finish(person: person, result: result)
                     }.id(id)
                 } else {
@@ -68,7 +78,6 @@ struct ContactExportView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { access = contacts.hasAccess }
         }
-        .kinError($error)
     }
 
     private var selection: some View {
@@ -79,10 +88,22 @@ struct ContactExportView: View {
                     .foregroundStyle(KinTheme.secondary)
             }
             Section {
-                ForEach(PeopleIndex.results(store.people, query: "", includeUnlisted: true)) { person in
-                    Toggle(isOn: Binding(get: { selected.contains(person.id) }, set: {
-                        if $0 { selected.insert(person.id) } else { selected.remove(person.id) }
-                    })) { Text(verbatim: person.displayName) }
+                ForEach(orderedPeople) { person in
+                    let checked = selected.contains(person.id)
+                    Button {
+                        if checked { selected.remove(person.id) } else { selected.insert(person.id) }
+                    } label: {
+                        Label {
+                            Text(verbatim: label(for: person)).foregroundStyle(KinTheme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: checked ? "checkmark.circle.fill" : "circle")
+                                .accessibilityHidden(true)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityAddTraits(checked ? .isSelected : [])
                 }
             } header: { KinSectionHeading(text: "People to export") }
             Section {
@@ -99,8 +120,7 @@ struct ContactExportView: View {
                         do { access = try await contacts.requestAccess() }
                         catch { access = contacts.hasAccess }
                         guard access else { wasDenied = true; return }
-                        pending = PeopleIndex.results(store.people, query: "", includeUnlisted: true)
-                            .map(\.id).filter { selected.contains($0) }
+                        pending = orderedPeople.map(\.id).filter { selected.contains($0) }
                         reviewing = !pending.isEmpty
                     }
                 }.disabled(requesting || selected.isEmpty)
@@ -111,12 +131,13 @@ struct ContactExportView: View {
     private func finish(person: Person, result: String) {
         guard pending.first == person.id else { return }
         pending.removeFirst()
-        results.append(.init(id: person.id, name: person.displayName, result: result))
+        results.append(.init(id: person.id, name: label(for: person), result: result))
     }
 }
 
 private struct ContactExportPersonReview: View {
     let person: Person
+    let personLabel: String
     let store: KinStore
     let contacts: ContactExportStore
     let onFinish: (String) -> Void
@@ -128,7 +149,11 @@ private struct ContactExportPersonReview: View {
     @State private var error: String?
     @State private var busy = false
     @State private var result: String?
-    private var values: ContactExportValues { .init(person: person, today: Date()) }
+    private var values: ContactExportValues {
+        var available = ContactExportValues(person: person, today: Date())
+        if let photo = available.photo, UIImage(data: photo) == nil { available.photo = nil }
+        return available
+    }
     private var selected: Set<ContactExportField> { fields.intersection(values.available) }
 
     var body: some View {
@@ -136,7 +161,7 @@ private struct ContactExportPersonReview: View {
             Section {
                 Text(verbatim: result)
                 Button("Continue") { onFinish(result) }
-            } header: { KinSectionHeading(text: person.displayName) }
+            } header: { KinSectionHeading(text: personLabel) }
         } else if let plan {
             preview(plan)
         } else {
@@ -157,7 +182,7 @@ private struct ContactExportPersonReview: View {
                 }
                 if values.birthday == nil { Text("Birthday omitted: Kin only exports a known, exact birthday.").foregroundStyle(KinTheme.secondary) }
                 if values.photo == nil { Text("No eligible photo to export.").foregroundStyle(KinTheme.secondary) }
-            } header: { KinSectionHeading(text: person.displayName) }
+            } header: { KinSectionHeading(text: personLabel) }
 
             Section {
                 if person.contactExportLink == nil {

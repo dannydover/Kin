@@ -3,6 +3,7 @@ import XCTest
 final class PetProfileUITests: XCTestCase {
     @MainActor
     func testProfilePetAddEditCancelRemoveAndRelaunch() throws {
+        continueAfterFailure = false
         let app = XCUIApplication()
         let notebook = UUID().uuidString
         app.launchArguments = ["--kin-test-notebook", notebook, "--kin-ui-fixture", "named-friend"]
@@ -112,14 +113,20 @@ final class PetProfileUITests: XCTestCase {
 
     @MainActor
     private func reveal(_ item: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<5 {
-            if item.exists && item.isHittable { return }
+        let top = app.frame.minY + 100
+        let bottom = app.frame.maxY - 35
+        for _ in 0..<9 {
+            if item.exists {
+                let frame = item.frame
+                if item.isHittable && (top...bottom).contains(frame.midY) { return }
+                if frame.midY < top {
+                    app.swipeDown()
+                    continue
+                }
+            }
             app.swipeUp()
         }
-        for _ in 0..<5 {
-            if item.exists && item.isHittable { return }
-            app.swipeDown()
-        }
-        XCTAssertTrue(item.exists && item.isHittable)
+        XCTAssertTrue(item.exists && item.isHittable && (top...bottom).contains(item.frame.midY),
+                      "Expected a visible, tappable pet control: \(item)")
     }
 }
