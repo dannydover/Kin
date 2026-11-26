@@ -167,7 +167,7 @@ No accessibility, visible-copy, or layout test is retired by this map.
 |---|---|
 | `testNormalColdLaunchCreatesAndPersistsUncategorizedPerson` | Required smoke: a normal isolated-simulator launch without test-store flags saves an uncategorized synthetic person, confirms the row and profile, and confirms persistence after cold relaunch without a locked-notebook message. |
 | `testNormalColdLaunchOpensNotebookAndPreservesSavedPerson` | Manual broad UI: retains the normal-notebook creation journey with the real Friend-on interaction. |
-| `testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | At both sizes the policy link is hittable, its bottom is within the viewport, it is at least 44 points high and follows the developer section; synthetic geometry and screenshots are retained. |
+| `testAboutSectionOrderAtNormalAndLargestText` | At both sizes the test opens About from People, checks the credit, privacy heading, link, suggestions heading and disclosure in order, and taps Done. The policy link is hittable, its bottom is within the viewport, it is at least 44 points high and follows the developer section; synthetic geometry and screenshots are retained. |
 | `testIllustratedEmptyStateMenuAndSearch` and `testUnlistedPeopleMenuReturnAndRelaunch` | Together retain empty-state copy and first-person action, menu/About navigation, unlisted-person recovery through All people, no-match search, and empty main-list state after relaunch. The latter starts from an isolated named Friend fixture. |
 | `testBlankNameEditsCancelAndLaterNamingPreserveEntry` | Cancel retains a named entry; saving whitespace yields the stable unnamed entry; naming it after relaunch opens the renamed profile. |
 | `testEmptyStateAtLargestDynamicType` | Menu, Add person and first-person actions remain hittable at largest text, and the first-person action opens the editor. |
@@ -279,7 +279,7 @@ Layer key: **native** = real platform integration; **app UI** = navigation, inte
 | `KinUITests.testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testSharedChildReuseAndRenameAcrossBothParents` | app UI, integration | Retain; assertions mapped above. |
 | `KinUITests.testAllPeopleOpensProfilesAndReturnsToSameIndex` | app UI, integration | Retain; assertions mapped above. |
-| `KinUITests.testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
+| `KinUITests.testAboutSectionOrderAtNormalAndLargestText` | app UI | Retain; assertions mapped above. |
 | `KinUITests.testEmptyPeopleAddActionOpensEditorAndCancels` | app UI | The labeled empty People action has a 44-point tap target and opens the person editor; Cancel returns to the empty notebook. |
 | `KinUITests.testIllustratedEmptyStateMenuAndSearch` | app UI, unit | Retains real creation, empty state, menu/About, unlisting, All people, no-match search and search close. |
 | `KinUITests.testUnlistedPeopleMenuReturnAndRelaunch` | app UI, unit, isolated Friend fixture | Retains All people → People menu action, empty main list and relaunch assertions. |
@@ -457,3 +457,12 @@ This removes real Contacts picker presentation, selection, and CNContact-to-snap
 `testClearCombinedSearchAndCategoryRepeatedlyPreservesPeople` now starts from three exact, isolated DEBUG-only disk-backed records instead of creating those records through the UI in that test. It retains both category/search/no-match/Clear cycles, restored screen, category and record assertions, keyboard dismissal, and the final Friend-category check. Direct person creation, Friend and Save remain required in separate UI journeys. The in-memory preview counterpart remains required. The exact create-three-people → repeated Clear sequence is no longer tested continuously; this is an owner-approved similar setup tradeoff. The new fixture has a lower-level disk reopen and no-overwrite regression and Release exclusion guard. Run 42050345797's timeout remains failed: its activity showed long XCTest quiescence and keyboard queries after two Clear actions, so reducing setup is not a proven fix for those waits.
 
 Run 42050345797 also ended with UI-3 cancelled and no retained result or simulator cleanup record. Its selected test outcomes and cleanup remain unverified; the GitHub job log was unavailable at inspection. The run remains failed and no cause is inferred for that cancellation.
+
+
+## Kin 2.2 focused coverage
+
+| Method | Layer | Retained assertion |
+|---|---|---|
+| `ChildAllergyUITests.testChildAllergiesStayWithCorrectChildThroughEditCancelAndReopen` | app UI | Child and parent-profile labels, edit, cancel, relaunch at largest text, and removal. |
+| `PetProfileUITests.testProfilePetAddEditCancelRemoveAndRelaunch` | app UI | Explicit species and age, cancel, editing, removal, and relaunch. |
+| `ContactExportUITests.testCreateOnceAndReviewTheSameContactOnRelaunch` | native | With an isolated synthetic simulator, review and back make no write; create once, relaunch, then reuse that same Contacts identifier. |

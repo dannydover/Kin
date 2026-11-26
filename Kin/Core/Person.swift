@@ -30,6 +30,16 @@ struct Person: Identifiable, Codable, Equatable, Sendable {
     var lastName: String?
     var gender: Gender = .unknown
     var notes = ""
+    // Absent in older notebooks. This is only what the user wrote, not a diagnosis.
+    var allergies: String?
+    var recordedAllergies: String? {
+        guard let text = allergies?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
+    }
+    func showsAllergyEditor(isChildInNotebook: Bool, birthday: Birthday, on today: Date) -> Bool {
+        if isChildInNotebook || recordedAllergies != nil { return true }
+        return AgeRules(calendar: .current).ageRange(for: birthday, on: today).map { $0.upperBound < 18 } ?? false
+    }
     var birthday: Birthday = .unknown
     var connections: Set<Connection> = []
     // Absent in v1 payloads: preserve their category-based visibility on first read.
@@ -40,6 +50,17 @@ struct Person: Identifiable, Codable, Equatable, Sendable {
         set { indexInclusion = newValue }
     }
     var photo: Data?
+    var contactExportLink: ContactExportLink?
+    // Older Person payloads have no pets. Omit this key when empty, keeping the
+    // existing protected Core Data schema and notebook compatibility.
+    private var savedPets: [Pet]?
+    var pets: [Pet] {
+        get { savedPets ?? [] }
+        set { savedPets = newValue.isEmpty ? nil : newValue }
+    }
+    var hasValidPets: Bool {
+        Set(pets.map(\.id)).count == pets.count && pets.allSatisfy(\.isStructurallyValid)
+    }
     // Assigned once by the store. A label describes the original entry context,
     // never birth order, legal name, gender, or inferred kinship.
     var revision = 0

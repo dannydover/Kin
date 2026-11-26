@@ -214,6 +214,7 @@ enum NewRelationship: Equatable {
             person.isListed = person.isListed
             guard object.value(forKey: "id") as? UUID == person.id, person.reference > 0, person.revision > 0, person.revision < Int.max,
                   ["Person", "Parent", "Child", "Partner"].contains(person.unnamedRole), person.birthday.isStructurallyValid else { throw KinError.invalidData }
+            guard person.hasValidPets else { throw KinError.invalidData }
             person.photo = includePhotos ? object.value(forKey: "photo") as? Data : nil
             return person
         }
@@ -262,7 +263,11 @@ enum NewRelationship: Equatable {
             return text.isEmpty ? nil : text
         }
         value.firstName = try clean(value.firstName); value.lastName = try clean(value.lastName)
+        value.allergies = value.recordedAllergies
         let old = people.first { $0.id == draft.id }
+        // Export bookkeeping is independent of the person editor.
+        value.contactExportLink = old?.contactExportLink
+        value.pets = old?.pets ?? []
         value.isListed = draft.indexInclusion ?? old?.isListed ?? draft.isListed
         guard old != nil || draft.revision == 0 else { throw KinError.missingPerson }
         if let old {
@@ -333,6 +338,56 @@ enum NewRelationship: Equatable {
             if let partner { try writePartner(partner) }
         }
     }
+    /// Only export bookkeeping changes. Preserve every profile field, photo,
+    /// relationship and revision; refuse to attach the same contact twice.
+    func recordContactExport(_ link: ContactExportLink, for id: UUID, replacing expected: ContactExportLink?) throws {
+        var person = try self.person(id)
+        guard person.contactExportLink == expected else { throw KinError.staleEdit }
+        if case .linked = link, people.contains(where: { $0.id != id && $0.contactExportLink == link }) {
+            throw ContactExportError.alreadyLinked
+        }
+        person.contactExportLink = link
+        person.photo = nil
+        guard let object = try record(id, "PersonRecord") else { throw KinError.missingPerson }
+        try transaction { try encode(person, id: id, into: object) }
+    }
+
+    /// Update only this profile’s pet records. A fresh snapshot preserves edits
+    /// to other pets or people, and the expected pet prevents stale overwrites.
+    func savePet(_ draft: Pet, on personID: UUID, replacing original: Pet? = nil,
+                 today: Date = Date(), timeZone: TimeZone = .current) throws {
+        var profile = try person(personID)
+        let value = try draft.validated(today: CivilDate(today, timeZone: timeZone))
+        guard original == nil || original?.id == value.id else { throw PetError.staleEdit }
+        if let index = profile.pets.firstIndex(where: { $0.id == value.id }) {
+            if profile.pets[index] == value { return } // explicit retry is idempotent
+            guard profile.pets[index] == original else { throw PetError.staleEdit }
+            profile.pets[index] = value
+        } else {
+            guard original == nil else { throw PetError.staleEdit }
+            profile.pets.append(value)
+        }
+        try writePetChange(profile)
+    }
+
+    func removePet(_ original: Pet, from personID: UUID) throws {
+        var profile = try person(personID)
+        guard let index = profile.pets.firstIndex(where: { $0.id == original.id }) else { return }
+        guard profile.pets[index] == original else { throw PetError.staleEdit }
+        profile.pets.remove(at: index)
+        try writePetChange(profile)
+    }
+
+    private func writePetChange(_ profile: Person) throws {
+        guard let object = try record(profile.id, "PersonRecord") else { throw KinError.missingPerson }
+        guard profile.revision < Int.max - 1 else { throw KinError.invalidData }
+        var header = profile
+        header.revision += 1
+        header.photo = nil
+        // The photo's external binary value and relationships stay unchanged.
+        try transaction { try encode(header, id: profile.id, into: object) }
+    }
+
     private static let stateID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
     private func validateNewParents(_ proposed: [ParentLink]) throws {
         var graph = parentLinks

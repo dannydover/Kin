@@ -34,7 +34,7 @@
     "KinUITests/KinUITests/testNewPartnerDefaultsCurrentAndSelectionRemainsUnsaved": 112.7,
     "KinUITests/KinUITests/testNormalColdLaunchOpensNotebookAndPreservesSavedPerson": 40.7,
     "KinUITests/KinUITests/testPhotoRemovalAlertHasVisibleCancelAndPreservesSavedPhoto": 93.9,
-    "KinUITests/KinUITests/testPrivacyPolicyIsFinalAboutSectionAtNormalAndLargestText": 47.7,
+    "KinUITests/KinUITests/testAboutSectionOrderAtNormalAndLargestText": 47.7,
     "KinUITests/KinUITests/testRelationshipRoleLabelsFromBothDirectionsAndForPartners": 139.6,
     "KinUITests/KinUITests/testRelationshipRoleLabelsWrapLongNamesAtLargestDynamicType": 75.7,
     "KinUITests/KinUITests/testReuseExistingPartnerUnlinkAndDeletePreservesOtherPerson": 90.5,

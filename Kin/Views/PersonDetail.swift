@@ -11,6 +11,7 @@ struct PersonDetail: View {
     @State private var sheet: DetailSheet?
     @State private var parentEdit: ParentLink?
     @State private var partnerEdit: PartnerLink?
+    @State private var petSheet: PetEditorRoute?
     @State private var deleting = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
@@ -40,6 +41,9 @@ struct PersonDetail: View {
         }
         .sheet(item: $parentEdit) { link in NavigationStack { RelationshipEditor(store: store, parent: link) } }
         .sheet(item: $partnerEdit) { link in NavigationStack { RelationshipEditor(store: store, partner: link) } }
+        .sheet(item: $petSheet) { route in
+            NavigationStack { PetEditor(store: store, personID: personID, original: route.pet) }
+        }
         .kinError($error).notebookAvailability(store)
     }
     private func profile(_ person: Person) -> some View {
@@ -47,6 +51,11 @@ struct PersonDetail: View {
             Group {
                 Section {
                     profileSummary(person)
+                }
+                if let allergies = person.recordedAllergies {
+                    Section {
+                        allergyHighlight(allergies)
+                    } header: { KinSectionHeading(text: "Allergies") }
                 }
                 if AgeRules(calendar: .current).showsPartnerAndChildSections(for: person.birthday, on: today) {
                     Section {
@@ -68,6 +77,7 @@ struct PersonDetail: View {
                     }
                     RelationshipProfileAction(title: "Add parent", systemImage: "plus") { sheet = .parent }
                 } header: { KinSectionHeading(text: "Parents") }
+                PetProfileSection(pets: person.pets) { petSheet = $0 }
                 if !person.notes.isEmpty {
                     Section { Text(person.notes) } header: { KinSectionHeading(text: "Notes") }
                 }
@@ -81,7 +91,7 @@ struct PersonDetail: View {
                     do { try store.deletePerson(personID); dismiss() } catch { self.error = UserFacingError.message(error) }
                 }.kinDestructiveText().accessibilityIdentifier("confirm-delete-person")
                 Button("Cancel", role: .cancel) { }
-            } message: { Text("Deletes this person’s details, photo, and relationships. Other people won’t be deleted. Find them on the \(FeatureReference.allPeople) screen.") }
+            } message: { Text("Deletes this person’s details, photo, pet records, and relationships. Other people won’t be deleted. Find them on the \(FeatureReference.allPeople) screen.") }
     }
     private func profileSummary(_ person: Person) -> some View {
         let rules = AgeRules(calendar: .current)
@@ -128,6 +138,15 @@ struct PersonDetail: View {
             value.font(.subheadline)
         }.accessibilityElement(children: .contain)
     }
+    private func allergyHighlight(_ value: String, labelInline: Bool = false) -> some View {
+        Group {
+            if labelInline { Text("Allergies: ").bold() + Text(verbatim: value) }
+            else { Text(verbatim: value) }
+        }
+        .font(.subheadline).foregroundStyle(KinTheme.text)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
     @ViewBuilder private func relationshipRow(_ id: UUID, subtitle: String, child: Bool = false, edit: @escaping () -> Void) -> some View {
         if let person = store.people.first(where: { $0.id == id }) {
             (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) :
@@ -143,6 +162,9 @@ struct PersonDetail: View {
                                 .font(child ? .subheadline.weight(.semibold) : .caption)
                                 .foregroundStyle(child ? KinTheme.text : KinTheme.secondary)
                             Text(subtitle).font(.caption).foregroundStyle(KinTheme.secondary)
+                            if child, let allergies = person.recordedAllergies {
+                                allergyHighlight(allergies, labelInline: true)
+                            }
                         }
                     }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                         .contentShape(Rectangle())
