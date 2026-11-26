@@ -13,7 +13,7 @@ struct DeleteAllPeopleView: View {
             Section {
                 Text(store.people.isEmpty ? "No people saved in this notebook." : "\(store.people.count) \(store.people.count == 1 ? "person" : "people") saved in this notebook.")
                     .accessibilityIdentifier("delete-all-count")
-                Text("Delete every person saved in this Kin notebook, including people not shown in your list, and all their relationships, notes and photos.")
+                Text("Delete every person saved in this Kin notebook, including people not shown in your list, and all their relationships, notes, photos, and pet records.")
                 Text("This affects only this notebook on this device. It keeps unrelated settings, source Contacts, external copies and backups. There is no undo in Kin.")
             } header: { Text("What will be deleted") }
             Section {
@@ -29,7 +29,7 @@ struct DeleteAllPeopleView: View {
                 .kinDestructiveText().accessibilityIdentifier("confirm-delete-all")
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Permanently delete every saved person in this Kin notebook, including hidden people, and their relationships, notes and photos? Contacts, external copies, backups and unrelated settings are kept. There is no undo in Kin.")
+            Text("Permanently delete every saved person in this Kin notebook, including hidden people, and their relationships, notes, photos, and pet records? Contacts, external copies, backups and unrelated settings are kept. There is no undo in Kin.")
         }
         .kinError($error).notebookAvailability(store)
     }

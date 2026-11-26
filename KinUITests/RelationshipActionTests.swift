@@ -103,7 +103,7 @@ final class RelationshipActionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Delete all people"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["5 people saved in this notebook."].exists,
                       "Opening and canceling relationship edits changes no people, including unlisted records")
-        let scope = app.staticTexts.matching(NSPredicate(format: "label == %@","Delete every person saved in this Kin notebook, including people not shown in your list, and all their relationships, notes and photos.")).firstMatch
+        let scope = app.staticTexts.matching(NSPredicate(format: "label == %@","Delete every person saved in this Kin notebook, including people not shown in your list, and all their relationships, notes, photos, and pet records.")).firstMatch
         XCTAssertTrue(scope.exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@","outside your main list")).firstMatch.exists)
         #if targetEnvironment(simulator)

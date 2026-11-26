@@ -58,9 +58,10 @@ class DevIdentityTests(unittest.TestCase):
             return source.split('private static let model:', 1)[1].split('/// A supplied SQLite URL', 1)[0]
         self.assertEqual(schema(current_store), schema(original_store))
 
-    def test_production_plist_only_adds_the_approved_export_declaration(self):
+    def test_production_plist_limits_new_metadata_to_export_declaration_and_contacts_purpose(self):
         info = plistlib.loads((ROOT / 'Development/Kin-Info.plist').read_bytes())
-        self.assertEqual(set(info), {'ITSAppUsesNonExemptEncryption'})
+        self.assertEqual(set(info), {'ITSAppUsesNonExemptEncryption', 'NSContactsUsageDescription'})
+        self.assertIn('export', info['NSContactsUsageDescription'])
         self.assertIs(info['ITSAppUsesNonExemptEncryption'], False)
 
     def test_dev_configuration(self):

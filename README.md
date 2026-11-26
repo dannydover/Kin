@@ -29,6 +29,11 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
   under 16 and profiles with no parents yet. Reuse a person or create/import one
   through the shared editor; the selected person is the parent of the open profile.
   Multiple explicit parents are allowed. Removing a relationship keeps both people.
+- Record multiple pets in a person's profile. Choose a species, then optionally
+  record an exact birthday or a life-stage estimate for a dog (Puppy, Middle-aged,
+  Elderly) or cat (Kitten, Middle-aged, Elderly). Other species support an exact or
+  unknown birthday. Pet details stay in the local notebook and are not copied to
+  other profiles.
 - Filter the selected people list by All, Friend, Family or Colleague alongside
   name search. All includes visible people without a category; filters do not
   change records or list inclusion.
@@ -45,10 +50,15 @@ using **Xcode 27, the Swift 6.4 compiler, and Swift 6 language mode**.
 - Shared Add/Edit workflows, one-time Contacts imports, and explicit Save/Cancel.
   Review eligible Contacts photos before importing; reviewed age and explicit
   photo choices retain the same established-adult rules.
+- Record optional allergies for a child. Saved text is visible in the child's
+  profile and on the parent's Children section, and stays in Kin.
+- Export selected people to Apple Contacts only after reviewing the fields and
+  account. An eligible photo is opt-in; the destination account may sync exported
+  data. See [supported fields and account rules](Development/ContactsExport.md).
 - Delete all people from the navigation menu, with a scope explanation and separate
-  destructive confirmation. Includes unlisted people and their relationships, notes
-  and managed photos; keeps settings, Contacts and external copies/backups. Cancel
-  or dismiss before confirmation changes nothing. No export or in-app undo is included.
+  destructive confirmation. Includes unlisted people and their relationships, notes,
+  pet records, and managed photos; keeps settings, Contacts and external copies/backups. Cancel
+  or dismiss before confirmation changes nothing. This action does not export anything and cannot be undone in Kin.
 - Local Core Data SQLite storage with Complete Protection and failure recovery.
 - Adaptive system controls and accessibility labels, including larger text.
 
@@ -107,7 +117,7 @@ minor ages. Imported edits still require Save, and stored adult-photo removal re
 its explicit age-correction confirmation.
 
 Removing a relationship preserves both people. Deleting a person removes their
-incident links and photo, never another person. Duplicate/self links and parentage
+incident links, photo, and pet records, never another person. Duplicate/self links and parentage
 cycles are rejected. Kin does not infer kinship, siblings, cousins, or other fields.
 
 Future features and proposals are tracked in [GitHub issues](https://github.com/dannydover/Kin/issues).

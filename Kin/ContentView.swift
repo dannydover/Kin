@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var path: [UUID] = []
     @State private var savedPersonID: UUID?
     @State private var showingAbout = false
+    @State private var exportingContacts = false
     @State private var deletingAll = false
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
@@ -57,6 +58,8 @@ struct ContentView: View {
                     Menu {
                         Button("People", systemImage: filter.scope == .yours ? "checkmark" : "person.2") { switchScope(.yours) }
                         Button("All people", systemImage: filter.scope == .all ? "checkmark" : "person.3") { switchScope(.all) }
+                        Button("Export to Contacts", systemImage: "person.crop.rectangle") { exportingContacts = true }
+                            .disabled(store.people.isEmpty)
                         Button("About", systemImage: "info.circle") { showingAbout = true }
                         Button("Delete all people", systemImage: "trash", role: .destructive) { deletingAll = true }
                     } label: { Image(systemName: "line.3.horizontal") }
@@ -73,6 +76,7 @@ struct ContentView: View {
                     path.append(id)
                 }
             }) { NavigationStack { PersonEditor(store: store,onPersonSaved: { savedPersonID = $0 }) } }
+            .sheet(isPresented: $exportingContacts) { NavigationStack { ContactExportView(store: store) } }
             .sheet(isPresented: $showingAbout) { AboutKinView() }
             .sheet(isPresented: $deletingAll) {
                 NavigationStack {

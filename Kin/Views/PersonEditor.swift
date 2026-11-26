@@ -49,6 +49,13 @@ struct PersonEditor: View {
         default: .unknown
         }
     }
+    private var showsAllergyEditor: Bool {
+        // Keep a previously available field accessible while the age is being corrected.
+        let isChild = isChildEntry(relationship) || store.parentLinks.contains { $0.childID == draft.id }
+        let today = Date()
+        return draft.showsAllergyEditor(isChildInNotebook: isChild, birthday: birthday, on: today)
+            || original.map { $0.showsAllergyEditor(isChildInNotebook: isChild, birthday: $0.birthday, on: today) } == true
+    }
     private var photoAllowed: Bool { AgeRules(calendar: .current).allowsPhoto(birthday, on: Date()) }
     private var needsRemoval: Bool { ageInputValid && original?.photo != nil && original?.birthday != birthday && !photoAllowed }
     var body: some View {
@@ -62,6 +69,9 @@ struct PersonEditor: View {
                 ageSection
                 photoSection
                 connectionSection
+                if showsAllergyEditor {
+                    ChildAllergyField(allergies: $draft.allergies)
+                }
                 Section { TextField("The little things to remember", text: $draft.notes, axis: .vertical).lineLimit(4...10) } header: { KinSectionHeading(text: "Notes") }
             }.listRowBackground(KinTheme.editableFormRow)
         }
@@ -322,6 +332,30 @@ private struct BirthInformationRows: View {
     }
 }
 
+private func isChildEntry(_ relationship: NewRelationship?) -> Bool {
+    if case .child? = relationship { return true }
+    return false
+}
+
+private struct ChildAllergyField: View {
+    @Binding var allergies: String?
+    var body: some View {
+        Section {
+            TextField("Allergies (optional)", text: Binding(get: { allergies ?? "" }, set: { allergies = $0 }), axis: .vertical)
+                .lineLimit(2...5)
+                .accessibilityIdentifier("person-allergies-input")
+            if let allergies, !allergies.isEmpty {
+                Button("Clear allergies") { self.allergies = nil }
+                    .accessibilityIdentifier("clear-person-allergies")
+            }
+        } header: {
+            KinSectionHeading(text: "Allergies")
+        } footer: {
+            Text("A blank field means no allergy information was entered.")
+        }
+    }
+}
+
 private struct EstimatedAgeWheel: View {
     @State private var selection: Int
     let onDone: (Int) -> Void
@@ -362,6 +396,7 @@ private struct ContactBirthInformationView: View {
     @State private var reviewedLastName: String
     @State private var reviewedConnections: Set<Connection>
     @State private var reviewedIndexInclusion: Bool
+    @State private var reviewedAllergies: String?
     @State private var includePhoto = true
     @State private var photoReview = ContactPhotoReview()
     @State private var commit = NewContactImportCommit()
@@ -383,6 +418,7 @@ private struct ContactBirthInformationView: View {
         _reviewedLastName = State(initialValue: snapshot.lastName)
         _reviewedConnections = State(initialValue: currentDraft.connections)
         _reviewedIndexInclusion = State(initialValue: relationship == nil || currentDraft.isListed)
+        _reviewedAllergies = State(initialValue: currentDraft.allergies)
         _includePhoto = State(initialValue: !ContactImport.needsPhotoConfirmation(for: snapshot.birthInformation, isNew: isNew))
         let initial = ContactImport.initialBirthday(for: snapshot.birthInformation, currentBirthday: currentBirthday, isNew: isNew)
         switch initial {
@@ -493,6 +529,10 @@ private struct ContactBirthInformationView: View {
                     }
                 }
                 ChildParentsReview(relationship: relationship, people: store.people)
+                if isNew && (currentDraft.showsAllergyEditor(isChildInNotebook: isChildEntry(relationship), birthday: birthday, on: Date())
+                    || !(reviewedAllergies ?? "").isEmpty) {
+                    ChildAllergyField(allergies: $reviewedAllergies)
+                }
                 if AgeRules(calendar: .current).allowsPhoto(birthday, on: Date()) && (isNew || needsPhotoConfirmation) {
                     Section {
                         Toggle("Include eligible Contacts photo", isOn: $includePhoto)
@@ -549,6 +589,7 @@ private struct ContactBirthInformationView: View {
         value.gender = reviewedGender.value
         value.connections = reviewedConnections
         value.isListed = reviewedIndexInclusion
+        value.allergies = reviewedAllergies
         do {
             try commit.save(value, store: store, relationship: relationship)
             onNewSaved()
