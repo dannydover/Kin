@@ -79,7 +79,10 @@ final class PetProfileUITests: XCTestCase {
         tapVisible(app.buttons["remove-pet"], in: app)
         let alert = app.alerts.firstMatch
         XCTAssertTrue(alert.waitForExistence(timeout: 5))
-        alert.buttons["Remove pet"].tap()
+        // iOS 26 exposes both the UIKit alert control and its child as buttons.
+        let confirm = alert.buttons.matching(identifier: "confirm-remove-pet").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5) && confirm.isHittable)
+        confirm.tap()
         requireDismissal(editBar, destination: app.navigationBars["Synthetic Named"].buttons["Edit"])
         reveal(biscuit, in: app)
         XCTAssertFalse(cloud.exists)
